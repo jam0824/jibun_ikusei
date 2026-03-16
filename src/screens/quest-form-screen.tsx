@@ -23,18 +23,24 @@ export function QuestFormScreen() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const editId = searchParams.get('edit')
-  const { quests, skills, settings, upsertQuest } = useAppStore(
+  const { quests, completions, skills, settings, upsertQuest, deleteQuest } = useAppStore(
     useShallow((state) => ({
       quests: state.quests,
+      completions: state.completions,
       skills: state.skills,
       settings: state.settings,
       upsertQuest: state.upsertQuest,
+      deleteQuest: state.deleteQuest,
     })),
   )
 
   const editingQuest = useMemo(() => quests.find((quest) => quest.id === editId), [editId, quests])
   const draft = useMemo(() => buildQuestDraft(editingQuest), [editingQuest])
   const skillOptions = skills.filter((skill) => skill.status === 'active')
+  const hasActiveCompletion = useMemo(
+    () => Boolean(editingQuest && completions.some((completion) => completion.questId === editingQuest.id && !completion.undoneAt)),
+    [completions, editingQuest],
+  )
 
   const [form, setForm] = useState<Quest>(draft)
   const [error, setError] = useState<string>()
@@ -44,6 +50,7 @@ export function QuestFormScreen() {
   }, [draft])
 
   const update = <K extends keyof Quest>(key: K, value: Quest[K]) => {
+    setError(undefined)
     setForm((current) => {
       const next = { ...current, [key]: value, updatedAt: new Date().toISOString() }
       if (key === 'privacyMode' && value === 'no_ai' && next.skillMappingMode !== 'fixed') {
@@ -54,6 +61,7 @@ export function QuestFormScreen() {
   }
 
   const save = () => {
+    setError(undefined)
     const parsed = questSchema.safeParse({
       title: form.title,
       description: form.description ?? '',
@@ -70,6 +78,30 @@ export function QuestFormScreen() {
     }
 
     upsertQuest(form)
+    navigate('/quests')
+  }
+
+  const handleDelete = () => {
+    if (!editingQuest) {
+      return
+    }
+
+    setError(undefined)
+    const confirmed =
+      typeof window === 'undefined'
+        ? true
+        : window.confirm(`「${editingQuest.title || 'このクエスト'}」を削除します。\nこの操作は元に戻せません。`)
+
+    if (!confirmed) {
+      return
+    }
+
+    const result = deleteQuest(editingQuest.id)
+    if (!result.ok) {
+      setError(result.reason)
+      return
+    }
+
     navigate('/quests')
   }
 
@@ -360,6 +392,31 @@ export function QuestFormScreen() {
           </CardContent>
         </Card>
       </section>
+
+      {editingQuest ? (
+        <section className="mt-5">
+          <Card className="border-rose-200 bg-rose-50">
+            <CardContent className="space-y-4 p-4">
+              <div>
+                <div className="text-sm font-semibold text-rose-950">削除</div>
+                <div className="mt-1 text-sm text-rose-800">
+                  誤って追加した不要なクエストを完全に削除します。削除後は元に戻せません。
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-rose-200 bg-white/80 px-4 py-3 text-xs leading-5 text-rose-700">
+                {hasActiveCompletion
+                  ? '履歴があるため削除できません。不要化したクエストはアーカイブしてください。'
+                  : '完了履歴がないため削除できます。初期サンプルクエストも未クリアならここから削除できます。'}
+              </div>
+
+              <Button variant="danger" className="w-full" onClick={handleDelete}>
+                このクエストを削除する
+              </Button>
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
       <div className="sticky bottom-[84px] mt-auto border-t border-slate-200 bg-white/90 px-4 py-3 backdrop-blur">
         <div className="grid grid-cols-2 gap-3">

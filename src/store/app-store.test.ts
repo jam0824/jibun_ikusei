@@ -23,6 +23,59 @@ describe('app store', () => {
     resetStore()
   })
 
+  it('deletes an uncompleted quest', () => {
+    const quest = useAppStore.getState().quests.find((entry) => entry.title === '企画メモを2ページ書く')
+    expect(quest).toBeTruthy()
+
+    const result = useAppStore.getState().deleteQuest(quest!.id)
+
+    expect(result).toEqual({ ok: true })
+    expect(useAppStore.getState().quests.find((entry) => entry.id === quest!.id)).toBeUndefined()
+  })
+
+  it('refuses to delete a quest with active completions', async () => {
+    const quest = useAppStore.getState().quests.find((entry) => entry.title === '読書する')
+    expect(quest).toBeTruthy()
+
+    const completion = await useAppStore.getState().completeQuest(quest!.id, {
+      completedAt: new Date().toISOString(),
+      sourceScreen: 'home',
+    })
+    expect(completion.completionId).toBeTruthy()
+
+    const result = useAppStore.getState().deleteQuest(quest!.id)
+
+    expect(result.ok).toBe(false)
+    expect(result.reason).toBe('履歴があるため削除できません。不要化したクエストはアーカイブしてください。')
+    expect(useAppStore.getState().quests.find((entry) => entry.id === quest!.id)).toBeTruthy()
+  })
+
+  it('deletes undone completions and related assistant messages with the quest', async () => {
+    const quest = useAppStore.getState().quests.find((entry) => entry.title === 'エアロバイクを漕ぐ')
+    expect(quest).toBeTruthy()
+
+    const result = await useAppStore.getState().completeQuest(quest!.id, {
+      completedAt: new Date().toISOString(),
+      sourceScreen: 'home',
+    })
+    expect(result.completionId).toBeTruthy()
+
+    const completion = useAppStore.getState().completions.find((entry) => entry.id === result.completionId)
+    expect(completion?.assistantMessageId).toBeTruthy()
+
+    const undo = useAppStore.getState().undoCompletion(result.completionId!)
+    expect(undo.ok).toBe(true)
+
+    const deleteResult = useAppStore.getState().deleteQuest(quest!.id)
+
+    expect(deleteResult).toEqual({ ok: true })
+    expect(useAppStore.getState().quests.find((entry) => entry.id === quest!.id)).toBeUndefined()
+    expect(useAppStore.getState().completions.find((entry) => entry.id === result.completionId)).toBeUndefined()
+    expect(
+      useAppStore.getState().assistantMessages.find((entry) => entry.id === completion!.assistantMessageId),
+    ).toBeUndefined()
+  })
+
   it('completes and undoes a fixed-skill quest', async () => {
     const quest = useAppStore.getState().quests.find((entry) => entry.title === '読書する')
     expect(quest).toBeTruthy()

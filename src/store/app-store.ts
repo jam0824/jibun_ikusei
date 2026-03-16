@@ -58,6 +58,7 @@ interface AppStore extends PersistedAppState {
   importMode: ImportMode
   initialize: () => void
   upsertQuest: (quest: Quest) => void
+  deleteQuest: (questId: string) => { ok: boolean; reason?: string }
   archiveQuest: (questId: string) => void
   reopenQuest: (questId: string) => void
   completeQuest: (questId: string, options: CompletionOptions) => Promise<{ completionId?: string; error?: string }>
@@ -248,6 +249,61 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
     persistState(nextState)
     set(nextState)
+  },
+
+  deleteQuest: (questId) => {
+    const state = get()
+    const quest = state.quests.find((entry) => entry.id === questId)
+    if (!quest) {
+      return { ok: false, reason: 'クエストが見つかりません。' }
+    }
+
+    const hasActiveCompletion = state.completions.some(
+      (completion) => completion.questId === questId && !completion.undoneAt,
+    )
+    if (hasActiveCompletion) {
+      return {
+        ok: false,
+        reason: '履歴があるため削除できません。不要化したクエストはアーカイブしてください。',
+      }
+    }
+
+    const removedCompletions = state.completions.filter((completion) => completion.questId === questId)
+    const removedCompletionIds = new Set(removedCompletions.map((completion) => completion.id))
+    const removedAssistantMessageIds = new Set(
+      removedCompletions
+        .map((completion) => completion.assistantMessageId)
+        .filter((value): value is string => Boolean(value)),
+    )
+
+    for (const recentKey of Array.from(recentQuestRequests.keys())) {
+      if (recentKey.startsWith(`${questId}:`)) {
+        recentQuestRequests.delete(recentKey)
+      }
+    }
+
+    const nextState = reconcileState({
+      ...state,
+      quests: state.quests.filter((entry) => entry.id !== questId),
+      completions: state.completions.filter((completion) => completion.questId !== questId),
+      assistantMessages: state.assistantMessages.filter(
+        (message) =>
+          !removedAssistantMessageIds.has(message.id) &&
+          !(message.completionId && removedCompletionIds.has(message.completionId)),
+      ),
+    })
+
+    persistState(nextState)
+    set({
+      ...nextState,
+      busyQuestId: state.busyQuestId === questId ? undefined : state.busyQuestId,
+      currentEffectCompletionId:
+        state.currentEffectCompletionId && removedCompletionIds.has(state.currentEffectCompletionId)
+          ? undefined
+          : state.currentEffectCompletionId,
+    })
+
+    return { ok: true }
   },
 
   archiveQuest: (questId) => {
