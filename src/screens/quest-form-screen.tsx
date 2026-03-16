@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
 import { ChevronRight, Lock, Settings2, Sparkles, Target } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
@@ -6,12 +6,13 @@ import { useShallow } from 'zustand/react/shallow'
 import { buildQuestDraft } from '@/domain/logic'
 import type { Quest, SkillMappingMode } from '@/domain/types'
 import { QUEST_CATEGORIES } from '@/domain/constants'
+import { toDateTimeLocalValue } from '@/lib/date'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Select, Switch, Textarea } from '@/components/ui'
 import { useAppStore } from '@/store/app-store'
 
 const questSchema = z.object({
-  title: z.string().min(1, 'タイトルを入力してください。').max(60, '60文字以内で入力してください。'),
+  title: z.string().min(1, 'タイトルを入力してください。').max(60, 'タイトルは60文字以内で入力してください。'),
   description: z.string().max(240, '説明は240文字以内で入力してください。'),
   xpReward: z.number().min(1).max(100),
 })
@@ -22,12 +23,14 @@ export function QuestFormScreen() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const editId = searchParams.get('edit')
-  const { quests, skills, settings, upsertQuest } = useAppStore(useShallow((state) => ({
-    quests: state.quests,
-    skills: state.skills,
-    settings: state.settings,
-    upsertQuest: state.upsertQuest,
-  })))
+  const { quests, skills, settings, upsertQuest } = useAppStore(
+    useShallow((state) => ({
+      quests: state.quests,
+      skills: state.skills,
+      settings: state.settings,
+      upsertQuest: state.upsertQuest,
+    })),
+  )
 
   const editingQuest = useMemo(() => quests.find((quest) => quest.id === editId), [editId, quests])
   const draft = useMemo(() => buildQuestDraft(editingQuest), [editingQuest])
@@ -35,6 +38,10 @@ export function QuestFormScreen() {
 
   const [form, setForm] = useState<Quest>(draft)
   const [error, setError] = useState<string>()
+
+  useEffect(() => {
+    setForm(draft)
+  }, [draft])
 
   const update = <K extends keyof Quest>(key: K, value: Quest[K]) => {
     setForm((current) => {
@@ -58,7 +65,7 @@ export function QuestFormScreen() {
     }
 
     if (form.skillMappingMode === 'fixed' && !form.fixedSkillId) {
-      setError('固定スキルを選んでください。')
+      setError('固定スキルを選択してください。')
       return
     }
 
@@ -68,14 +75,14 @@ export function QuestFormScreen() {
 
   const mappingModes: Array<{ key: SkillMappingMode; title: string; description: string }> = [
     { key: 'fixed', title: '固定スキル', description: '毎回同じスキルに経験値を加算します。' },
-    { key: 'ai_auto', title: 'AI自動抽象化', description: 'AIが既存スキルへ寄せて抽象化します。' },
+    { key: 'ai_auto', title: 'AI自動判定', description: 'AIが内容に近いスキルを選びます。' },
     { key: 'ask_each_time', title: '毎回確認する', description: 'クリア時に候補からスキルを選びます。' },
   ]
 
   return (
     <Screen
       title={editingQuest ? 'クエスト編集' : 'クエスト追加'}
-      subtitle="育てたい行動をクエストとして登録します"
+      subtitle="育てたい習慣をクエストとして追加します"
       action={
         <Button size="icon" onClick={() => navigate('/settings')}>
           <Settings2 className="h-5 w-5" />
@@ -113,8 +120,8 @@ export function QuestFormScreen() {
                       : 'border-slate-200 bg-white'
                   }`}
                 >
-                  <div className="text-sm font-semibold text-slate-900">定常クエスト</div>
-                  <div className="mt-1 text-xs text-slate-500">繰り返し積み上げる行動に使います。</div>
+                  <div className="text-sm font-semibold text-slate-900">繰り返しクエスト</div>
+                  <div className="mt-1 text-xs text-slate-500">習慣化したい行動に向いています。</div>
                 </button>
                 <button
                   type="button"
@@ -126,7 +133,7 @@ export function QuestFormScreen() {
                   }`}
                 >
                   <div className="text-sm font-semibold text-slate-900">単発クエスト</div>
-                  <div className="mt-1 text-xs text-slate-500">1回で完了するタスクに使います。</div>
+                  <div className="mt-1 text-xs text-slate-500">一度だけ完了するタスクに向いています。</div>
                 </button>
               </div>
             </div>
@@ -138,8 +145,8 @@ export function QuestFormScreen() {
         <Card>
           <CardContent className="space-y-4 p-4">
             <div>
-              <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">経験値</div>
-              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">報酬</div>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-6">
                 {xpPresets.map((xp) => (
                   <button
                     key={xp}
@@ -191,7 +198,7 @@ export function QuestFormScreen() {
       <section className="mt-5">
         <Card>
           <CardContent className="space-y-3 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">スキル付与方法</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">スキル設定方式</div>
             {mappingModes.map((mode) => (
               <button
                 key={mode.key}
@@ -206,8 +213,18 @@ export function QuestFormScreen() {
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3">
-                    <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ${form.skillMappingMode === mode.key ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-700'}`}>
-                      {mode.key === 'fixed' ? <Target className="h-5 w-5" /> : mode.key === 'ai_auto' ? <Sparkles className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                    <div
+                      className={`flex h-10 w-10 items-center justify-center rounded-2xl ${
+                        form.skillMappingMode === mode.key ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {mode.key === 'fixed' ? (
+                        <Target className="h-5 w-5" />
+                      ) : mode.key === 'ai_auto' ? (
+                        <Sparkles className="h-5 w-5" />
+                      ) : (
+                        <ChevronRight className="h-5 w-5" />
+                      )}
                     </div>
                     <div>
                       <div className="text-sm font-semibold text-slate-900">{mode.title}</div>
@@ -243,7 +260,7 @@ export function QuestFormScreen() {
             <CardContent className="flex items-center justify-between gap-4 p-4">
               <div>
                 <div className="text-sm font-semibold text-slate-900">クールダウン</div>
-                <div className="mt-1 text-xs text-slate-500">定常クエストの連続達成を制御します。</div>
+                <div className="mt-1 text-xs text-slate-500">繰り返しクエストの再実行までの待ち時間です。</div>
               </div>
               <Input
                 type="number"
@@ -258,7 +275,7 @@ export function QuestFormScreen() {
             <CardContent className="flex items-center justify-between gap-4 p-4">
               <div>
                 <div className="text-sm font-semibold text-slate-900">1日上限</div>
-                <div className="mt-1 text-xs text-slate-500">定常クエストを1日に何回まで反映するか設定します。</div>
+                <div className="mt-1 text-xs text-slate-500">1日に何回までクリアできるかを設定します。</div>
               </div>
               <Input
                 type="number"
@@ -274,7 +291,7 @@ export function QuestFormScreen() {
               <div className="flex items-center justify-between gap-4">
                 <div>
                   <div className="text-sm font-semibold text-slate-900">非AIモード</div>
-                  <div className="mt-1 text-xs text-slate-500">外部AIに送らず、固定スキルとテンプレート文を使います。</div>
+                  <div className="mt-1 text-xs text-slate-500">機密性が高い内容では固定スキルとテンプレート文だけを使います。</div>
                 </div>
                 <Switch
                   checked={form.privacyMode === 'no_ai'}
@@ -284,8 +301,8 @@ export function QuestFormScreen() {
 
               <div className="flex items-center justify-between gap-4">
                 <div>
-                  <div className="text-sm font-semibold text-slate-900">優先表示</div>
-                  <div className="mt-1 text-xs text-slate-500">ホームのおすすめクエストに出しやすくします。</div>
+                  <div className="text-sm font-semibold text-slate-900">ピン表示</div>
+                  <div className="mt-1 text-xs text-slate-500">ホームのおすすめに出しやすくします。</div>
                 </div>
                 <Switch checked={form.pinned} onCheckedChange={(checked) => update('pinned', checked)} />
               </div>
@@ -295,8 +312,10 @@ export function QuestFormScreen() {
                 <Input
                   type="datetime-local"
                   className="bg-white"
-                  value={form.dueAt ? form.dueAt.slice(0, 16) : ''}
-                  onChange={(event) => update('dueAt', event.target.value ? new Date(event.target.value).toISOString() : undefined)}
+                  value={toDateTimeLocalValue(form.dueAt)}
+                  onChange={(event) =>
+                    update('dueAt', event.target.value ? new Date(event.target.value).toISOString() : undefined)
+                  }
                 />
               </div>
 
@@ -327,15 +346,15 @@ export function QuestFormScreen() {
               <Lock className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold text-violet-950">このクエストの挙動メモ</div>
+              <div className="text-sm font-semibold text-violet-950">このクエストの判定メモ</div>
               <div className="mt-1 text-sm text-violet-800">
                 {form.privacyMode === 'no_ai'
-                  ? '非AIモードなので、外部送信せず固定スキルとテンプレート文を使います。'
+                  ? '非AIモードなので、固定スキルとテンプレート文のみを使います。'
                   : form.skillMappingMode === 'fixed'
-                    ? '固定スキルで即時反映されます。'
+                    ? '固定スキルに直接経験値が入ります。'
                     : form.skillMappingMode === 'ai_auto'
-                      ? '初回はAIまたはローカル分類で解決し、以後は同じ結果を再利用します。'
-                      : 'クリア後に候補からスキルを確認できます。'}
+                      ? 'クリア後に AI またはローカル判定で近いスキルを自動で決めます。'
+                      : 'クリア後に候補からスキルを選べます。'}
               </div>
             </div>
           </CardContent>
@@ -348,7 +367,7 @@ export function QuestFormScreen() {
             キャンセル
           </Button>
           <Button className="h-12" onClick={save}>
-            {editingQuest ? '更新する' : 'クエストを作成'}
+            {editingQuest ? '更新する' : 'クエストを保存'}
           </Button>
         </div>
       </div>

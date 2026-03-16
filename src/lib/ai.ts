@@ -75,6 +75,8 @@ const CONNECTION_TEST_SYSTEM_PROMPT =
 const LILY_MESSAGE_SYSTEM_PROMPT =
   'You are Lily, a warm and encouraging companion in a self-growth app. Return only valid JSON that strictly matches the provided schema.'
 
+const RETRYABLE_STATUS_CODES = new Set([408, 409, 429, 500, 502, 503, 504])
+
 function buildSkillResolutionSystemPrompt(skills: Skill[]) {
   const categories = Array.from(new Set(skills.map((skill) => skill.category).filter(Boolean)))
 
@@ -163,6 +165,39 @@ function extractOpenAiText(payload: Record<string, unknown>) {
   throw new Error('OpenAI response text was empty.')
 }
 
+function isRetryableStatus(status: number) {
+  return RETRYABLE_STATUS_CODES.has(status)
+}
+
+async function wait(ms: number) {
+  await new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+async function readErrorResponse(response: Response) {
+  try {
+    const contentType = response.headers.get('content-type') ?? ''
+    if (contentType.includes('application/json')) {
+      const payload = (await response.json()) as {
+        error?: {
+          message?: string
+          type?: string
+          code?: string
+        }
+      }
+
+      if (payload.error?.message) {
+        const details = [payload.error.type, payload.error.code].filter(Boolean).join('/')
+        return details ? `${payload.error.message} (${details})` : payload.error.message
+      }
+    }
+
+    const text = await response.text()
+    return text.trim() || undefined
+  } catch {
+    return undefined
+  }
+}
+
 async function requestOpenAiJson<T>({
   apiKey,
   model,
@@ -178,53 +213,69 @@ async function requestOpenAiJson<T>({
   input: Record<string, unknown>
   systemPrompt?: string
 }) {
-  const response = await fetch('https://api.openai.com/v1/responses', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      input: [
-        {
-          role: 'system',
-          content: [
-            {
-              type: 'input_text',
-              text: systemPrompt,
-            },
-          ],
-        },
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'input_text',
-              text: JSON.stringify(input),
-            },
-          ],
-        },
-      ],
-      text: {
-        format: {
-          type: 'json_schema',
-          name: schemaName,
-          schema,
-          strict: true,
-        },
-      },
-      max_output_tokens: 300,
-    }),
-  })
+  let lastError: Error | undefined
 
-  if (!response.ok) {
-    throw new Error(`OpenAI request failed: ${response.status}`)
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const response = await fetch('https://api.openai.com/v1/responses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        input: [
+          {
+            role: 'system',
+            content: [
+              {
+                type: 'input_text',
+                text: systemPrompt,
+              },
+            ],
+          },
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: JSON.stringify(input),
+              },
+            ],
+          },
+        ],
+        text: {
+          format: {
+            type: 'json_schema',
+            name: schemaName,
+            schema,
+            strict: true,
+          },
+        },
+        max_output_tokens: 300,
+      }),
+    })
+
+    if (!response.ok) {
+      const details = await readErrorResponse(response)
+      lastError = new Error(
+        `OpenAI request failed: ${response.status}${details ? ` - ${details}` : ''}`,
+      )
+
+      if (attempt < 3 && isRetryableStatus(response.status)) {
+        await wait(300 * attempt)
+        continue
+      }
+
+      throw lastError
+    }
+
+    const payload = (await response.json()) as Record<string, unknown>
+    const rawText = extractOpenAiText(payload)
+    return JSON.parse(rawText) as T
   }
 
-  const payload = (await response.json()) as Record<string, unknown>
-  const rawText = extractOpenAiText(payload)
-  return JSON.parse(rawText) as T
+  throw lastError ?? new Error('OpenAI request failed.')
 }
 
 async function requestGeminiJson<T>({

@@ -36,10 +36,15 @@ export function QuestCompleteModal({
         <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">クエストクリア</div>
-              <div className="mt-1 text-lg font-bold text-slate-900">達成内容を記録</div>
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Quest Complete</div>
+              <div className="mt-1 text-lg font-bold text-slate-900">完了を記録</div>
             </div>
-            <Button variant="ghost" size="icon" className="h-9 w-9 rounded-2xl text-slate-500 hover:bg-slate-200" onClick={onClose}>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-9 w-9 rounded-2xl text-slate-500 hover:bg-slate-200"
+              onClick={onClose}
+            >
               <X className="h-4 w-4" />
             </Button>
           </div>
@@ -56,10 +61,10 @@ export function QuestCompleteModal({
                   <div className="truncate text-base font-semibold text-slate-900">{quest.title}</div>
                   <Badge tone="soft">+{quest.xpReward}XP</Badge>
                 </div>
-                <div className="mt-1 text-sm text-slate-500">{quest.description || '説明なし'}</div>
+                <div className="mt-1 text-sm text-slate-500">{quest.description || '説明はまだありません'}</div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {quest.category ? <Badge>{quest.category}</Badge> : null}
-                  <Badge tone="outline">{quest.questType === 'repeatable' ? '定常' : '単発'}</Badge>
+                  <Badge tone="outline">{quest.questType === 'repeatable' ? '繰り返し' : '単発'}</Badge>
                 </div>
               </div>
             </div>
@@ -68,7 +73,7 @@ export function QuestCompleteModal({
           <div>
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
               <Clock3 className="h-4 w-4 text-slate-500" />
-              実行日時
+              完了時刻
             </div>
             <div className="flex flex-wrap gap-2">
               {timeOptions.map((option) => (
@@ -99,10 +104,10 @@ export function QuestCompleteModal({
           <div>
             <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
               <PencilLine className="h-4 w-4 text-slate-500" />
-              メモ（任意）
+              メモ
             </div>
             <Textarea
-              placeholder="気づいたこと、手応え、次に試したいこと"
+              placeholder="感じたこと、工夫したこと、次に試したいこと"
               value={note}
               onChange={(event) => setNote(event.target.value)}
             />
@@ -114,9 +119,9 @@ export function QuestCompleteModal({
                 <Sparkles className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-semibold text-violet-900">クリア後の処理</div>
+                <div className="text-sm font-semibold text-violet-900">クリア後の流れ</div>
                 <div className="mt-1 text-sm leading-6 text-violet-700">
-                  User XP を反映し、必要に応じてスキル解決とリリィコメント生成を進めます。
+                  まず User XP を加算し、そのあとにスキル判定と Lily のコメントを更新します。
                 </div>
               </div>
             </div>

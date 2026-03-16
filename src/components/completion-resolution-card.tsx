@@ -24,11 +24,11 @@ export function CompletionResolutionCard({
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
-              <div className="text-sm font-semibold text-amber-950">スキル候補を確認</div>
-              <Badge tone="outline">AI中信頼</Badge>
+              <div className="text-sm font-semibold text-amber-950">スキル候補を確認してください</div>
+              <Badge tone="outline">AI判定</Badge>
             </div>
             <div className="mt-1 text-sm leading-6 text-amber-800">
-              {completion.resolutionReason || 'どのスキルに紐づくか確認すると、次回以降の精度が上がります。'}
+              {completion.resolutionReason || 'どのスキルに近いか確認してください。迷う場合は一番近い候補を選べます。'}
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {candidates.map((skill) => (

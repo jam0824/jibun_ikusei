@@ -22,7 +22,7 @@ export function SkillsScreen() {
   return (
     <Screen
       title="スキル"
-      subtitle="どの分野が育っているかを見える化します"
+      subtitle="どの成長が伸びているかを一覧で確認できます"
       action={
         <Button size="icon" onClick={() => navigate('/settings')}>
           <Settings2 className="h-5 w-5" />
@@ -84,7 +84,7 @@ export function SkillsScreen() {
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold text-violet-950">スキル統合</div>
               <div className="mt-1 text-sm text-violet-800">
-                似たスキルが増えてきたら詳細から統合できます。過去ログと辞書もまとめて引き継ぎます。
+                似たスキルが増えてきたら統合できます。完了ログや辞書の参照先もまとめて引き継ぎます。
               </div>
             </div>
             <Merge className="h-5 w-5 text-violet-600" />

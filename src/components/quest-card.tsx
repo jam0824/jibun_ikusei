@@ -38,14 +38,14 @@ export function QuestCard({
               {quest.pinned ? (
                 <Badge tone="success">
                   <Pin className="h-3 w-3" />
-                  優先
+                  ピン留め
                 </Badge>
               ) : null}
             </div>
-            <div className="mt-1 text-xs text-slate-500">{quest.description || '説明なし'}</div>
+            <div className="mt-1 text-xs text-slate-500">{quest.description || '説明はまだありません'}</div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {skill ? <Badge>{skill.name}</Badge> : <Badge tone="outline">未設定</Badge>}
-              <Badge tone="outline">{quest.questType === 'repeatable' ? '定常' : '単発'}</Badge>
+              <Badge tone="outline">{quest.questType === 'repeatable' ? '繰り返し' : '単発'}</Badge>
               <span className={`inline-flex items-center gap-1 text-[11px] ${getQuestStatusTone(availability)}`}>
                 <Clock3 className="h-3 w-3" />
                 {availability.label}

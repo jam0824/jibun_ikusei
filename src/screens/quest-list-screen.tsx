@@ -12,7 +12,7 @@ import { useAppStore } from '@/store/app-store'
 const tabs = [
   { key: 'today', label: '今日' },
   { key: 'all', label: 'すべて' },
-  { key: 'repeatable', label: '定常' },
+  { key: 'repeatable', label: '繰り返し' },
   { key: 'one_time', label: '単発' },
   { key: 'completed', label: '完了済み' },
 ] as const
@@ -22,13 +22,15 @@ export function QuestListScreen() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [tab, setTab] = useState<(typeof tabs)[number]['key']>('today')
   const [query, setQuery] = useState('')
-  const { quests, completions, skills, completeQuest, reopenQuest } = useAppStore(useShallow((state) => ({
-    quests: state.quests,
-    completions: state.completions,
-    skills: state.skills,
-    completeQuest: state.completeQuest,
-    reopenQuest: state.reopenQuest,
-  })))
+  const { quests, completions, skills, completeQuest, reopenQuest } = useAppStore(
+    useShallow((state) => ({
+      quests: state.quests,
+      completions: state.completions,
+      skills: state.skills,
+      completeQuest: state.completeQuest,
+      reopenQuest: state.reopenQuest,
+    })),
+  )
 
   const activeQuestId = searchParams.get('complete')
   const activeQuest = activeQuestId ? quests.find((quest) => quest.id === activeQuestId) : undefined
@@ -68,7 +70,7 @@ export function QuestListScreen() {
   return (
     <Screen
       title="クエスト"
-      subtitle="今日やることと進行中のタスク"
+      subtitle="今日やることと進行中のタスクをまとめて確認できます"
       action={
         <Button size="icon" onClick={() => navigate('/settings')}>
           <Settings2 className="h-5 w-5" />
@@ -76,9 +78,30 @@ export function QuestListScreen() {
       }
     >
       <div className="grid grid-cols-3 gap-3">
-        <Card><CardContent className="p-4"><div className="text-xs text-slate-500">今日の候補</div><div className="mt-1 text-xl font-black text-slate-900">{quests.filter((quest) => getQuestAvailability(quest, completions).canComplete).length}件</div></CardContent></Card>
-        <Card><CardContent className="p-4"><div className="text-xs text-slate-500">期限近い</div><div className="mt-1 text-xl font-black text-slate-900">{quests.filter((quest) => getQuestAvailability(quest, completions).state === 'expired').length}件</div></CardContent></Card>
-        <Card><CardContent className="p-4"><div className="text-xs text-slate-500">定常クエスト</div><div className="mt-1 text-xl font-black text-slate-900">{quests.filter((quest) => quest.questType === 'repeatable').length}件</div></CardContent></Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-xs text-slate-500">今日の候補</div>
+            <div className="mt-1 text-xl font-black text-slate-900">
+              {quests.filter((quest) => getQuestAvailability(quest, completions).canComplete).length}件
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-xs text-slate-500">期限切れ</div>
+            <div className="mt-1 text-xl font-black text-slate-900">
+              {quests.filter((quest) => getQuestAvailability(quest, completions).state === 'expired').length}件
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-xs text-slate-500">繰り返し</div>
+            <div className="mt-1 text-xl font-black text-slate-900">
+              {quests.filter((quest) => quest.questType === 'repeatable').length}件
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
       <section className="mt-5">
@@ -92,7 +115,7 @@ export function QuestListScreen() {
               className="bg-white pl-10"
             />
           </div>
-          <Button variant="outline" size="icon">
+          <Button variant="outline" size="icon" aria-label="並び順">
             <Filter className="h-4 w-4" />
           </Button>
         </div>
@@ -119,7 +142,7 @@ export function QuestListScreen() {
 
       <section className="mt-4">
         <div className="flex items-center justify-between text-xs text-slate-500">
-          <div>表示順: 優先 → 期限 → XP</div>
+          <div>表示順: ピン・状態・XP</div>
           <button type="button" className="rounded-xl px-2 py-1 text-violet-700 hover:bg-violet-50">
             並び替え
           </button>
@@ -127,36 +150,44 @@ export function QuestListScreen() {
       </section>
 
       <section className="mt-4 space-y-3 pb-6">
-        {filtered.map((quest) => {
-          const availability = getQuestAvailability(quest, completions)
-          const skill = skills.find((entry) => entry.id === (quest.fixedSkillId ?? quest.defaultSkillId))
-          const actionLabel =
-            quest.status === 'completed' ? '再オープン' : availability.canComplete ? 'クリア' : '詳細'
+        {filtered.length === 0 ? (
+          <Card>
+            <CardContent className="p-6 text-center text-sm text-slate-500">
+              条件に合うクエストがありません。
+            </CardContent>
+          </Card>
+        ) : (
+          filtered.map((quest) => {
+            const availability = getQuestAvailability(quest, completions)
+            const skill = skills.find((entry) => entry.id === (quest.fixedSkillId ?? quest.defaultSkillId))
+            const actionLabel =
+              quest.status === 'completed' ? '再オープン' : availability.canComplete ? 'クリア' : '詳細'
 
-          return (
-            <QuestCard
-              key={quest.id}
-              quest={quest}
-              availability={availability}
-              skill={skill}
-              actionLabel={actionLabel}
-              onAction={() => {
-                if (quest.status === 'completed') {
-                  reopenQuest(quest.id)
-                  return
-                }
-                if (availability.canComplete) {
-                  const next = new URLSearchParams(searchParams)
-                  next.set('complete', quest.id)
-                  setSearchParams(next)
-                  return
-                }
-                navigate(`/quests/new?edit=${quest.id}`)
-              }}
-              onOpen={() => navigate(`/quests/new?edit=${quest.id}`)}
-            />
-          )
-        })}
+            return (
+              <QuestCard
+                key={quest.id}
+                quest={quest}
+                availability={availability}
+                skill={skill}
+                actionLabel={actionLabel}
+                onAction={() => {
+                  if (quest.status === 'completed') {
+                    reopenQuest(quest.id)
+                    return
+                  }
+                  if (availability.canComplete) {
+                    const next = new URLSearchParams(searchParams)
+                    next.set('complete', quest.id)
+                    setSearchParams(next)
+                    return
+                  }
+                  navigate(`/quests/new?edit=${quest.id}`)
+                }}
+                onOpen={() => navigate(`/quests/new?edit=${quest.id}`)}
+              />
+            )
+          })
+        )}
       </section>
 
       {activeQuest ? (

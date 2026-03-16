@@ -12,7 +12,9 @@ export function ClearEffectScreen() {
   const state = useAppStore()
   const completion = state.completions.find((entry) => entry.id === completionId)
   const quest = completion ? state.quests.find((entry) => entry.id === completion.questId) : undefined
-  const skill = completion?.resolvedSkillId ? state.skills.find((entry) => entry.id === completion.resolvedSkillId) : undefined
+  const skill = completion?.resolvedSkillId
+    ? state.skills.find((entry) => entry.id === completion.resolvedSkillId)
+    : undefined
   const message = completion?.assistantMessageId
     ? state.assistantMessages.find((entry) => entry.id === completion.assistantMessageId)
     : state.assistantMessages[0]
@@ -32,10 +34,10 @@ export function ClearEffectScreen() {
 
   if (!completion || !quest) {
     return (
-      <Screen title="クリア演出" subtitle="直近のクエスト結果を表示します" withBottomNav={false}>
+      <Screen title="クリア演出" subtitle="直前のクエスト結果を表示します" withBottomNav={false}>
         <Card>
           <CardContent className="p-6 text-center text-sm text-slate-500">
-            表示できるクリア演出が見つかりませんでした。
+            表示できるクリア結果が見つかりませんでした。
           </CardContent>
         </Card>
       </Screen>
@@ -43,7 +45,7 @@ export function ClearEffectScreen() {
   }
 
   return (
-    <Screen title="クリア演出" subtitle="成長結果をまとめて確認します" withBottomNav={false}>
+    <Screen title="クリア演出" subtitle="成長の結果をまとめて確認できます" withBottomNav={false}>
       <Card className="overflow-hidden border-0 shadow-[0_24px_80px_rgba(15,23,42,0.12)]">
         <div className="bg-gradient-to-b from-violet-50 to-white px-5 pb-4 pt-6">
           <div className="flex flex-col items-center text-center">
@@ -58,7 +60,7 @@ export function ClearEffectScreen() {
                 Quest Clear
               </div>
               <div className="mt-3 text-2xl font-black tracking-tight text-slate-900">{quest.title}</div>
-              <div className="mt-1 text-sm text-slate-500">{quest.description || '説明なし'}</div>
+              <div className="mt-1 text-sm text-slate-500">{quest.description || '説明はまだありません'}</div>
             </div>
           </div>
         </div>
@@ -74,7 +76,7 @@ export function ClearEffectScreen() {
               <div className="text-xs font-medium text-emerald-700">スキル</div>
               <div className="mt-2 text-lg font-black tracking-tight text-emerald-900">{skill?.name ?? '判定中'}</div>
               <div className="mt-1 text-xs text-emerald-600">
-                {completion.skillXpAwarded ? `+${completion.skillXpAwarded} Skill XP` : 'スキル解決を継続中'}
+                {completion.skillXpAwarded ? `+${completion.skillXpAwarded} Skill XP` : 'スキル判定を進めています'}
               </div>
             </div>
           </div>
@@ -83,7 +85,7 @@ export function ClearEffectScreen() {
             <CardContent className="p-4">
               <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
                 <Trophy className="h-4 w-4 text-amber-500" />
-                ユーザー進捗
+                ユーザー成長
               </div>
               <div className="mb-2 flex items-end justify-between gap-3">
                 <div>
@@ -101,7 +103,7 @@ export function ClearEffectScreen() {
               <CardContent className="p-4">
                 <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-slate-900">
                   <Star className="h-4 w-4 text-fuchsia-500" />
-                  スキル進捗
+                  スキル成長
                 </div>
                 <div className="mb-2 flex items-end justify-between gap-3">
                   <div>
@@ -129,7 +131,7 @@ export function ClearEffectScreen() {
                     <Badge tone="outline">コメント</Badge>
                   </div>
                   <div className="mt-2 text-sm leading-6 text-violet-700">
-                    {message?.text ?? 'ナイスです。今日の成長がしっかり記録されました。'}
+                    {message?.text ?? 'ナイスです。今日の達成がしっかり記録されました。'}
                   </div>
                 </div>
                 {message ? (
@@ -153,7 +155,7 @@ export function ClearEffectScreen() {
               記録を見る
             </Button>
             <Button className="h-12" onClick={() => navigate('/')}>
-              次のクエスト
+              ホームへ戻る
               <ArrowRight className="h-4 w-4" />
             </Button>
           </div>

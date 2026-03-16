@@ -45,19 +45,168 @@ import { clamp, createId, deepCopy, slugify } from '@/lib/utils'
 type MergeableRecord = { id: string; updatedAt?: string; createdAt?: string }
 
 const KEYWORD_RULES = [
-  { keywords: ['読書', '本', '技術書', '参考書'], skillName: '読書', category: '学習', confidence: 0.92 },
-  { keywords: ['英語', '単語', '英文'], skillName: '英語', category: '学習', confidence: 0.9 },
-  { keywords: ['腕立て', '筋トレ', 'ランニング', '散歩', '運動'], skillName: '運動', category: '健康', confidence: 0.92 },
-  { keywords: ['睡眠', '早寝', '休息'], skillName: '睡眠', category: '健康', confidence: 0.86 },
-  { keywords: ['資料', 'スライド', '提案書'], skillName: '資料作成', category: '仕事', confidence: 0.92 },
-  { keywords: ['企画', 'アイデア'], skillName: '企画', category: '仕事', confidence: 0.86 },
-  { keywords: ['実装', 'コーディング', 'プログラム'], skillName: '実装', category: '仕事', confidence: 0.9 },
-  { keywords: ['洗濯', '掃除', '片付け', '家事'], skillName: '家事', category: '生活', confidence: 0.88 },
-  { keywords: ['発言', '会議', '投稿', '発信'], skillName: '発信', category: '対人', confidence: 0.86 },
-  { keywords: ['会話', '雑談', '面談'], skillName: '会話', category: '対人', confidence: 0.84 },
-  { keywords: ['執筆', '文章', 'ブログ'], skillName: '執筆', category: '創作', confidence: 0.85 },
-  { keywords: ['デザイン', '配色'], skillName: 'デザイン', category: '創作', confidence: 0.84 },
+  {
+    keywords: ['読書', '本', '書籍', '勉強', '学習'],
+    skillName: '読書',
+    category: '学習',
+    confidence: 0.92,
+  },
+  {
+    keywords: ['調べ', '調査', 'リサーチ', '情報整理', 'まとめ'],
+    skillName: '調査',
+    category: '学習',
+    confidence: 0.86,
+  },
+  {
+    keywords: ['エアロバイク', 'バイク', '有酸素', 'ランニング', 'ジョギング', 'ウォーキング', 'cycling'],
+    skillName: '有酸素運動',
+    category: '運動',
+    confidence: 0.94,
+  },
+  {
+    keywords: ['筋トレ', 'スクワット', '腹筋', '腕立て', 'トレーニング'],
+    skillName: '筋力トレーニング',
+    category: '運動',
+    confidence: 0.9,
+  },
+  {
+    keywords: ['ストレッチ', 'ヨガ', '柔軟'],
+    skillName: 'ストレッチ',
+    category: '運動',
+    confidence: 0.88,
+  },
+  {
+    keywords: ['企画', '文章', '資料', '文書', 'メモ', '書く'],
+    skillName: '文書作成',
+    category: '仕事',
+    confidence: 0.9,
+  },
+  {
+    keywords: ['タスク', '予定', '整理', '進行', '管理'],
+    skillName: 'タスク管理',
+    category: '仕事',
+    confidence: 0.86,
+  },
+  {
+    keywords: ['掃除', '洗濯', '片付け', '料理'],
+    skillName: '家事',
+    category: '生活',
+    confidence: 0.88,
+  },
+  {
+    keywords: ['睡眠', '早起き', '食事', '健康'],
+    skillName: '健康管理',
+    category: '生活',
+    confidence: 0.84,
+  },
+  {
+    keywords: ['会話', '連絡', '相談', '対話'],
+    skillName: 'コミュニケーション',
+    category: '対人',
+    confidence: 0.85,
+  },
+  {
+    keywords: ['傾聴', '聞く', 'ヒアリング'],
+    skillName: '傾聴',
+    category: '対人',
+    confidence: 0.82,
+  },
+  {
+    keywords: ['デザイン', 'レイアウト', '配色'],
+    skillName: 'デザイン',
+    category: '創作',
+    confidence: 0.85,
+  },
+  {
+    keywords: ['執筆', 'ライティング', '記事', '文章作成'],
+    skillName: 'ライティング',
+    category: '創作',
+    confidence: 0.84,
+  },
 ] as const
+
+const LEGACY_TEXT_REPLACEMENTS: Record<string, string> = {
+  '蟄ｦ鄙・': '学習',
+  '驕句虚': '運動',
+  '莉穂ｺ・': '仕事',
+  '逕滓ｴｻ': '生活',
+  '蟇ｾ莠ｺ': '対人',
+  '蜑ｵ菴・': '創作',
+  '縺昴・莉・': 'その他',
+  '隱ｭ譖ｸ': '読書',
+  '蟄ｦ鄙堤ｿ呈・': '学習習慣',
+  '諠・ｱ謨ｴ逅・': '情報整理',
+  '隱ｿ譟ｻ': '調査',
+  '譛蛾・邏驕句虚': '有酸素運動',
+  '遲句鴨繝医Ξ繝ｼ繝九Φ繧ｰ': '筋力トレーニング',
+  '繧ｹ繝医Ξ繝・メ': 'ストレッチ',
+  '譁・嶌菴懈・': '文書作成',
+  '繧ｿ繧ｹ繧ｯ邂｡逅・': 'タスク管理',
+  '髮・ｸｭ菴懈･ｭ': '集中作業',
+  '莨∫判險ｭ險・': '企画設計',
+  '螳ｶ莠・': '家事',
+  '蛛･蠎ｷ邂｡逅・': '健康管理',
+  '逹｡逵鄙呈・': '睡眠習慣',
+  '繧ｳ繝溘Η繝九こ繝ｼ繧ｷ繝ｧ繝ｳ': 'コミュニケーション',
+  '蛯ｾ閨ｴ': '傾聴',
+  '豌鈴・繧・': '気配り',
+  '繝ｩ繧､繝・ぅ繝ｳ繧ｰ': 'ライティング',
+  '繝・じ繧､繝ｳ': 'デザイン',
+  '逋ｺ諠ｳ蜉・': '発想力',
+  '隱ｭ譖ｸ縺吶ｋ': '読書する',
+  '繧ｨ繧｢繝ｭ繝舌う繧ｯ繧呈ｼ輔＄': 'エアロバイクを漕ぐ',
+  '莨∫判繝｡繝｢繧・繝壹・繧ｸ譖ｸ縺・': '企画メモを2ページ書く',
+  '蟆剰ｪｬ繧・ｮ溽畑譖ｸ繧・0蛻・ｪｭ繧': '気になっている本を10分読む',
+  '20蛻・・譛蛾・邏驕句虚繧偵☆繧・': '20分の有酸素運動をする',
+  '髮・ｸｭ縺励※繧｢繧､繝・い繧定ｨ隱槫喧縺吶ｋ': '集中してアイデアを言語化する',
+  '繝ｪ繝ｪ繧｣': 'リリィ',
+  '譛蛻昴・繧ｯ繧ｨ繧ｹ繝医ｒ霑ｽ蜉縺励※縲∽ｻ頑律縺ｮ謌宣聞繧貞ｧ九ａ縺ｾ縺励ｇ縺・・': '最初のクエストを追加して、今日の成長を始めましょう。',
+}
+
+function replaceLegacyText(value?: string) {
+  if (!value) {
+    return value
+  }
+
+  return LEGACY_TEXT_REPLACEMENTS[value] ?? value
+}
+
+function migrateLegacyContent(state: PersistedAppState): PersistedAppState {
+  return {
+    ...state,
+    settings: {
+      ...state.settings,
+      voiceCharacter: replaceLegacyText(state.settings.voiceCharacter) ?? state.settings.voiceCharacter,
+    },
+    quests: state.quests.map((quest) => ({
+      ...quest,
+      title: replaceLegacyText(quest.title) ?? quest.title,
+      description: replaceLegacyText(quest.description),
+      category: replaceLegacyText(quest.category),
+    })),
+    completions: state.completions.map((completion) => ({
+      ...completion,
+      resolutionReason: replaceLegacyText(completion.resolutionReason),
+    })),
+    skills: state.skills.map((skill) => {
+      const name = replaceLegacyText(skill.name) ?? skill.name
+      return {
+        ...skill,
+        name,
+        normalizedName: normalizeSkillName(name),
+        category: replaceLegacyText(skill.category) ?? skill.category,
+      }
+    }),
+    personalSkillDictionary: state.personalSkillDictionary.map((entry) => ({
+      ...entry,
+      phrase: replaceLegacyText(entry.phrase) ?? entry.phrase,
+    })),
+    assistantMessages: state.assistantMessages.map((message) => ({
+      ...message,
+      text: replaceLegacyText(message.text) ?? message.text,
+    })),
+  }
+}
 
 function compareDates(left?: string, right?: string) {
   const leftValue = left ? new Date(left).getTime() : 0
@@ -182,6 +331,37 @@ function createSampleState(baseState: PersistedAppState) {
   }
 }
 
+function migrateAiConfig(aiConfig: AiConfig): AiConfig {
+  const defaults = createDefaultAiConfig()
+  const openai =
+    aiConfig.providers.openai.model === 'gpt-5-mini'
+      ? { ...aiConfig.providers.openai, model: defaults.providers.openai.model }
+      : aiConfig.providers.openai
+
+  const geminiTtsModel =
+    aiConfig.providers.gemini.ttsModel === 'gemini-2.5-flash-preview-tts'
+      ? defaults.providers.gemini.ttsModel
+      : aiConfig.providers.gemini.ttsModel
+
+  const geminiVoice =
+    !aiConfig.providers.gemini.voice || aiConfig.providers.gemini.voice === 'Kore'
+      ? defaults.providers.gemini.voice
+      : aiConfig.providers.gemini.voice
+
+  return {
+    ...aiConfig,
+    providers: {
+      ...aiConfig.providers,
+      openai,
+      gemini: {
+        ...aiConfig.providers.gemini,
+        ttsModel: geminiTtsModel,
+        voice: geminiVoice,
+      },
+    },
+  }
+}
+
 export function hydratePersistedState(partial?: Partial<PersistedAppState>): PersistedAppState {
   const empty = createEmptyState()
   const hydrated: PersistedAppState = {
@@ -213,11 +393,14 @@ export function hydratePersistedState(partial?: Partial<PersistedAppState>): Per
     },
   }
 
-  const withSamples = !hydrated.meta.seededSampleData && hydrated.quests.length === 0
-    ? createSampleState(hydrated)
-    : hydrated
+  hydrated.aiConfig = migrateAiConfig(hydrated.aiConfig)
 
-  return reconcileState(withSamples)
+  const withSamples =
+    !hydrated.meta.seededSampleData && hydrated.quests.length === 0
+      ? createSampleState(hydrated)
+      : hydrated
+
+  return reconcileState(migrateLegacyContent(withSamples))
 }
 
 export function getActiveCompletions(completions: QuestCompletion[]) {
@@ -281,13 +464,19 @@ export function reconcileState(input: PersistedAppState): PersistedAppState {
   }
 }
 
-export function getQuestAvailability(quest: Quest, completions: QuestCompletion[], referenceDate = new Date()): QuestAvailability {
+export function getQuestAvailability(
+  quest: Quest,
+  completions: QuestCompletion[],
+  referenceDate = new Date(),
+): QuestAvailability {
   if (quest.status === 'archived') {
     return { canComplete: false, state: 'archived', label: 'アーカイブ済み', countToday: 0 }
   }
 
   const questCompletions = getQuestCompletions(completions, quest.id)
-  const countToday = questCompletions.filter((completion) => isSameCalendarDay(completion.completedAt, referenceDate)).length
+  const countToday = questCompletions.filter((completion) =>
+    isSameCalendarDay(completion.completedAt, referenceDate),
+  ).length
 
   if (quest.questType === 'one_time' && quest.status === 'completed') {
     return { canComplete: false, state: 'completed', label: '完了済み', countToday }
@@ -442,7 +631,7 @@ export function buildTemplateSkillResolution(
         skillName: skill.name,
         category: skill.category,
         confidence: 0.96,
-        reason: '以前のユーザー確定結果を辞書から再利用しました。',
+        reason: 'ユーザー辞書に一致したため、既存スキルを再利用しました。',
         candidateSkills: [skill.name],
       }
     }
@@ -455,30 +644,36 @@ export function buildTemplateSkillResolution(
       skillName: directMatch.name,
       category: directMatch.category,
       confidence: 0.86,
-      reason: 'クエスト文面が既存スキル名と一致しました。',
+      reason: 'クエスト文面に既存スキル名が含まれていたため再利用しました。',
       candidateSkills: [directMatch.name],
     }
   }
 
-  const keywordMatch = KEYWORD_RULES.find((rule) => rule.keywords.some((keyword) => haystack.includes(keyword.toLowerCase())))
+  const keywordMatch = KEYWORD_RULES.find((rule) =>
+    rule.keywords.some((keyword) => haystack.includes(keyword.toLowerCase())),
+  )
   if (keywordMatch) {
     return {
       action: skills.some((skill) => skill.name === keywordMatch.skillName) ? 'assign_existing' : 'assign_seed',
       skillName: keywordMatch.skillName,
       category: keywordMatch.category,
       confidence: keywordMatch.confidence,
-      reason: 'ローカルのキーワードルールに一致しました。',
+      reason: 'キーワード一致から近いスキルを推定しました。',
       candidateSkills: [keywordMatch.skillName],
     }
   }
 
-  const category = quest.category && QUEST_CATEGORIES.includes(quest.category as (typeof QUEST_CATEGORIES)[number]) ? quest.category : 'その他'
+  const category =
+    quest.category && QUEST_CATEGORIES.includes(quest.category as (typeof QUEST_CATEGORIES)[number])
+      ? quest.category
+      : 'その他'
+
   return {
     action: 'unclassified',
     skillName: '未分類',
     category,
     confidence: 0.4,
-    reason: 'ローカル判定では十分な自信を持てませんでした。',
+    reason: 'ローカル判定では十分な手がかりが見つかりませんでした。',
     candidateSkills: SEED_SKILLS.find((group) => group.category === category)?.names.slice(0, 3) ?? [],
   }
 }
@@ -507,15 +702,31 @@ export function buildFallbackCompletionMessage(params: {
 }) {
   const { quest, skill, userLevelUp, skillLevelUp } = params
   if (userLevelUp) {
-    return createAssistantMessage('user_level_up', `レベルアップです。${quest.title}の積み重ねでユーザーレベルが上がりました。`, 'epic')
+    return createAssistantMessage(
+      'user_level_up',
+      `${quest.title}の達成でユーザーレベルが上がりました。今日の積み重ねがしっかり力になっています。`,
+      'epic',
+    )
   }
   if (skill && skillLevelUp) {
-    return createAssistantMessage('skill_level_up', `${skill.name}スキルがレベルアップしました。行動がしっかり育ちになっています。`, 'playful')
+    return createAssistantMessage(
+      'skill_level_up',
+      `${skill.name}スキルがレベルアップしました。続けた分だけ成長が形になっています。`,
+      'playful',
+    )
   }
   if (skill) {
-    return createAssistantMessage('quest_completed', `ナイスです。${quest.title}をクリアしました。${skill.name}が少しずつ伸びています。`, 'bright')
+    return createAssistantMessage(
+      'quest_completed',
+      `${quest.title}をクリアしました。${skill.name}が少しずつ育っています。`,
+      'bright',
+    )
   }
-  return createAssistantMessage('quest_completed', `ナイスです。${quest.title}をクリアしました。経験値が積み上がっています。`, 'bright')
+  return createAssistantMessage(
+    'quest_completed',
+    `${quest.title}をクリアしました。今日の成長がしっかり積み上がっています。`,
+    'bright',
+  )
 }
 
 export function buildQuestDraft(quest?: Quest): Quest {
@@ -591,7 +802,11 @@ export function prepareExportPayload(state: PersistedAppState): PersistedAppStat
   }
 }
 
-export function mergeImportedState(current: PersistedAppState, imported: Partial<PersistedAppState>, mode: 'merge' | 'replace') {
+export function mergeImportedState(
+  current: PersistedAppState,
+  imported: Partial<PersistedAppState>,
+  mode: 'merge' | 'replace',
+) {
   if (mode === 'replace') {
     return hydratePersistedState({
       user: imported.user ?? createDefaultUser(),
@@ -632,12 +847,24 @@ export function maybeCreatePeriodicMessages(state: PersistedAppState) {
   const messages = [...state.assistantMessages]
 
   if (state.meta.lastDailySummaryDate !== todayKey) {
-    messages.unshift(createAssistantMessage('daily_summary', `今日は${getDashboardView(state).todayCompletionCount}件を積み上げています。`, 'bright'))
+    messages.unshift(
+      createAssistantMessage(
+        'daily_summary',
+        `今日は${getDashboardView(state).todayCompletionCount}件のクエストを達成しました。良い流れです。`,
+        'bright',
+      ),
+    )
     nextMeta.lastDailySummaryDate = todayKey
   }
 
   if (state.completions.length > 0 && state.meta.lastWeeklyReflectionWeek !== weekKey) {
-    messages.unshift(createAssistantMessage('weekly_reflection', 'この1週間の積み上げをリリィが振り返りました。', 'calm'))
+    messages.unshift(
+      createAssistantMessage(
+        'weekly_reflection',
+        'この1週間の成長をふりかえって、続けたい流れを見つけましょう。',
+        'calm',
+      ),
+    )
     nextMeta.lastWeeklyReflectionWeek = weekKey
   }
 
@@ -647,7 +874,13 @@ export function maybeCreatePeriodicMessages(state: PersistedAppState) {
     state.meta.lastNotificationCheckDate !== todayKey &&
     getDashboardView(state).todayCompletionCount === 0
   ) {
-    messages.unshift(createAssistantMessage('nudge', '今日はまだ未クリアです。やさしいクエストから1件だけ進めてみましょう。', 'calm'))
+    messages.unshift(
+      createAssistantMessage(
+        'nudge',
+        '今日はまだクエストが進んでいません。小さな一歩から始めてみましょう。',
+        'calm',
+      ),
+    )
     nextMeta.lastNotificationCheckDate = todayKey
   }
 
@@ -686,7 +919,9 @@ export function getQuestStatusTone(availability: QuestAvailability) {
 }
 
 export function getRelatedSkills(state: PersistedAppState, skill: Skill) {
-  return state.skills.filter((entry) => entry.id !== skill.id && entry.status === 'active' && entry.category === skill.category)
+  return state.skills.filter(
+    (entry) => entry.id !== skill.id && entry.status === 'active' && entry.category === skill.category,
+  )
 }
 
 export function getSkillLinkedQuests(state: PersistedAppState, skillId: string) {
@@ -694,7 +929,9 @@ export function getSkillLinkedQuests(state: PersistedAppState, skillId: string) 
     (quest) =>
       quest.fixedSkillId === skillId ||
       quest.defaultSkillId === skillId ||
-      state.completions.some((completion) => completion.questId === quest.id && completion.resolvedSkillId === skillId),
+      state.completions.some(
+        (completion) => completion.questId === quest.id && completion.resolvedSkillId === skillId,
+      ),
   )
 }
 

@@ -46,8 +46,8 @@ describe('app store', () => {
   it('merges skills and rewrites quest references', () => {
     const state = useAppStore.getState()
     const reading = state.skills.find((entry) => entry.name === '読書')
-    const exercise = state.skills.find((entry) => entry.name === '運動')
-    const exerciseQuest = state.quests.find((entry) => entry.title === '腕立て伏せをする')
+    const exercise = state.skills.find((entry) => entry.name === '有酸素運動')
+    const exerciseQuest = state.quests.find((entry) => entry.title === 'エアロバイクを漕ぐ')
     expect(reading).toBeTruthy()
     expect(exercise).toBeTruthy()
     expect(exerciseQuest).toBeTruthy()

@@ -25,12 +25,7 @@ import type {
   SkillResolutionResult,
   UserSettings,
 } from '@/domain/types'
-import {
-  getDayKey,
-  getWeekKey,
-  isUndoable,
-  nowIso,
-} from '@/lib/date'
+import { getDayKey, getWeekKey, isUndoable, nowIso } from '@/lib/date'
 import {
   generateLilyMessageWithProvider,
   generateTtsAudio,
@@ -71,10 +66,7 @@ interface AppStore extends PersistedAppState {
   undoCompletion: (completionId: string) => { ok: boolean; reason?: string }
   mergeSkills: (sourceSkillId: string, targetSkillId: string) => { ok: boolean; reason?: string }
   setSettings: (partial: Partial<UserSettings>) => void
-  setAiConfig: (
-    provider: 'openai' | 'gemini',
-    patch: Partial<AiConfig['providers']['openai']>,
-  ) => void
+  setAiConfig: (provider: 'openai' | 'gemini', patch: Partial<AiConfig['providers']['openai']>) => void
   setActiveProvider: (provider: AiConfig['activeProvider']) => void
   testConnection: (provider: 'openai' | 'gemini') => Promise<void>
   playAssistantMessage: (messageId: string) => Promise<void>
@@ -121,7 +113,7 @@ function scheduleNotification(message: AssistantMessage, settings: UserSettings)
     return
   }
 
-  new Notification('自分育成ゲーム', { body: message.text })
+  new Notification('自分育成アプリ', { body: message.text })
 }
 
 function buildCompletionFallbackMessage(state: PersistedAppState, completion: QuestCompletion) {
@@ -219,6 +211,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     gemini: { status: 'idle' },
   },
   importMode: 'merge',
+
   initialize: () => {
     if (get().hydrated) {
       return
@@ -236,6 +229,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       },
     })
   },
+
   upsertQuest: (quest) => {
     const state = get()
     const existing = state.quests.some((entry) => entry.id === quest.id)
@@ -255,6 +249,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     persistState(nextState)
     set(nextState)
   },
+
   archiveQuest: (questId) => {
     const state = get()
     const nextState = reconcileState({
@@ -272,6 +267,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     persistState(nextState)
     set(nextState)
   },
+
   reopenQuest: (questId) => {
     const state = get()
     const nextState = reconcileState({
@@ -289,6 +285,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     persistState(nextState)
     set(nextState)
   },
+
   completeQuest: async (questId, options) => {
     const state = get()
     const quest = state.quests.find((entry) => entry.id === questId)
@@ -304,7 +301,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const recentKey = `${questId}:${getDayKey(new Date())}`
     const recentTimestamp = recentQuestRequests.get(recentKey)
     if (recentTimestamp && Date.now() - recentTimestamp < 2500) {
-      return { error: '連続送信を防ぐため少し待ってください。' }
+      return { error: '連続で送信されました。少し待ってからもう一度試してください。' }
     }
     recentQuestRequests.set(recentKey, Date.now())
 
@@ -339,18 +336,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
       quest.skillMappingMode === 'fixed' && quest.fixedSkillId
         ? {
             action: 'assign_existing' as const,
-            skillName: state.skills.find((skill) => skill.id === quest.fixedSkillId)?.name ?? '固定スキル',
-            category: state.skills.find((skill) => skill.id === quest.fixedSkillId)?.category ?? quest.category ?? 'その他',
+            skillName:
+              state.skills.find((skill) => skill.id === quest.fixedSkillId)?.name ?? '固定スキル',
+            category:
+              state.skills.find((skill) => skill.id === quest.fixedSkillId)?.category ??
+              quest.category ??
+              'その他',
             confidence: 1,
-            reason: '固定スキル設定のため即時反映しました。',
-            candidateSkills: [state.skills.find((skill) => skill.id === quest.fixedSkillId)?.name ?? '固定スキル'],
+            reason: '固定スキル設定に基づいて即時反映しました。',
+            candidateSkills: [
+              state.skills.find((skill) => skill.id === quest.fixedSkillId)?.name ?? '固定スキル',
+            ],
           }
-        : buildTemplateSkillResolution(
-            quest,
-            baseCompletion.note,
-            state.skills,
-            state.personalSkillDictionary,
-          )
+        : buildTemplateSkillResolution(quest, baseCompletion.note, state.skills, state.personalSkillDictionary)
 
     if (quest.skillMappingMode === 'fixed' && quest.fixedSkillId) {
       nextState = applySkillResolutionToCompletion({
@@ -368,7 +366,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         skillId: quest.defaultSkillId,
         mode: quest.skillMappingMode,
         source: 'ai',
-        reason: '以前の解決結果を再利用',
+        reason: '前回の解決結果を再利用',
       })
     } else if (!hasUsableAi(state.aiConfig, state.settings) || quest.privacyMode === 'no_ai') {
       if (fallbackResolution.confidence >= 0.8 && fallbackResolution.skillName !== '未分類') {
@@ -447,7 +445,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     const completion = nextState.completions.find((entry) => entry.id === completionId)
     if (!completion) {
-      return { error: 'クリア処理に失敗しました。' }
+      return { error: 'クエスト完了の保存に失敗しました。' }
     }
 
     const fallbackMessage = buildCompletionFallbackMessage(nextState, completion)
@@ -487,7 +485,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
                 xpReward: quest.xpReward,
               },
               skill: completion.resolvedSkillId
-                ? get().skills.find((skill) => skill.id === resolveMergedSkillId(completion.resolvedSkillId, get().skills))?.name
+                ? get().skills.find((skill) =>
+                    skill.id === resolveMergedSkillId(completion.resolvedSkillId, get().skills),
+                  )?.name
                 : undefined,
             },
           })
@@ -527,6 +527,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     scheduleNotification(fallbackMessage, nextState.settings)
     return { completionId }
   },
+
   resolveCompletionCandidates: async (completionId, result) => {
     const state = get()
     const completion = state.completions.find((entry) => entry.id === completionId)
@@ -629,6 +630,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     persistState(nextState)
     set(nextState)
   },
+
   confirmCompletionSkill: (completionId, skillId) => {
     const state = get()
     const completion = state.completions.find((entry) => entry.id === completionId)
@@ -649,6 +651,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     persistState(nextState)
     set(nextState)
   },
+
   undoCompletion: (completionId) => {
     const state = get()
     const completion = state.completions.find((entry) => entry.id === completionId)
@@ -684,10 +687,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set(nextState)
     return { ok: true }
   },
+
   mergeSkills: (sourceSkillId, targetSkillId) => {
     const state = get()
     if (sourceSkillId === targetSkillId) {
-      return { ok: false, reason: '同じスキルには統合できません。' }
+      return { ok: false, reason: '同じスキル同士は統合できません。' }
     }
 
     const source = state.skills.find((skill) => skill.id === sourceSkillId)
@@ -728,6 +732,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set(nextState)
     return { ok: true }
   },
+
   setSettings: (partial) => {
     const state = get()
     const nextState = reconcileState({
@@ -752,6 +757,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       })
     }
   },
+
   setAiConfig: (provider, patch) => {
     const state = get()
     const providerConfig = state.aiConfig.providers[provider]
@@ -772,6 +778,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     persistState(nextState)
     set(nextState)
   },
+
   setActiveProvider: (provider) => {
     const state = get()
     const nextState = reconcileState({
@@ -784,6 +791,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     persistState(nextState)
     set(nextState)
   },
+
   testConnection: async (provider) => {
     set((state) => ({
       connectionState: {
@@ -820,7 +828,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ...get().connectionState,
           [provider]: {
             status: 'success',
-            message: `接続成功 / ${maskApiKey(nextState.aiConfig.providers[provider].apiKey)}`,
+            message: `接続に成功しました: ${maskApiKey(nextState.aiConfig.providers[provider].apiKey)}`,
           },
         },
       })
@@ -848,12 +856,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ...get().connectionState,
           [provider]: {
             status: 'error',
-            message: error instanceof Error ? error.message : '接続に失敗しました。',
+            message: error instanceof Error ? error.message : '接続確認に失敗しました。',
           },
         },
       })
     }
   },
+
   playAssistantMessage: async (messageId) => {
     const state = get()
     const message = state.assistantMessages.find((entry) => entry.id === messageId)
@@ -886,11 +895,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     }
   },
+
   exportData: () => {
     const state = get()
     const payload = prepareExportPayload(state)
     downloadJson(`self-growth-export-${getDayKey(new Date())}.json`, payload)
   },
+
   importData: (jsonText, mode) => {
     try {
       const parsed = JSON.parse(jsonText) as Partial<PersistedAppState>
@@ -901,10 +912,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (error) {
       return {
         ok: false,
-        reason: error instanceof Error ? error.message : 'JSONの読み込みに失敗しました。',
+        reason: error instanceof Error ? error.message : 'JSON の読み込みに失敗しました。',
       }
     }
   },
+
   resetLocalData: () => {
     clearPersistedState()
     const reset = hydratePersistedState()
@@ -919,6 +931,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       },
     })
   },
+
   setImportMode: (mode) => {
     set({ importMode: mode })
   },

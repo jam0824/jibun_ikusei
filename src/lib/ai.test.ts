@@ -146,4 +146,47 @@ describe('ai adapter', () => {
     expect(result.text).toBe('nice job')
     expect(result.shouldSpeak).toBe(true)
   })
+
+  it('retries OpenAI responses on 500 and then succeeds', async () => {
+    const state = hydratePersistedState()
+    state.aiConfig.providers.openai.apiKey = 'sk-test'
+
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: {
+              message: 'temporary server issue',
+              type: 'server_error',
+            },
+          }),
+          {
+            status: 500,
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            output_text: '{"intent":"quest_completed","mood":"bright","text":"retry ok","shouldSpeak":false}',
+          }),
+          { status: 200 },
+        ),
+      )
+
+    const result = await generateLilyMessageWithProvider({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      payload: {
+        intent: 'quest_completed',
+      },
+    })
+
+    expect(result.text).toBe('retry ok')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
 })

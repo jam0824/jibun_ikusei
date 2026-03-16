@@ -20,20 +20,26 @@ export function HomeScreen() {
     assistantMessages,
     settings,
     completeQuest,
-  } = useAppStore(useShallow((state) => ({
-    user: state.user,
-    quests: state.quests,
-    completions: state.completions,
-    skills: state.skills,
-    assistantMessages: state.assistantMessages,
-    settings: state.settings,
-    completeQuest: state.completeQuest,
-  })))
+  } = useAppStore(
+    useShallow((state) => ({
+      user: state.user,
+      quests: state.quests,
+      completions: state.completions,
+      skills: state.skills,
+      assistantMessages: state.assistantMessages,
+      settings: state.settings,
+      completeQuest: state.completeQuest,
+    })),
+  )
 
   const levelInfo = useMemo(() => getLevelFromXp(user.totalXp, 100), [user.totalXp])
+  const todayKey = new Date().toISOString().slice(0, 10)
   const todayCompletions = useMemo(
-    () => completions.filter((completion) => !completion.undoneAt && completion.completedAt.slice(0, 10) === new Date().toISOString().slice(0, 10)),
-    [completions],
+    () =>
+      completions.filter(
+        (completion) => !completion.undoneAt && completion.completedAt.slice(0, 10) === todayKey,
+      ),
+    [completions, todayKey],
   )
 
   const todayXp = todayCompletions.reduce((sum, completion) => sum + completion.userXpAwarded, 0)
@@ -43,10 +49,8 @@ export function HomeScreen() {
     .sort((left, right) => {
       const leftAvailability = getQuestAvailability(left, completions)
       const rightAvailability = getQuestAvailability(right, completions)
-      const leftScore =
-        (left.pinned ? 100 : 0) + (leftAvailability.canComplete ? 20 : 0) + left.xpReward
-      const rightScore =
-        (right.pinned ? 100 : 0) + (rightAvailability.canComplete ? 20 : 0) + right.xpReward
+      const leftScore = (left.pinned ? 100 : 0) + (leftAvailability.canComplete ? 20 : 0) + left.xpReward
+      const rightScore = (right.pinned ? 100 : 0) + (rightAvailability.canComplete ? 20 : 0) + right.xpReward
       return rightScore - leftScore
     })
     .slice(0, 5)
@@ -59,7 +63,7 @@ export function HomeScreen() {
     return (
       <Screen
         title="ホーム"
-        subtitle="今日の成長とクエスト"
+        subtitle="今日の成長とクエストを確認しましょう"
         action={
           <Button size="icon" onClick={() => navigate('/settings')}>
             <Settings2 className="h-5 w-5" />
@@ -67,12 +71,12 @@ export function HomeScreen() {
         }
       >
         <EmptyState
-          title="最初のクエストを作りましょう"
-          description="読書や運動など、今日から育てたい行動を1件登録するとホームが動き始めます。"
+          title="最初のクエストを追加しましょう"
+          description="読書や運動など、繰り返したい行動を登録するとホームにおすすめが並びます。"
           action={
             <Button onClick={() => navigate('/quests/new')}>
               <Plus className="h-4 w-4" />
-              クエストを作る
+              クエストを追加
             </Button>
           }
         />
@@ -83,7 +87,7 @@ export function HomeScreen() {
   return (
     <Screen
       title="ホーム"
-      subtitle="今日の成長とクエスト"
+      subtitle="今日の成長とクエストを確認しましょう"
       action={
         <Button size="icon" onClick={() => navigate('/settings')}>
           <Settings2 className="h-5 w-5" />
@@ -122,11 +126,26 @@ export function HomeScreen() {
       </Card>
 
       <section className="mt-5">
-        <SectionHeader title="今日の成長サマリー" />
+        <SectionHeader title="今日のサマリー" />
         <div className="grid grid-cols-3 gap-3">
-          <Card><CardContent className="p-4"><div className="text-xs text-slate-500">今日のクリア</div><div className="mt-1 text-xl font-black text-slate-900">{todayCompletions.length}件</div></CardContent></Card>
-          <Card><CardContent className="p-4"><div className="text-xs text-slate-500">獲得XP</div><div className="mt-1 text-xl font-black text-slate-900">+{todayXp}</div></CardContent></Card>
-          <Card><CardContent className="p-4"><div className="text-xs text-slate-500">伸びたスキル</div><div className="mt-1 text-sm font-semibold text-slate-900">{topSkills[0]?.name ?? 'まだなし'}</div></CardContent></Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-xs text-slate-500">今日のクリア</div>
+              <div className="mt-1 text-xl font-black text-slate-900">{todayCompletions.length}件</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-xs text-slate-500">獲得XP</div>
+              <div className="mt-1 text-xl font-black text-slate-900">+{todayXp}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-xs text-slate-500">伸びたスキル</div>
+              <div className="mt-1 text-sm font-semibold text-slate-900">{topSkills[0]?.name ?? 'まだなし'}</div>
+            </CardContent>
+          </Card>
         </div>
       </section>
 
@@ -140,15 +159,20 @@ export function HomeScreen() {
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <div className="text-sm font-semibold text-slate-900">リリィ</div>
+                  <div className="text-sm font-semibold text-slate-900">最新コメント</div>
                   <Badge>ナビゲーター</Badge>
                 </div>
                 <div className="mt-2 text-sm leading-6 text-slate-600">
-                  {latestMessage?.text ?? '今日も1件ずつ積み上げていきましょう。'}
+                  {latestMessage?.text ?? '今日の達成を積み重ねると、ここにリリィのコメントが表示されます。'}
                 </div>
               </div>
               {latestMessage ? (
-                <Button size="icon" variant="secondary" className="rounded-2xl" onClick={() => void useAppStore.getState().playAssistantMessage(latestMessage.id)}>
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className="rounded-2xl"
+                  onClick={() => void useAppStore.getState().playAssistantMessage(latestMessage.id)}
+                >
                   <Play className="h-4 w-4" />
                 </Button>
               ) : null}
@@ -170,13 +194,19 @@ export function HomeScreen() {
           {recommendedQuests.map((quest) => {
             const availability = getQuestAvailability(quest, completions)
             const skill = skills.find((entry) => entry.id === (quest.fixedSkillId ?? quest.defaultSkillId))
+            const actionLabel = availability.canComplete
+              ? 'クリア'
+              : quest.status === 'completed'
+                ? '再オープン'
+                : '詳細'
+
             return (
               <QuestCard
                 key={quest.id}
                 quest={quest}
                 availability={availability}
                 skill={skill}
-                actionLabel={availability.canComplete ? 'クリア' : quest.status === 'completed' ? '再オープン' : '詳細'}
+                actionLabel={actionLabel}
                 onAction={() => {
                   if (availability.canComplete) {
                     const next = new URLSearchParams(searchParams)
@@ -202,15 +232,24 @@ export function HomeScreen() {
       <section className="mt-5">
         <SectionHeader title="クイックアクション" />
         <div className="grid grid-cols-3 gap-3">
-          <button className="rounded-2xl bg-violet-600 px-3 py-4 text-left text-white shadow-sm" onClick={() => navigate('/quests/new')}>
+          <button
+            className="rounded-2xl bg-violet-600 px-3 py-4 text-left text-white shadow-sm"
+            onClick={() => navigate('/quests/new')}
+          >
             <Plus className="mb-3 h-5 w-5" />
             <div className="text-sm font-semibold">クエスト追加</div>
           </button>
-          <button className="rounded-2xl border border-slate-200 bg-white px-3 py-4 text-left text-slate-700 shadow-sm" onClick={() => navigate('/skills')}>
+          <button
+            className="rounded-2xl border border-slate-200 bg-white px-3 py-4 text-left text-slate-700 shadow-sm"
+            onClick={() => navigate('/skills')}
+          >
             <Target className="mb-3 h-5 w-5" />
             <div className="text-sm font-semibold">スキルを見る</div>
           </button>
-          <button className="rounded-2xl border border-slate-200 bg-white px-3 py-4 text-left text-slate-700 shadow-sm" onClick={() => navigate('/records')}>
+          <button
+            className="rounded-2xl border border-slate-200 bg-white px-3 py-4 text-left text-slate-700 shadow-sm"
+            onClick={() => navigate('/records')}
+          >
             <Trophy className="mb-3 h-5 w-5" />
             <div className="text-sm font-semibold">記録を見る</div>
           </button>
@@ -226,7 +265,9 @@ export function HomeScreen() {
             <div className="min-w-0 flex-1">
               <div className="text-sm font-semibold text-slate-900">今日の成長ハイライト</div>
               <div className="mt-1 text-sm text-slate-600">
-                {topSkills.length > 0 ? `「${topSkills[0].name}」がじわっと育っています。` : '最初のクエストから始めてみましょう。'}
+                {topSkills.length > 0
+                  ? `${topSkills[0].name}がじわっと伸びています。`
+                  : 'クエストを進めると、ここに今日の成長ハイライトが表示されます。'}
               </div>
             </div>
             <ChevronRight className="h-4 w-4 text-slate-400" />

@@ -28,7 +28,7 @@ function createProviderConfig(provider: 'openai' | 'gemini'): ProviderConfig {
     updatedAt: now,
     model: GEMINI_MODELS.text,
     ttsModel: GEMINI_MODELS.tts,
-    voice: 'Kore',
+    voice: 'Zephyr',
     status: 'unverified',
   }
 }
@@ -98,7 +98,7 @@ export function createWelcomeMessage(): AssistantMessage {
     id: createId('msg'),
     triggerType: 'nudge',
     mood: 'bright',
-    text: '最初のクエストを作って、今日の成長を始めましょう。',
+    text: '最初のクエストを追加して、今日の成長を始めましょう。',
     createdAt: nowIso(),
   }
 }

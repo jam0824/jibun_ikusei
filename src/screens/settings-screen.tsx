@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Download, Eye, EyeOff, Settings2, Trash2, Upload } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { GEMINI_VOICES, OPENAI_VOICES } from '@/domain/constants'
 import { maskApiKey } from '@/domain/logic'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Select, Switch } from '@/components/ui'
@@ -24,7 +25,7 @@ export function SettingsScreen() {
   return (
     <Screen
       title="設定"
-      subtitle="AI、音声、通知、データ管理を調整します"
+      subtitle="AI、音声、通知、データ管理を調整できます"
       action={
         <Button size="icon" onClick={() => navigate('/')}>
           <Settings2 className="h-5 w-5" />
@@ -34,11 +35,11 @@ export function SettingsScreen() {
       <section className="space-y-3">
         <Card>
           <CardContent className="space-y-4 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">リリィ音声</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Lily Voice</div>
             <div className="flex items-center justify-between gap-4">
               <div>
                 <div className="text-sm font-semibold text-slate-900">音声を有効化</div>
-                <div className="mt-1 text-xs text-slate-500">AI音声またはブラウザ音声でリリィを再生します。</div>
+                <div className="mt-1 text-xs text-slate-500">AI音声またはブラウザ音声で Lily を再生します。</div>
               </div>
               <Switch
                 checked={state.settings.lilyVoiceEnabled}
@@ -49,7 +50,9 @@ export function SettingsScreen() {
               <div className="mb-2 text-sm font-semibold text-slate-900">自動再生</div>
               <Select
                 value={state.settings.lilyAutoPlay}
-                onChange={(event) => state.setSettings({ lilyAutoPlay: event.target.value as 'on' | 'tap_only' | 'off' })}
+                onChange={(event) =>
+                  state.setSettings({ lilyAutoPlay: event.target.value as 'on' | 'tap_only' | 'off' })
+                }
               >
                 <option value="on">ON</option>
                 <option value="tap_only">タップ時のみ</option>
@@ -61,11 +64,11 @@ export function SettingsScreen() {
 
         <Card>
           <CardContent className="space-y-4 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">通知</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Notifications</div>
             <div className="flex items-center justify-between gap-4">
               <div>
-                <div className="text-sm font-semibold text-slate-900">アプリ内リマインド</div>
-                <div className="mt-1 text-xs text-slate-500">未クリア時の軽い促しを表示します。</div>
+                <div className="text-sm font-semibold text-slate-900">通知を有効化</div>
+                <div className="mt-1 text-xs text-slate-500">未完了のときにリマインド通知を表示します。</div>
               </div>
               <Switch
                 checked={state.settings.notificationsEnabled}
@@ -85,13 +88,16 @@ export function SettingsScreen() {
 
         <Card>
           <CardContent className="space-y-4 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">AI設定</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">AI</div>
             <div className="flex items-center justify-between gap-4">
               <div>
                 <div className="text-sm font-semibold text-slate-900">AI利用</div>
-                <div className="mt-1 text-xs text-slate-500">スキル抽象化とリリィ文生成を行います。</div>
+                <div className="mt-1 text-xs text-slate-500">スキル判定と Lily メッセージ生成に使います。</div>
               </div>
-              <Switch checked={state.settings.aiEnabled} onCheckedChange={(checked) => state.setSettings({ aiEnabled: checked })} />
+              <Switch
+                checked={state.settings.aiEnabled}
+                onCheckedChange={(checked) => state.setSettings({ aiEnabled: checked })}
+              />
             </div>
             <div>
               <div className="mb-2 text-sm font-semibold text-slate-900">アクティブプロバイダ</div>
@@ -101,7 +107,7 @@ export function SettingsScreen() {
               >
                 <option value="openai">OpenAI</option>
                 <option value="gemini">Gemini</option>
-                <option value="none">利用しない</option>
+                <option value="none">使用しない</option>
               </Select>
             </div>
 
@@ -111,7 +117,15 @@ export function SettingsScreen() {
                   <div className="text-sm font-semibold text-slate-900">OpenAI</div>
                   <div className="text-xs text-slate-500">{maskApiKey(state.aiConfig.providers.openai.apiKey)}</div>
                 </div>
-                <Badge tone={providerStatus.openai === 'verified' ? 'success' : providerStatus.openai === 'invalid' ? 'danger' : 'outline'}>
+                <Badge
+                  tone={
+                    providerStatus.openai === 'verified'
+                      ? 'success'
+                      : providerStatus.openai === 'invalid'
+                        ? 'danger'
+                        : 'outline'
+                  }
+                >
                   {providerStatus.openai}
                 </Badge>
               </div>
@@ -126,11 +140,47 @@ export function SettingsScreen() {
                   {openAiVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Button variant="outline" onClick={() => void state.testConnection('openai')}>接続テスト</Button>
-                <Button variant="secondary" onClick={() => state.setAiConfig('openai', { apiKey: '', status: 'unverified' })}>キー削除</Button>
+              <div className="mt-3 grid gap-3">
+                <div>
+                  <div className="mb-2 text-sm font-semibold text-slate-900">Text model</div>
+                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    {state.aiConfig.providers.openai.model}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 text-sm font-semibold text-slate-900">TTS model</div>
+                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    {state.aiConfig.providers.openai.ttsModel}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 text-sm font-semibold text-slate-900">Voice</div>
+                  <Select
+                    value={state.aiConfig.providers.openai.voice}
+                    onChange={(event) => state.setAiConfig('openai', { voice: event.target.value })}
+                  >
+                    {OPENAI_VOICES.map((voice) => (
+                      <option key={voice} value={voice}>
+                        {voice}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
               </div>
-              {state.connectionState.openai.message ? <div className="mt-2 text-xs text-slate-500">{state.connectionState.openai.message}</div> : null}
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Button variant="outline" onClick={() => void state.testConnection('openai')}>
+                  接続テスト
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => state.setAiConfig('openai', { apiKey: '', status: 'unverified' })}
+                >
+                  キーを消去
+                </Button>
+              </div>
+              {state.connectionState.openai.message ? (
+                <div className="mt-2 text-xs text-slate-500">{state.connectionState.openai.message}</div>
+              ) : null}
             </div>
 
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -139,7 +189,15 @@ export function SettingsScreen() {
                   <div className="text-sm font-semibold text-slate-900">Gemini</div>
                   <div className="text-xs text-slate-500">{maskApiKey(state.aiConfig.providers.gemini.apiKey)}</div>
                 </div>
-                <Badge tone={providerStatus.gemini === 'verified' ? 'success' : providerStatus.gemini === 'invalid' ? 'danger' : 'outline'}>
+                <Badge
+                  tone={
+                    providerStatus.gemini === 'verified'
+                      ? 'success'
+                      : providerStatus.gemini === 'invalid'
+                        ? 'danger'
+                        : 'outline'
+                  }
+                >
                   {providerStatus.gemini}
                 </Badge>
               </div>
@@ -154,22 +212,58 @@ export function SettingsScreen() {
                   {geminiVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <Button variant="outline" onClick={() => void state.testConnection('gemini')}>接続テスト</Button>
-                <Button variant="secondary" onClick={() => state.setAiConfig('gemini', { apiKey: '', status: 'unverified' })}>キー削除</Button>
+              <div className="mt-3 grid gap-3">
+                <div>
+                  <div className="mb-2 text-sm font-semibold text-slate-900">Text model</div>
+                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    {state.aiConfig.providers.gemini.model}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 text-sm font-semibold text-slate-900">TTS model</div>
+                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                    {state.aiConfig.providers.gemini.ttsModel}
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-2 text-sm font-semibold text-slate-900">Speaker</div>
+                  <Select
+                    value={state.aiConfig.providers.gemini.voice}
+                    onChange={(event) => state.setAiConfig('gemini', { voice: event.target.value })}
+                  >
+                    {GEMINI_VOICES.map((voice) => (
+                      <option key={voice} value={voice}>
+                        {voice}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
               </div>
-              {state.connectionState.gemini.message ? <div className="mt-2 text-xs text-slate-500">{state.connectionState.gemini.message}</div> : null}
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <Button variant="outline" onClick={() => void state.testConnection('gemini')}>
+                  接続テスト
+                </Button>
+                <Button
+                  variant="secondary"
+                  onClick={() => state.setAiConfig('gemini', { apiKey: '', status: 'unverified' })}
+                >
+                  キーを消去
+                </Button>
+              </div>
+              {state.connectionState.gemini.message ? (
+                <div className="mt-2 text-xs text-slate-500">{state.connectionState.gemini.message}</div>
+              ) : null}
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardContent className="space-y-4 p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">データ管理</div>
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Data</div>
             <div className="grid grid-cols-2 gap-2">
               <Button variant="outline" onClick={() => state.exportData()}>
                 <Download className="h-4 w-4" />
-                JSONエクスポート
+                JSON Export
               </Button>
               <Button
                 variant="outline"
@@ -194,17 +288,24 @@ export function SettingsScreen() {
                 }}
               >
                 <Upload className="h-4 w-4" />
-                JSONインポート
+                JSON Import
               </Button>
             </div>
             <div>
-              <div className="mb-2 text-sm font-semibold text-slate-900">インポート方法</div>
-              <Select value={state.importMode} onChange={(event) => state.setImportMode(event.target.value as 'merge' | 'replace')}>
+              <div className="mb-2 text-sm font-semibold text-slate-900">Import mode</div>
+              <Select
+                value={state.importMode}
+                onChange={(event) => state.setImportMode(event.target.value as 'merge' | 'replace')}
+              >
                 <option value="merge">統合</option>
                 <option value="replace">置換</option>
               </Select>
             </div>
-            {importError ? <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{importError}</div> : null}
+            {importError ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {importError}
+              </div>
+            ) : null}
             <Button
               variant="danger"
               onClick={() => {
@@ -215,7 +316,7 @@ export function SettingsScreen() {
               }}
             >
               <Trash2 className="h-4 w-4" />
-              全ローカルデータ削除
+              ローカルデータ削除
             </Button>
           </CardContent>
         </Card>

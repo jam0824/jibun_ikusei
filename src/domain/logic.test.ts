@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { hydratePersistedState, getQuestAvailability, buildTemplateSkillResolution, mergeImportedState } from '@/domain/logic'
+import {
+  buildTemplateSkillResolution,
+  getQuestAvailability,
+  hydratePersistedState,
+  mergeImportedState,
+} from '@/domain/logic'
 
 describe('domain logic', () => {
   it('marks repeatable quest as cooling down after completion', () => {
@@ -38,7 +43,7 @@ describe('domain logic', () => {
 
     const result = buildTemplateSkillResolution(
       quest!,
-      '今日は3ページ進んだ',
+      '今日は3ページ読んだ',
       state.skills,
       [
         {
@@ -73,5 +78,33 @@ describe('domain logic', () => {
     )
 
     expect(replaced.aiConfig.providers.openai.apiKey).toBe('sk-live-current')
+  })
+
+  it('migrates legacy provider defaults to current models and speaker', () => {
+    const state = hydratePersistedState({
+      aiConfig: {
+        activeProvider: 'openai',
+        providers: {
+          openai: {
+            apiKey: 'sk-test',
+            model: 'gpt-5-mini',
+            ttsModel: 'gpt-4o-mini-tts',
+            voice: 'alloy',
+            updatedAt: new Date().toISOString(),
+          },
+          gemini: {
+            apiKey: 'gm-test',
+            model: 'gemini-2.5-flash',
+            ttsModel: 'gemini-2.5-flash-preview-tts',
+            voice: 'Kore',
+            updatedAt: new Date().toISOString(),
+          },
+        },
+      },
+    })
+
+    expect(state.aiConfig.providers.openai.model).toBe('gpt-5.4')
+    expect(state.aiConfig.providers.gemini.ttsModel).toBe('gemini-2.5-flash-tts')
+    expect(state.aiConfig.providers.gemini.voice).toBe('Zephyr')
   })
 })

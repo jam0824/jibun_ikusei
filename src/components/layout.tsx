@@ -32,7 +32,7 @@ export function AppHeader({
     <header className="sticky top-0 z-10 border-b border-slate-200/80 bg-white/85 px-4 pb-4 pt-4 backdrop-blur">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-xs font-medium text-slate-500">自分育成ゲーム</div>
+          <div className="text-xs font-medium text-slate-500">自分育成アプリ</div>
           <div className="mt-1 text-2xl font-black tracking-tight text-slate-900">{title}</div>
           <div className="mt-1 text-sm text-slate-500">{subtitle}</div>
         </div>

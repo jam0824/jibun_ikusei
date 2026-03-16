@@ -1,6 +1,11 @@
 import { ArrowRightLeft, Flame, Link2, Sparkles, X } from 'lucide-react'
 import type { PersistedAppState, Skill } from '@/domain/types'
-import { getRelatedSkills, getSevenDaySkillGain, getSkillLinkedQuests, getSkillRecentCompletions } from '@/domain/logic'
+import {
+  getRelatedSkills,
+  getSevenDaySkillGain,
+  getSkillLinkedQuests,
+  getSkillRecentCompletions,
+} from '@/domain/logic'
 import { formatDateTime } from '@/lib/date'
 import { Badge, Button, Card, CardContent, Progress } from '@/components/ui'
 
@@ -56,12 +61,14 @@ export function SkillDetailSheet({
             </div>
             <div className="space-y-2">
               {linkedQuests.length === 0 ? (
-                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">関連クエストはまだありません。</div>
+                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                  関連するクエストはまだありません。
+                </div>
               ) : (
                 linkedQuests.map((quest) => (
                   <div key={quest.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
                     <div className="font-semibold text-slate-900">{quest.title}</div>
-                    <div className="mt-1 text-xs text-slate-500">{quest.description || '説明なし'}</div>
+                    <div className="mt-1 text-xs text-slate-500">{quest.description || '説明はまだありません'}</div>
                   </div>
                 ))
               )}
@@ -75,7 +82,9 @@ export function SkillDetailSheet({
             </div>
             <div className="space-y-2">
               {recentCompletions.length === 0 ? (
-                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">まだ成長ログがありません。</div>
+                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                  まだ成長ログがありません。
+                </div>
               ) : (
                 recentCompletions.map((completion) => (
                   <div key={completion.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
@@ -96,13 +105,20 @@ export function SkillDetailSheet({
             </div>
             <div className="space-y-2">
               {relatedSkills.length === 0 ? (
-                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">同カテゴリのスキルはまだありません。</div>
+                <div className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                  同じカテゴリの関連スキルはまだありません。
+                </div>
               ) : (
                 relatedSkills.map((related) => (
-                  <div key={related.id} className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3">
+                  <div
+                    key={related.id}
+                    className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                  >
                     <div>
                       <div className="font-semibold text-slate-900">{related.name}</div>
-                      <div className="text-xs text-slate-500">Lv.{related.level} / {related.totalXp}XP</div>
+                      <div className="text-xs text-slate-500">
+                        Lv.{related.level} / {related.totalXp}XP
+                      </div>
                     </div>
                     <Button variant="outline" size="sm" onClick={() => onMerge(related.id)}>
                       <ArrowRightLeft className="h-4 w-4" />
