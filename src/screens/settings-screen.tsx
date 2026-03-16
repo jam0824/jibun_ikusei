@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Download, Eye, EyeOff, Settings2, Trash2, Upload } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-import { GEMINI_VOICES, OPENAI_VOICES } from '@/domain/constants'
+import { GEMINI_VOICES } from '@/domain/constants'
 import { maskApiKey } from '@/domain/logic'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Select, Switch } from '@/components/ui'
@@ -39,7 +39,7 @@ export function SettingsScreen() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <div className="text-sm font-semibold text-slate-900">音声を有効化</div>
-                <div className="mt-1 text-xs text-slate-500">AI音声またはブラウザ音声で Lily を再生します。</div>
+                <div className="mt-1 text-xs text-slate-500">TTS は Gemini を使い、失敗時はブラウザ音声へフォールバックします。</div>
               </div>
               <Switch
                 checked={state.settings.lilyVoiceEnabled}
@@ -140,31 +140,10 @@ export function SettingsScreen() {
                   {openAiVisible ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
-              <div className="mt-3 grid gap-3">
-                <div>
-                  <div className="mb-2 text-sm font-semibold text-slate-900">Text model</div>
-                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                    {state.aiConfig.providers.openai.model}
-                  </div>
-                </div>
-                <div>
-                  <div className="mb-2 text-sm font-semibold text-slate-900">TTS model</div>
-                  <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                    {state.aiConfig.providers.openai.ttsModel}
-                  </div>
-                </div>
-                <div>
-                  <div className="mb-2 text-sm font-semibold text-slate-900">Voice</div>
-                  <Select
-                    value={state.aiConfig.providers.openai.voice}
-                    onChange={(event) => state.setAiConfig('openai', { voice: event.target.value })}
-                  >
-                    {OPENAI_VOICES.map((voice) => (
-                      <option key={voice} value={voice}>
-                        {voice}
-                      </option>
-                    ))}
-                  </Select>
+              <div className="mt-3">
+                <div className="mb-2 text-sm font-semibold text-slate-900">Text model</div>
+                <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                  {state.aiConfig.providers.openai.model}
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
@@ -228,7 +207,7 @@ export function SettingsScreen() {
                 <div>
                   <div className="mb-2 text-sm font-semibold text-slate-900">Speaker</div>
                   <Select
-                    value={state.aiConfig.providers.gemini.voice}
+                    value={state.aiConfig.providers.gemini.voice ?? 'Zephyr'}
                     onChange={(event) => state.setAiConfig('gemini', { voice: event.target.value })}
                   >
                     {GEMINI_VOICES.map((voice) => (

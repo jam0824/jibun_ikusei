@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hydratePersistedState } from '@/domain/logic'
-import { generateLilyMessageWithProvider, resolveSkillWithProvider, testProviderConnection } from '@/lib/ai'
+import {
+  generateLilyMessageWithProvider,
+  generateTtsAudio,
+  resolveSkillWithProvider,
+  testProviderConnection,
+} from '@/lib/ai'
 
 describe('ai adapter', () => {
   afterEach(() => {
@@ -188,5 +193,98 @@ describe('ai adapter', () => {
 
     expect(result.text).toBe('retry ok')
     expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('uses the Gemini API TTS runtime model and wraps PCM audio as wav', async () => {
+    const state = hydratePersistedState()
+    state.aiConfig.activeProvider = 'gemini'
+    state.aiConfig.providers.gemini.apiKey = 'gm-test'
+    state.settings.aiEnabled = true
+    state.settings.lilyVoiceEnabled = true
+
+    const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:tts')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          candidates: [
+            {
+              content: {
+                parts: [
+                  {
+                    inlineData: {
+                      data: btoa(String.fromCharCode(1, 0, 255, 127)),
+                      mimeType: 'audio/L16;rate=24000',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const result = await generateTtsAudio({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      text: '今日もよく頑張ったね',
+    })
+
+    expect(result).toBe('blob:tts')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toContain('/models/gemini-2.5-flash-preview-tts:generateContent')
+    expect(request.headers).toMatchObject({
+      'Content-Type': 'application/json',
+      'x-goog-api-key': 'gm-test',
+    })
+
+    const body = JSON.parse(String(request.body))
+    expect(body.generationConfig.responseModalities).toEqual(['AUDIO'])
+    expect(body.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Zephyr')
+    expect(body.speechConfig).toBeUndefined()
+
+    const createdBlob = createObjectUrl.mock.calls[0]?.[0]
+    expect(createdBlob).toBeInstanceOf(Blob)
+    const audioBlob = createdBlob as Blob
+    expect(audioBlob.type).toBe('audio/wav')
+
+    const wavHeader = new Uint8Array(await audioBlob.arrayBuffer()).slice(0, 4)
+    expect(Array.from(wavHeader)).toEqual([82, 73, 70, 70])
+  })
+
+  it('includes Gemini TTS error details when the API returns 400', async () => {
+    const state = hydratePersistedState()
+    state.aiConfig.activeProvider = 'gemini'
+    state.aiConfig.providers.gemini.apiKey = 'gm-test'
+    state.settings.aiEnabled = true
+    state.settings.lilyVoiceEnabled = true
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          error: {
+            message: 'Invalid JSON payload.',
+            status: 'INVALID_ARGUMENT',
+          },
+        }),
+        {
+          status: 400,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        },
+      ),
+    )
+
+    await expect(
+      generateTtsAudio({
+        aiConfig: state.aiConfig,
+        settings: state.settings,
+        text: '音声チェック',
+      }),
+    ).rejects.toThrow('Gemini TTS failed: 400 - Invalid JSON payload.')
   })
 })

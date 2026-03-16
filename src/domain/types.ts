@@ -34,8 +34,8 @@ export interface ProviderConfig {
   status?: ProviderStatus
   updatedAt: string
   model: string
-  ttsModel: string
-  voice: string
+  ttsModel?: string
+  voice?: string
 }
 
 export interface AiConfig {

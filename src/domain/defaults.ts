@@ -18,8 +18,6 @@ function createProviderConfig(provider: 'openai' | 'gemini'): ProviderConfig {
     return {
       updatedAt: now,
       model: OPENAI_MODELS.text,
-      ttsModel: OPENAI_MODELS.tts,
-      voice: 'alloy',
       status: 'unverified',
     }
   }

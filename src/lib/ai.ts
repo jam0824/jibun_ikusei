@@ -292,11 +292,12 @@ async function requestGeminiJson<T>({
   systemPrompt?: string
 }) {
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey,
       },
       body: JSON.stringify({
         systemInstruction: {
@@ -321,7 +322,8 @@ async function requestGeminiJson<T>({
   )
 
   if (!response.ok) {
-    throw new Error(`Gemini request failed: ${response.status}`)
+    const details = await readErrorResponse(response)
+    throw new Error(`Gemini request failed: ${response.status}${details ? ` - ${details}` : ''}`)
   }
 
   const payload = (await response.json()) as {
@@ -338,6 +340,73 @@ async function requestGeminiJson<T>({
   }
 
   return JSON.parse(text) as T
+}
+
+function getGeminiTtsRuntimeModel(ttsModel: string) {
+  if (ttsModel === 'gemini-2.5-flash-tts') {
+    return 'gemini-2.5-flash-preview-tts'
+  }
+
+  if (ttsModel === 'gemini-2.5-pro-tts') {
+    return 'gemini-2.5-pro-preview-tts'
+  }
+
+  return ttsModel
+}
+
+function decodeBase64(data: string) {
+  return Uint8Array.from(atob(data), (character) => character.charCodeAt(0))
+}
+
+function getSampleRateFromMimeType(mimeType?: string) {
+  const match = mimeType?.match(/rate=(\d+)/i)
+  return match ? Number(match[1]) : 24000
+}
+
+function pcm16ToWav(bytes: Uint8Array, sampleRate: number, channelCount = 1) {
+  const headerSize = 44
+  const wavBuffer = new ArrayBuffer(headerSize + bytes.byteLength)
+  const view = new DataView(wavBuffer)
+  const blockAlign = channelCount * 2
+  const byteRate = sampleRate * blockAlign
+
+  const writeAscii = (offset: number, value: string) => {
+    for (let index = 0; index < value.length; index += 1) {
+      view.setUint8(offset + index, value.charCodeAt(index))
+    }
+  }
+
+  writeAscii(0, 'RIFF')
+  view.setUint32(4, 36 + bytes.byteLength, true)
+  writeAscii(8, 'WAVE')
+  writeAscii(12, 'fmt ')
+  view.setUint32(16, 16, true)
+  view.setUint16(20, 1, true)
+  view.setUint16(22, channelCount, true)
+  view.setUint32(24, sampleRate, true)
+  view.setUint32(28, byteRate, true)
+  view.setUint16(32, blockAlign, true)
+  view.setUint16(34, 16, true)
+  writeAscii(36, 'data')
+  view.setUint32(40, bytes.byteLength, true)
+  new Uint8Array(wavBuffer, headerSize).set(bytes)
+
+  return new Blob([wavBuffer], { type: 'audio/wav' })
+}
+
+function buildGeminiAudioBlob(inlineData: { data?: string; mimeType?: string }) {
+  if (!inlineData.data) {
+    throw new Error('Gemini TTS payload was empty.')
+  }
+
+  const bytes = decodeBase64(inlineData.data)
+  const mimeType = inlineData.mimeType?.toLowerCase()
+
+  if (!mimeType || mimeType.startsWith('audio/l16') || mimeType.startsWith('audio/pcm')) {
+    return pcm16ToWav(bytes, getSampleRateFromMimeType(mimeType))
+  }
+
+  return new Blob([bytes], { type: inlineData.mimeType })
 }
 
 export async function testProviderConnection(
@@ -499,55 +568,34 @@ export async function generateTtsAudio(params: {
     throw new Error('Audio generation is unavailable.')
   }
 
-  const provider = aiConfig.activeProvider
-  const providerConfig = getProviderConfig(aiConfig)
-  if (!providerConfig?.apiKey || provider === 'none') {
-    throw new Error('Provider key is unavailable.')
+  const providerConfig = aiConfig.providers.gemini
+  if (!providerConfig?.apiKey || !providerConfig.ttsModel || !providerConfig.voice) {
+    throw new Error('Gemini TTS key is unavailable.')
   }
 
-  if (provider === 'openai') {
-    const response = await fetch('https://api.openai.com/v1/audio/speech', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${providerConfig.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: providerConfig.ttsModel,
-        voice: providerConfig.voice,
-        input: text,
-        format: 'mp3',
-      }),
-    })
-
-    if (!response.ok) {
-      throw new Error(`OpenAI TTS failed: ${response.status}`)
-    }
-
-    const blob = await response.blob()
-    return URL.createObjectURL(blob)
-  }
-
+  const runtimeModel = getGeminiTtsRuntimeModel(providerConfig.ttsModel)
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${providerConfig.ttsModel}:generateContent?key=${providerConfig.apiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${runtimeModel}:generateContent`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'x-goog-api-key': providerConfig.apiKey,
       },
       body: JSON.stringify({
         contents: [
           {
+            role: 'user',
             parts: [{ text }],
           },
         ],
         generationConfig: {
           responseModalities: ['AUDIO'],
-        },
-        speechConfig: {
-          voiceConfig: {
-            prebuiltVoiceConfig: {
-              voiceName: providerConfig.voice,
+          speechConfig: {
+            voiceConfig: {
+              prebuiltVoiceConfig: {
+                voiceName: providerConfig.voice,
+              },
             },
           },
         },
@@ -556,7 +604,8 @@ export async function generateTtsAudio(params: {
   )
 
   if (!response.ok) {
-    throw new Error(`Gemini TTS failed: ${response.status}`)
+    const details = await readErrorResponse(response)
+    throw new Error(`Gemini TTS failed: ${response.status}${details ? ` - ${details}` : ''}`)
   }
 
   const payload = (await response.json()) as {
@@ -573,11 +622,6 @@ export async function generateTtsAudio(params: {
   }
 
   const inlineData = payload.candidates?.[0]?.content?.parts?.find((part) => part.inlineData)?.inlineData
-  if (!inlineData?.data) {
-    throw new Error('Gemini TTS payload was empty.')
-  }
-
-  const bytes = Uint8Array.from(atob(inlineData.data), (character) => character.charCodeAt(0))
-  const blob = new Blob([bytes], { type: inlineData.mimeType ?? 'audio/wav' })
+  const blob = buildGeminiAudioBlob(inlineData ?? {})
   return URL.createObjectURL(blob)
 }
