@@ -1,0 +1,186 @@
+import { useMemo, useState } from 'react'
+import { Filter, Search, Settings2 } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useShallow } from 'zustand/react/shallow'
+import { getQuestAvailability } from '@/domain/logic'
+import { QuestCompleteModal } from '@/components/quest-complete-modal'
+import { QuestCard } from '@/components/quest-card'
+import { Screen } from '@/components/layout'
+import { Button, Card, CardContent, Input } from '@/components/ui'
+import { useAppStore } from '@/store/app-store'
+
+const tabs = [
+  { key: 'today', label: '今日' },
+  { key: 'all', label: 'すべて' },
+  { key: 'repeatable', label: '定常' },
+  { key: 'one_time', label: '単発' },
+  { key: 'completed', label: '完了済み' },
+] as const
+
+export function QuestListScreen() {
+  const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
+  const [tab, setTab] = useState<(typeof tabs)[number]['key']>('today')
+  const [query, setQuery] = useState('')
+  const { quests, completions, skills, completeQuest, reopenQuest } = useAppStore(useShallow((state) => ({
+    quests: state.quests,
+    completions: state.completions,
+    skills: state.skills,
+    completeQuest: state.completeQuest,
+    reopenQuest: state.reopenQuest,
+  })))
+
+  const activeQuestId = searchParams.get('complete')
+  const activeQuest = activeQuestId ? quests.find((quest) => quest.id === activeQuestId) : undefined
+
+  const filtered = useMemo(() => {
+    return quests
+      .filter((quest) => quest.status !== 'archived')
+      .filter((quest) => {
+        const availability = getQuestAvailability(quest, completions)
+        if (tab === 'today') {
+          return availability.canComplete || availability.state === 'expired' || quest.pinned
+        }
+        if (tab === 'repeatable') {
+          return quest.questType === 'repeatable'
+        }
+        if (tab === 'one_time') {
+          return quest.questType === 'one_time'
+        }
+        if (tab === 'completed') {
+          return quest.status === 'completed'
+        }
+        return true
+      })
+      .filter((quest) => {
+        const haystack = `${quest.title} ${quest.description ?? ''}`.toLowerCase()
+        return haystack.includes(query.toLowerCase())
+      })
+      .sort((left, right) => {
+        const leftAvailability = getQuestAvailability(left, completions)
+        const rightAvailability = getQuestAvailability(right, completions)
+        const leftScore = (left.pinned ? 100 : 0) + (leftAvailability.canComplete ? 20 : 0) + left.xpReward
+        const rightScore = (right.pinned ? 100 : 0) + (rightAvailability.canComplete ? 20 : 0) + right.xpReward
+        return rightScore - leftScore
+      })
+  }, [completions, query, quests, tab])
+
+  return (
+    <Screen
+      title="クエスト"
+      subtitle="今日やることと進行中のタスク"
+      action={
+        <Button size="icon" onClick={() => navigate('/settings')}>
+          <Settings2 className="h-5 w-5" />
+        </Button>
+      }
+    >
+      <div className="grid grid-cols-3 gap-3">
+        <Card><CardContent className="p-4"><div className="text-xs text-slate-500">今日の候補</div><div className="mt-1 text-xl font-black text-slate-900">{quests.filter((quest) => getQuestAvailability(quest, completions).canComplete).length}件</div></CardContent></Card>
+        <Card><CardContent className="p-4"><div className="text-xs text-slate-500">期限近い</div><div className="mt-1 text-xl font-black text-slate-900">{quests.filter((quest) => getQuestAvailability(quest, completions).state === 'expired').length}件</div></CardContent></Card>
+        <Card><CardContent className="p-4"><div className="text-xs text-slate-500">定常クエスト</div><div className="mt-1 text-xl font-black text-slate-900">{quests.filter((quest) => quest.questType === 'repeatable').length}件</div></CardContent></Card>
+      </div>
+
+      <section className="mt-5">
+        <div className="flex gap-3">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="クエストを検索"
+              className="bg-white pl-10"
+            />
+          </div>
+          <Button variant="outline" size="icon">
+            <Filter className="h-4 w-4" />
+          </Button>
+        </div>
+      </section>
+
+      <section className="mt-4">
+        <div className="flex gap-2 overflow-x-auto pb-1">
+          {tabs.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setTab(item.key)}
+              className={`rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap transition ${
+                tab === item.key
+                  ? 'bg-violet-600 text-white shadow-sm'
+                  : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="mt-4">
+        <div className="flex items-center justify-between text-xs text-slate-500">
+          <div>表示順: 優先 → 期限 → XP</div>
+          <button type="button" className="rounded-xl px-2 py-1 text-violet-700 hover:bg-violet-50">
+            並び替え
+          </button>
+        </div>
+      </section>
+
+      <section className="mt-4 space-y-3 pb-6">
+        {filtered.map((quest) => {
+          const availability = getQuestAvailability(quest, completions)
+          const skill = skills.find((entry) => entry.id === (quest.fixedSkillId ?? quest.defaultSkillId))
+          const actionLabel =
+            quest.status === 'completed' ? '再オープン' : availability.canComplete ? 'クリア' : '詳細'
+
+          return (
+            <QuestCard
+              key={quest.id}
+              quest={quest}
+              availability={availability}
+              skill={skill}
+              actionLabel={actionLabel}
+              onAction={() => {
+                if (quest.status === 'completed') {
+                  reopenQuest(quest.id)
+                  return
+                }
+                if (availability.canComplete) {
+                  const next = new URLSearchParams(searchParams)
+                  next.set('complete', quest.id)
+                  setSearchParams(next)
+                  return
+                }
+                navigate(`/quests/new?edit=${quest.id}`)
+              }}
+              onOpen={() => navigate(`/quests/new?edit=${quest.id}`)}
+            />
+          )
+        })}
+      </section>
+
+      {activeQuest ? (
+        <QuestCompleteModal
+          quest={activeQuest}
+          onClose={() => {
+            const next = new URLSearchParams(searchParams)
+            next.delete('complete')
+            setSearchParams(next)
+          }}
+          onComplete={async (payload) => {
+            const result = await completeQuest(activeQuest.id, {
+              ...payload,
+              sourceScreen: 'quest_list',
+            })
+            if (result.completionId) {
+              const next = new URLSearchParams(searchParams)
+              next.delete('complete')
+              setSearchParams(next)
+              navigate(`/clear/${result.completionId}`)
+            }
+          }}
+        />
+      ) : null}
+    </Screen>
+  )
+}

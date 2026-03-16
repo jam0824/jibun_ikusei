@@ -1,0 +1,357 @@
+import { useMemo, useState } from 'react'
+import { z } from 'zod'
+import { ChevronRight, Lock, Settings2, Sparkles, Target } from 'lucide-react'
+import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useShallow } from 'zustand/react/shallow'
+import { buildQuestDraft } from '@/domain/logic'
+import type { Quest, SkillMappingMode } from '@/domain/types'
+import { QUEST_CATEGORIES } from '@/domain/constants'
+import { Screen } from '@/components/layout'
+import { Badge, Button, Card, CardContent, Input, Select, Switch, Textarea } from '@/components/ui'
+import { useAppStore } from '@/store/app-store'
+
+const questSchema = z.object({
+  title: z.string().min(1, 'タイトルを入力してください。').max(60, '60文字以内で入力してください。'),
+  description: z.string().max(240, '説明は240文字以内で入力してください。'),
+  xpReward: z.number().min(1).max(100),
+})
+
+const xpPresets = [3, 5, 10, 20, 40]
+
+export function QuestFormScreen() {
+  const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const editId = searchParams.get('edit')
+  const { quests, skills, settings, upsertQuest } = useAppStore(useShallow((state) => ({
+    quests: state.quests,
+    skills: state.skills,
+    settings: state.settings,
+    upsertQuest: state.upsertQuest,
+  })))
+
+  const editingQuest = useMemo(() => quests.find((quest) => quest.id === editId), [editId, quests])
+  const draft = useMemo(() => buildQuestDraft(editingQuest), [editingQuest])
+  const skillOptions = skills.filter((skill) => skill.status === 'active')
+
+  const [form, setForm] = useState<Quest>(draft)
+  const [error, setError] = useState<string>()
+
+  const update = <K extends keyof Quest>(key: K, value: Quest[K]) => {
+    setForm((current) => {
+      const next = { ...current, [key]: value, updatedAt: new Date().toISOString() }
+      if (key === 'privacyMode' && value === 'no_ai' && next.skillMappingMode !== 'fixed') {
+        next.skillMappingMode = 'fixed'
+      }
+      return next
+    })
+  }
+
+  const save = () => {
+    const parsed = questSchema.safeParse({
+      title: form.title,
+      description: form.description ?? '',
+      xpReward: form.xpReward,
+    })
+    if (!parsed.success) {
+      setError(parsed.error.issues[0]?.message)
+      return
+    }
+
+    if (form.skillMappingMode === 'fixed' && !form.fixedSkillId) {
+      setError('固定スキルを選んでください。')
+      return
+    }
+
+    upsertQuest(form)
+    navigate('/quests')
+  }
+
+  const mappingModes: Array<{ key: SkillMappingMode; title: string; description: string }> = [
+    { key: 'fixed', title: '固定スキル', description: '毎回同じスキルに経験値を加算します。' },
+    { key: 'ai_auto', title: 'AI自動抽象化', description: 'AIが既存スキルへ寄せて抽象化します。' },
+    { key: 'ask_each_time', title: '毎回確認する', description: 'クリア時に候補からスキルを選びます。' },
+  ]
+
+  return (
+    <Screen
+      title={editingQuest ? 'クエスト編集' : 'クエスト追加'}
+      subtitle="育てたい行動をクエストとして登録します"
+      action={
+        <Button size="icon" onClick={() => navigate('/settings')}>
+          <Settings2 className="h-5 w-5" />
+        </Button>
+      }
+    >
+      <section>
+        <Card>
+          <CardContent className="space-y-4 p-4">
+            <div>
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">基本情報</div>
+              <div className="space-y-3">
+                <Input
+                  value={form.title}
+                  onChange={(event) => update('title', event.target.value)}
+                  placeholder="クエスト名"
+                />
+                <Textarea
+                  value={form.description ?? ''}
+                  onChange={(event) => update('description', event.target.value)}
+                  placeholder="説明を入力"
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">種別</div>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => update('questType', 'repeatable')}
+                  className={`rounded-2xl border p-4 text-left shadow-sm ${
+                    form.questType === 'repeatable'
+                      ? 'border-violet-600 bg-violet-50'
+                      : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-slate-900">定常クエスト</div>
+                  <div className="mt-1 text-xs text-slate-500">繰り返し積み上げる行動に使います。</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => update('questType', 'one_time')}
+                  className={`rounded-2xl border p-4 text-left shadow-sm ${
+                    form.questType === 'one_time'
+                      ? 'border-violet-600 bg-violet-50'
+                      : 'border-slate-200 bg-white'
+                  }`}
+                >
+                  <div className="text-sm font-semibold text-slate-900">単発クエスト</div>
+                  <div className="mt-1 text-xs text-slate-500">1回で完了するタスクに使います。</div>
+                </button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="mt-5">
+        <Card>
+          <CardContent className="space-y-4 p-4">
+            <div>
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">経験値</div>
+              <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+                {xpPresets.map((xp) => (
+                  <button
+                    key={xp}
+                    type="button"
+                    onClick={() => update('xpReward', xp)}
+                    className={`rounded-2xl px-3 py-3 text-sm font-semibold shadow-sm transition ${
+                      form.xpReward === xp
+                        ? 'border border-violet-600 bg-violet-50 text-violet-700'
+                        : 'border border-slate-200 bg-white text-slate-700'
+                    }`}
+                  >
+                    {xp} XP
+                  </button>
+                ))}
+                <Input
+                  type="number"
+                  min={1}
+                  max={100}
+                  className="h-full bg-white"
+                  value={form.xpReward}
+                  onChange={(event) => update('xpReward', Number(event.target.value))}
+                />
+              </div>
+            </div>
+
+            <div>
+              <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">カテゴリ</div>
+              <div className="flex flex-wrap gap-2">
+                {QUEST_CATEGORIES.map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => update('category', category)}
+                    className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                      form.category === category
+                        ? 'bg-violet-600 text-white'
+                        : 'border border-slate-200 bg-white text-slate-600'
+                    }`}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="mt-5">
+        <Card>
+          <CardContent className="space-y-3 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">スキル付与方法</div>
+            {mappingModes.map((mode) => (
+              <button
+                key={mode.key}
+                type="button"
+                disabled={form.privacyMode === 'no_ai' && mode.key !== 'fixed'}
+                onClick={() => update('skillMappingMode', mode.key)}
+                className={`w-full rounded-2xl border p-4 text-left shadow-sm ${
+                  form.skillMappingMode === mode.key
+                    ? 'border-violet-600 bg-violet-50'
+                    : 'border-slate-200 bg-white'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-3">
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-2xl ${form.skillMappingMode === mode.key ? 'bg-violet-100 text-violet-700' : 'bg-slate-100 text-slate-700'}`}>
+                      {mode.key === 'fixed' ? <Target className="h-5 w-5" /> : mode.key === 'ai_auto' ? <Sparkles className="h-5 w-5" /> : <ChevronRight className="h-5 w-5" />}
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-slate-900">{mode.title}</div>
+                      <div className="mt-1 text-xs leading-5 text-slate-500">{mode.description}</div>
+                    </div>
+                  </div>
+                  {mode.key === 'ai_auto' ? <Badge>推奨</Badge> : null}
+                </div>
+              </button>
+            ))}
+
+            {form.skillMappingMode === 'fixed' ? (
+              <Select
+                value={form.fixedSkillId ?? ''}
+                onChange={(event) => update('fixedSkillId', event.target.value || undefined)}
+              >
+                <option value="">固定スキルを選択</option>
+                {skillOptions.map((skill) => (
+                  <option key={skill.id} value={skill.id}>
+                    {skill.name} / {skill.category}
+                  </option>
+                ))}
+              </Select>
+            ) : null}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="mt-5">
+        <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">詳細設定</div>
+        <div className="space-y-3">
+          <Card>
+            <CardContent className="flex items-center justify-between gap-4 p-4">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">クールダウン</div>
+                <div className="mt-1 text-xs text-slate-500">定常クエストの連続達成を制御します。</div>
+              </div>
+              <Input
+                type="number"
+                className="w-28 bg-white"
+                value={form.cooldownMinutes ?? 30}
+                onChange={(event) => update('cooldownMinutes', Number(event.target.value))}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="flex items-center justify-between gap-4 p-4">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">1日上限</div>
+                <div className="mt-1 text-xs text-slate-500">定常クエストを1日に何回まで反映するか設定します。</div>
+              </div>
+              <Input
+                type="number"
+                className="w-28 bg-white"
+                value={form.dailyCompletionCap ?? 1}
+                onChange={(event) => update('dailyCompletionCap', Number(event.target.value))}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="space-y-3 p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">非AIモード</div>
+                  <div className="mt-1 text-xs text-slate-500">外部AIに送らず、固定スキルとテンプレート文を使います。</div>
+                </div>
+                <Switch
+                  checked={form.privacyMode === 'no_ai'}
+                  onCheckedChange={(checked) => update('privacyMode', checked ? 'no_ai' : settings.defaultPrivacyMode)}
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">優先表示</div>
+                  <div className="mt-1 text-xs text-slate-500">ホームのおすすめクエストに出しやすくします。</div>
+                </div>
+                <Switch checked={form.pinned} onCheckedChange={(checked) => update('pinned', checked)} />
+              </div>
+
+              <div>
+                <div className="mb-2 text-sm font-semibold text-slate-900">期限</div>
+                <Input
+                  type="datetime-local"
+                  className="bg-white"
+                  value={form.dueAt ? form.dueAt.slice(0, 16) : ''}
+                  onChange={(event) => update('dueAt', event.target.value ? new Date(event.target.value).toISOString() : undefined)}
+                />
+              </div>
+
+              <div>
+                <div className="mb-2 text-sm font-semibold text-slate-900">リマインド時刻</div>
+                <Input
+                  type="time"
+                  className="bg-white"
+                  value={form.reminderTime ?? ''}
+                  onChange={(event) => update('reminderTime', event.target.value || undefined)}
+                />
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {error ? (
+        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {error}
+        </div>
+      ) : null}
+
+      <section className="mt-5 pb-6">
+        <Card className="border-violet-100 bg-violet-50">
+          <CardContent className="flex items-start gap-3 p-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
+              <Lock className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-violet-950">このクエストの挙動メモ</div>
+              <div className="mt-1 text-sm text-violet-800">
+                {form.privacyMode === 'no_ai'
+                  ? '非AIモードなので、外部送信せず固定スキルとテンプレート文を使います。'
+                  : form.skillMappingMode === 'fixed'
+                    ? '固定スキルで即時反映されます。'
+                    : form.skillMappingMode === 'ai_auto'
+                      ? '初回はAIまたはローカル分類で解決し、以後は同じ結果を再利用します。'
+                      : 'クリア後に候補からスキルを確認できます。'}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
+
+      <div className="sticky bottom-[84px] mt-auto border-t border-slate-200 bg-white/90 px-4 py-3 backdrop-blur">
+        <div className="grid grid-cols-2 gap-3">
+          <Button variant="outline" className="h-12" onClick={() => navigate(-1)}>
+            キャンセル
+          </Button>
+          <Button className="h-12" onClick={save}>
+            {editingQuest ? '更新する' : 'クエストを作成'}
+          </Button>
+        </div>
+      </div>
+    </Screen>
+  )
+}
