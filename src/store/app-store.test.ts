@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { hydratePersistedState } from '@/domain/logic'
+import { playAudioUrl } from '@/lib/tts'
 import { useAppStore } from '@/store/app-store'
 
 function resetStore() {
@@ -111,5 +112,31 @@ describe('app store', () => {
     const nextState = useAppStore.getState()
     expect(nextState.skills.find((entry) => entry.id === exercise!.id)?.status).toBe('merged')
     expect(nextState.quests.find((entry) => entry.id === exerciseQuest!.id)?.fixedSkillId).toBe(reading!.id)
+  })
+
+  it('returns a clear error instead of replaying cached audio while offline', async () => {
+    const quest = useAppStore.getState().quests.find((entry) => entry.title === '読書する')
+    expect(quest).toBeTruthy()
+
+    const result = await useAppStore.getState().completeQuest(quest!.id, {
+      completedAt: new Date().toISOString(),
+      sourceScreen: 'home',
+    })
+    expect(result.completionId).toBeTruthy()
+
+    const completion = useAppStore.getState().completions.find((entry) => entry.id === result.completionId)
+    expect(completion?.assistantMessageId).toBeTruthy()
+
+    await playAudioUrl(completion!.assistantMessageId!, 'blob:cached-audio')
+
+    Object.defineProperty(window.navigator, 'onLine', {
+      configurable: true,
+      writable: true,
+      value: false,
+    })
+
+    await expect(useAppStore.getState().playAssistantMessage(completion!.assistantMessageId!)).resolves.toBe(
+      '音声再生はオフラインでは利用できません。ネットワーク接続を確認してください。',
+    )
   })
 })

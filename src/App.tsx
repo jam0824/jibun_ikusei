@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { ClearEffectScreen } from '@/screens/clear-effect-screen'
 import { HomeScreen } from '@/screens/home-screen'
 import { QuestFormScreen } from '@/screens/quest-form-screen'
@@ -32,8 +32,8 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <AppRoutes />
-    </BrowserRouter>
+    </HashRouter>
   )
 }

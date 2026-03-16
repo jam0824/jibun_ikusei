@@ -30,6 +30,21 @@ describe('ai adapter', () => {
     fetchMock.mockRestore()
   })
 
+  it('returns a clear offline error for provider checks', async () => {
+    const state = hydratePersistedState()
+    state.aiConfig.providers.openai.apiKey = 'sk-test'
+
+    Object.defineProperty(window.navigator, 'onLine', {
+      configurable: true,
+      writable: true,
+      value: false,
+    })
+
+    await expect(testProviderConnection(state.aiConfig, state.settings, 'openai')).rejects.toThrow(
+      'AI接続テストはオフラインでは利用できません。ネットワーク接続を確認してください。',
+    )
+  })
+
   it('falls back to local resolution when AI is unavailable', async () => {
     const state = hydratePersistedState()
     state.settings.aiEnabled = false
@@ -286,5 +301,27 @@ describe('ai adapter', () => {
         text: '音声チェック',
       }),
     ).rejects.toThrow('Gemini TTS failed: 400 - Invalid JSON payload.')
+  })
+
+  it('returns a clear offline error for TTS generation', async () => {
+    const state = hydratePersistedState()
+    state.aiConfig.activeProvider = 'gemini'
+    state.aiConfig.providers.gemini.apiKey = 'gm-test'
+    state.settings.aiEnabled = true
+    state.settings.lilyVoiceEnabled = true
+
+    Object.defineProperty(window.navigator, 'onLine', {
+      configurable: true,
+      writable: true,
+      value: false,
+    })
+
+    await expect(
+      generateTtsAudio({
+        aiConfig: state.aiConfig,
+        settings: state.settings,
+        text: '音声チェック',
+      }),
+    ).rejects.toThrow('音声再生はオフラインでは利用できません。ネットワーク接続を確認してください。')
   })
 })

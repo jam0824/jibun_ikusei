@@ -9,6 +9,7 @@ import type {
   SkillResolutionResult,
   UserSettings,
 } from '@/domain/types'
+import { createOfflineError, isOffline } from '@/lib/network'
 
 const skillResolutionSchema = z.object({
   action: z.enum(['assign_existing', 'assign_seed', 'propose_new', 'unclassified']),
@@ -418,6 +419,10 @@ export async function testProviderConnection(
     throw new Error('AI is disabled.')
   }
 
+  if (isOffline()) {
+    throw createOfflineError('AI接続テスト')
+  }
+
   const config = getProviderConfig(aiConfig, provider)
   if (!config?.apiKey) {
     throw new Error('API key is not configured.')
@@ -472,6 +477,10 @@ export async function resolveSkillWithProvider(params: {
 }) {
   const { aiConfig, settings, quest, note, skills, dictionary } = params
   if (!hasUsableAi(aiConfig, settings) || quest.privacyMode === 'no_ai') {
+    return buildFallbackSkillResolution({ quest, note, skills, dictionary })
+  }
+
+  if (isOffline()) {
     return buildFallbackSkillResolution({ quest, note, skills, dictionary })
   }
 
@@ -531,6 +540,10 @@ export async function generateLilyMessageWithProvider(params: {
     throw new Error('AI is unavailable.')
   }
 
+  if (isOffline()) {
+    throw createOfflineError('Lilyメッセージ生成')
+  }
+
   const provider = aiConfig.activeProvider
   const providerConfig = getProviderConfig(aiConfig)
   if (!providerConfig?.apiKey || provider === 'none') {
@@ -566,6 +579,10 @@ export async function generateTtsAudio(params: {
   const { aiConfig, settings, text } = params
   if (!settings.lilyVoiceEnabled || !hasUsableAi(aiConfig, settings)) {
     throw new Error('Audio generation is unavailable.')
+  }
+
+  if (isOffline()) {
+    throw createOfflineError('音声再生')
   }
 
   const providerConfig = aiConfig.providers.gemini

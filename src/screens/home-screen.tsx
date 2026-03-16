@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { ChevronRight, Play, Plus, Settings2, Sparkles, Target, Trophy } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
@@ -20,6 +20,7 @@ export function HomeScreen() {
     assistantMessages,
     settings,
     completeQuest,
+    playAssistantMessage,
   } = useAppStore(
     useShallow((state) => ({
       user: state.user,
@@ -29,8 +30,10 @@ export function HomeScreen() {
       assistantMessages: state.assistantMessages,
       settings: state.settings,
       completeQuest: state.completeQuest,
+      playAssistantMessage: state.playAssistantMessage,
     })),
   )
+  const [audioError, setAudioError] = useState<string>()
 
   const levelInfo = useMemo(() => getLevelFromXp(user.totalXp, 100), [user.totalXp])
   const todayKey = new Date().toISOString().slice(0, 10)
@@ -58,6 +61,11 @@ export function HomeScreen() {
   const latestMessage = assistantMessages[0]
   const activeQuestId = searchParams.get('complete')
   const activeQuest = activeQuestId ? quests.find((quest) => quest.id === activeQuestId) : undefined
+
+  const handlePlayMessage = async (messageId: string) => {
+    const error = await playAssistantMessage(messageId)
+    setAudioError(error)
+  }
 
   if (quests.length === 0) {
     return (
@@ -171,12 +179,17 @@ export function HomeScreen() {
                   size="icon"
                   variant="secondary"
                   className="rounded-2xl"
-                  onClick={() => void useAppStore.getState().playAssistantMessage(latestMessage.id)}
+                  onClick={() => void handlePlayMessage(latestMessage.id)}
                 >
                   <Play className="h-4 w-4" />
                 </Button>
               ) : null}
             </div>
+            {audioError ? (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                {audioError}
+              </div>
+            ) : null}
           </CardContent>
         </Card>
       </section>

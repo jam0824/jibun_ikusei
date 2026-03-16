@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent } from 'react'
+import { useEffect, useEffectEvent, useState } from 'react'
 import { ArrowRight, Play, ScrollText, Sparkles, Star, Trophy } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { CompletionResolutionCard } from '@/components/completion-resolution-card'
@@ -10,6 +10,7 @@ export function ClearEffectScreen() {
   const navigate = useNavigate()
   const { completionId } = useParams<{ completionId: string }>()
   const state = useAppStore()
+  const [audioError, setAudioError] = useState<string>()
   const completion = state.completions.find((entry) => entry.id === completionId)
   const quest = completion ? state.quests.find((entry) => entry.id === completion.questId) : undefined
   const skill = completion?.resolvedSkillId
@@ -22,15 +23,23 @@ export function ClearEffectScreen() {
     .map((skillId) => state.skills.find((skillEntry) => skillEntry.id === skillId))
     .filter((value): value is NonNullable<typeof value> => Boolean(value))
 
-  const playCurrentMessage = useEffectEvent(() => {
-    if (message && state.settings.lilyAutoPlay === 'on') {
-      void state.playAssistantMessage(message.id)
-    }
+  const playAutoMessage = useEffectEvent(async (messageId: string) => {
+    const error = await state.playAssistantMessage(messageId)
+    setAudioError(error)
   })
 
+  const handlePlayMessage = async (messageId: string) => {
+    const error = await state.playAssistantMessage(messageId)
+    setAudioError(error)
+  }
+
   useEffect(() => {
-    playCurrentMessage()
-  }, [message?.id])
+    if (!message?.id || state.settings.lilyAutoPlay !== 'on') {
+      return
+    }
+
+    void playAutoMessage(message.id)
+  }, [message?.id, state.settings.lilyAutoPlay])
 
   if (!completion || !quest) {
     return (
@@ -135,11 +144,21 @@ export function ClearEffectScreen() {
                   </div>
                 </div>
                 {message ? (
-                  <Button size="icon" variant="outline" className="rounded-2xl bg-white" onClick={() => void state.playAssistantMessage(message.id)}>
+                  <Button
+                    size="icon"
+                    variant="outline"
+                    className="rounded-2xl bg-white"
+                    onClick={() => void handlePlayMessage(message.id)}
+                  >
                     <Play className="h-4 w-4" />
                   </Button>
                 ) : null}
               </div>
+              {audioError ? (
+                <div className="mt-3 rounded-2xl border border-amber-200 bg-white px-4 py-3 text-sm text-amber-800">
+                  {audioError}
+                </div>
+              ) : null}
             </CardContent>
           </Card>
 

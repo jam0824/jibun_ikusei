@@ -3,6 +3,7 @@ import { Download, Eye, EyeOff, Settings2, Trash2, Upload } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { GEMINI_VOICES } from '@/domain/constants'
 import { maskApiKey } from '@/domain/logic'
+import { usePwaInstall } from '@/lib/pwa'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Select, Switch } from '@/components/ui'
 import { useAppStore } from '@/store/app-store'
@@ -10,9 +11,11 @@ import { useAppStore } from '@/store/app-store'
 export function SettingsScreen() {
   const navigate = useNavigate()
   const state = useAppStore()
+  const { canInstall, isInstalled, isOnline, needsIosInstallHelp, promptInstall } = usePwaInstall()
   const [openAiVisible, setOpenAiVisible] = useState(false)
   const [geminiVisible, setGeminiVisible] = useState(false)
   const [importError, setImportError] = useState<string>()
+  const [installMessage, setInstallMessage] = useState<string>()
 
   const providerStatus = useMemo(
     () => ({
@@ -21,6 +24,24 @@ export function SettingsScreen() {
     }),
     [state.aiConfig.providers.gemini.status, state.aiConfig.providers.openai.status],
   )
+
+  const installBadgeTone = isInstalled ? 'success' : canInstall || needsIosInstallHelp ? 'outline' : 'soft'
+
+  const handleInstall = async () => {
+    const result = await promptInstall()
+
+    if (result.outcome === 'accepted') {
+      setInstallMessage('ホーム画面への追加を受け付けました。インストール後はアプリ一覧から開けます。')
+      return
+    }
+
+    if (result.outcome === 'dismissed') {
+      setInstallMessage('インストールはキャンセルされました。必要になったらいつでも追加できます。')
+      return
+    }
+
+    setInstallMessage('このブラウザではインストール案内を表示できません。')
+  }
 
   return (
     <Screen
@@ -35,11 +56,72 @@ export function SettingsScreen() {
       <section className="space-y-3">
         <Card>
           <CardContent className="space-y-4 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">App</div>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">ホーム画面に追加</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  GitHub Pages 上でもアプリとして起動しやすくなります。
+                </div>
+              </div>
+              <Badge tone={installBadgeTone}>
+                {isInstalled ? 'installed' : canInstall || needsIosInstallHelp ? 'available' : 'browser'}
+              </Badge>
+            </div>
+
+            {canInstall ? (
+              <Button onClick={() => void handleInstall()}>ホーム画面に追加</Button>
+            ) : null}
+
+            {isInstalled ? (
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                この端末にはインストール済みです。ホーム画面やアプリ一覧から直接開けます。
+              </div>
+            ) : null}
+
+            {needsIosInstallHelp ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+                iPhone / iPad では Safari の共有メニューから「ホーム画面に追加」を選ぶとインストールできます。
+              </div>
+            ) : null}
+
+            {installMessage ? (
+              <div className="rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm text-violet-800">
+                {installMessage}
+              </div>
+            ) : null}
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">オフライン対応</div>
+                  <div className="mt-1 text-xs text-slate-500">
+                    一度アプリを開いたあとは、主要画面をオフラインでも再訪できます。
+                  </div>
+                </div>
+                <Badge tone={isOnline ? 'success' : 'danger'}>{isOnline ? 'online' : 'offline'}</Badge>
+              </div>
+              <div className="mt-3 space-y-2 text-xs">
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-emerald-800">
+                  オフラインで使える: クエスト管理、スキル一覧、記録、設定、JSON Import / Export
+                </div>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
+                  オンライン必須: AI 接続テスト、Lily メッセージ生成、音声再生
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="space-y-4 p-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Lily Voice</div>
             <div className="flex items-center justify-between gap-4">
               <div>
                 <div className="text-sm font-semibold text-slate-900">音声を有効化</div>
-                <div className="mt-1 text-xs text-slate-500">TTS は Gemini を使い、失敗時はブラウザ音声へフォールバックします。</div>
+                <div className="mt-1 text-xs text-slate-500">
+                  Gemini TTS を使って再生します。オフライン中は音声再生を利用できません。
+                </div>
               </div>
               <Switch
                 checked={state.settings.lilyVoiceEnabled}
@@ -99,6 +181,13 @@ export function SettingsScreen() {
                 onCheckedChange={(checked) => state.setSettings({ aiEnabled: checked })}
               />
             </div>
+
+            {!isOnline ? (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                現在オフラインです。AI 接続テスト、Lily メッセージ生成、音声再生を停止しています。
+              </div>
+            ) : null}
+
             <div>
               <div className="mb-2 text-sm font-semibold text-slate-900">アクティブプロバイダ</div>
               <Select
@@ -147,7 +236,7 @@ export function SettingsScreen() {
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
-                <Button variant="outline" onClick={() => void state.testConnection('openai')}>
+                <Button variant="outline" disabled={!isOnline} onClick={() => void state.testConnection('openai')}>
                   接続テスト
                 </Button>
                 <Button
@@ -219,7 +308,7 @@ export function SettingsScreen() {
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2">
-                <Button variant="outline" onClick={() => void state.testConnection('gemini')}>
+                <Button variant="outline" disabled={!isOnline} onClick={() => void state.testConnection('gemini')}>
                   接続テスト
                 </Button>
                 <Button

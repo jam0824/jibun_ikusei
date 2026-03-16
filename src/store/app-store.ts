@@ -32,8 +32,9 @@ import {
   resolveSkillWithProvider,
   testProviderConnection,
 } from '@/lib/ai'
+import { getOfflineMessage, isOffline, OfflineFeatureError } from '@/lib/network'
 import { clearPersistedState, loadPersistedState, persistState } from '@/lib/storage'
-import { getCachedAudio, playAudioUrl, playWithSpeechSynthesis } from '@/lib/tts'
+import { getCachedAudio, playAudioUrl } from '@/lib/tts'
 import { createId, downloadJson } from '@/lib/utils'
 import { SKILL_XP_CAP } from '@/domain/constants'
 
@@ -70,7 +71,7 @@ interface AppStore extends PersistedAppState {
   setAiConfig: (provider: 'openai' | 'gemini', patch: Partial<AiConfig['providers']['openai']>) => void
   setActiveProvider: (provider: AiConfig['activeProvider']) => void
   testConnection: (provider: 'openai' | 'gemini') => Promise<void>
-  playAssistantMessage: (messageId: string) => Promise<void>
+  playAssistantMessage: (messageId: string) => Promise<string | undefined>
   exportData: () => void
   importData: (jsonText: string, mode: ImportMode) => { ok: boolean; reason?: string }
   resetLocalData: () => void
@@ -891,6 +892,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     } catch (error) {
       const state = get()
       const providerConfig = getProviderConfig(state.aiConfig, provider)
+      const nextProviderStatus =
+        error instanceof OfflineFeatureError ? providerConfig?.status ?? 'unverified' : 'invalid'
       const nextState = reconcileState({
         ...state,
         aiConfig: {
@@ -899,7 +902,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
             ...state.aiConfig.providers,
             [provider]: {
               ...providerConfig!,
-              status: 'invalid',
+              status: nextProviderStatus,
               updatedAt: nowIso(),
             },
           },
@@ -923,7 +926,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const state = get()
     const message = state.assistantMessages.find((entry) => entry.id === messageId)
     if (!message) {
-      return
+      return '音声メッセージが見つかりません。'
+    }
+
+    if (isOffline()) {
+      return getOfflineMessage('音声再生')
     }
 
     const cachedAudio = getCachedAudio(message.id)
@@ -943,12 +950,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
         text: message.text,
       })
       await playAudioUrl(message.id, url)
-    } catch {
-      try {
-        playWithSpeechSynthesis(message.text)
-      } catch {
-        // TTS failure is non-blocking.
-      }
+      return undefined
+    } catch (error) {
+      return error instanceof Error ? error.message : '音声再生に失敗しました。'
     }
   },
 
