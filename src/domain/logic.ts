@@ -2,6 +2,7 @@ import { differenceInCalendarDays, differenceInMinutes, isBefore, parseISO, star
 import {
   DEFAULT_REPEATABLE_COOLDOWN,
   DEFAULT_REPEATABLE_DAILY_CAP,
+  GEMINI_MODELS,
   MAX_REPEATABLE_COOLDOWN,
   MAX_REPEATABLE_DAILY_CAP,
   MIN_REPEATABLE_COOLDOWN,
@@ -364,6 +365,28 @@ function normalizeQuestConstraints(quest: Quest): Quest {
   }
 }
 
+const LEGACY_GEMINI_TTS_MODEL_ALIASES: Record<string, string> = {
+  'gemini-2.5-flash-preview-tts': GEMINI_MODELS.tts,
+  'gemini-2.5-flash-lite-tts': GEMINI_MODELS.tts,
+  'gemini-2.5-flash-lite-preview-tts': GEMINI_MODELS.tts,
+  'gemini-2.5-pro-preview-tts': 'gemini-2.5-pro-tts',
+}
+
+const SUPPORTED_GEMINI_TTS_MODELS = new Set<string>([GEMINI_MODELS.tts, 'gemini-2.5-pro-tts'])
+
+function normalizeGeminiTtsModel(ttsModel?: string) {
+  if (!ttsModel) {
+    return GEMINI_MODELS.tts
+  }
+
+  const migrated = LEGACY_GEMINI_TTS_MODEL_ALIASES[ttsModel]
+  if (migrated) {
+    return migrated
+  }
+
+  return SUPPORTED_GEMINI_TTS_MODELS.has(ttsModel) ? ttsModel : GEMINI_MODELS.tts
+}
+
 function migrateAiConfig(aiConfig: AiConfig): AiConfig {
   const defaults = createDefaultAiConfig()
   const openai =
@@ -371,10 +394,7 @@ function migrateAiConfig(aiConfig: AiConfig): AiConfig {
       ? { ...aiConfig.providers.openai, model: defaults.providers.openai.model }
       : aiConfig.providers.openai
 
-  const geminiTtsModel =
-    aiConfig.providers.gemini.ttsModel === 'gemini-2.5-flash-preview-tts'
-      ? defaults.providers.gemini.ttsModel
-      : aiConfig.providers.gemini.ttsModel
+  const geminiTtsModel = normalizeGeminiTtsModel(aiConfig.providers.gemini.ttsModel)
 
   const geminiVoice =
     !aiConfig.providers.gemini.voice || aiConfig.providers.gemini.voice === 'Kore'
