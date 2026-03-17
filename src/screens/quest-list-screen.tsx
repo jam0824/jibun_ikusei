@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Filter, Search, Settings2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
-import { getQuestAvailability } from '@/domain/logic'
+import { getQuestAvailability, getQuestIdsWithActiveCompletions } from '@/domain/logic'
 import { QuestCompleteModal } from '@/components/quest-complete-modal'
 import { QuestCard } from '@/components/quest-card'
 import { Screen } from '@/components/layout'
@@ -36,6 +36,18 @@ export function QuestListScreen() {
   const activeQuest = activeQuestId ? quests.find((quest) => quest.id === activeQuestId) : undefined
 
   const filtered = useMemo(() => {
+    const activeCompletions = completions.filter((completion) => !completion.undoneAt)
+    const completionQuestIds = getQuestIdsWithActiveCompletions(completions)
+    const latestCompletionAtByQuestId = new Map<string, number>()
+
+    for (const completion of activeCompletions) {
+      const completedAt = new Date(completion.completedAt).getTime()
+      const currentLatest = latestCompletionAtByQuestId.get(completion.questId) ?? 0
+      if (completedAt > currentLatest) {
+        latestCompletionAtByQuestId.set(completion.questId, completedAt)
+      }
+    }
+
     return quests
       .filter((quest) => quest.status !== 'archived')
       .filter((quest) => {
@@ -50,7 +62,7 @@ export function QuestListScreen() {
           return quest.questType === 'one_time'
         }
         if (tab === 'completed') {
-          return quest.status === 'completed'
+          return completionQuestIds.has(quest.id)
         }
         return true
       })
@@ -59,6 +71,14 @@ export function QuestListScreen() {
         return haystack.includes(query.toLowerCase())
       })
       .sort((left, right) => {
+        if (tab === 'completed') {
+          const leftLatest = latestCompletionAtByQuestId.get(left.id) ?? 0
+          const rightLatest = latestCompletionAtByQuestId.get(right.id) ?? 0
+          if (leftLatest !== rightLatest) {
+            return rightLatest - leftLatest
+          }
+        }
+
         const leftAvailability = getQuestAvailability(left, completions)
         const rightAvailability = getQuestAvailability(right, completions)
         const leftScore = (left.pinned ? 100 : 0) + (leftAvailability.canComplete ? 20 : 0) + left.xpReward
@@ -142,7 +162,7 @@ export function QuestListScreen() {
 
       <section className="mt-4">
         <div className="flex items-center justify-between text-xs text-slate-500">
-          <div>表示順: ピン・状態・XP</div>
+          <div>{tab === 'completed' ? '表示順: 最新クリア順' : '表示順: ピン・状態・XP'}</div>
           <button type="button" className="rounded-xl px-2 py-1 text-violet-700 hover:bg-violet-50">
             並び替え
           </button>
@@ -161,7 +181,15 @@ export function QuestListScreen() {
             const availability = getQuestAvailability(quest, completions)
             const skill = skills.find((entry) => entry.id === (quest.fixedSkillId ?? quest.defaultSkillId))
             const actionLabel =
-              quest.status === 'completed' ? '再オープン' : availability.canComplete ? 'クリア' : '詳細'
+              tab === 'completed'
+                ? quest.status === 'completed'
+                  ? '再オープン'
+                  : '詳細'
+                : quest.status === 'completed'
+                  ? '再オープン'
+                  : availability.canComplete
+                    ? 'クリア'
+                    : '詳細'
 
             return (
               <QuestCard
@@ -173,6 +201,10 @@ export function QuestListScreen() {
                 onAction={() => {
                   if (quest.status === 'completed') {
                     reopenQuest(quest.id)
+                    return
+                  }
+                  if (tab === 'completed') {
+                    navigate(`/quests/new?edit=${quest.id}`)
                     return
                   }
                   if (availability.canComplete) {

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { ChevronRight, Play, Plus, Settings2, Sparkles, Target, Trophy } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
-import { getLevelFromXp, getQuestAvailability } from '@/domain/logic'
+import { getLevelFromXp, getQuestAvailability, getTodayActiveCompletions } from '@/domain/logic'
 import { QuestCompleteModal } from '@/components/quest-complete-modal'
 import { QuestCard } from '@/components/quest-card'
 import { EmptyState, Screen, SectionHeader } from '@/components/layout'
@@ -36,13 +36,9 @@ export function HomeScreen() {
   const [audioError, setAudioError] = useState<string>()
 
   const levelInfo = useMemo(() => getLevelFromXp(user.totalXp, 100), [user.totalXp])
-  const todayKey = new Date().toISOString().slice(0, 10)
   const todayCompletions = useMemo(
-    () =>
-      completions.filter(
-        (completion) => !completion.undoneAt && completion.completedAt.slice(0, 10) === todayKey,
-      ),
-    [completions, todayKey],
+    () => getTodayActiveCompletions(completions),
+    [completions],
   )
 
   const todayXp = todayCompletions.reduce((sum, completion) => sum + completion.userXpAwarded, 0)

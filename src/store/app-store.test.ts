@@ -1,5 +1,8 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as domainLogic from '@/domain/logic'
 import { hydratePersistedState } from '@/domain/logic'
+import type { Quest, SkillResolutionResult } from '@/domain/types'
+import * as aiLib from '@/lib/ai'
 import { playAudioUrl } from '@/lib/tts'
 import { useAppStore } from '@/store/app-store'
 
@@ -22,6 +25,10 @@ function resetStore() {
 describe('app store', () => {
   beforeEach(() => {
     resetStore()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('deletes an uncompleted quest', () => {
@@ -138,5 +145,147 @@ describe('app store', () => {
     await expect(useAppStore.getState().playAssistantMessage(completion!.assistantMessageId!)).resolves.toBe(
       '音声再生はオフラインでは利用できません。ネットワーク接続を確認してください。',
     )
+  })
+
+  it('keeps generated Lily text after delayed skill resolution completes', async () => {
+    const state = useAppStore.getState()
+    const skill = state.skills[0]
+    expect(skill).toBeTruthy()
+
+    const now = new Date().toISOString()
+    const quest: Quest = {
+      id: 'quest_async_race',
+      title: '非同期競合テスト',
+      description: 'Lily生成が先に終わる',
+      questType: 'repeatable',
+      xpReward: 7,
+      category: '仕事',
+      skillMappingMode: 'ai_auto',
+      status: 'active',
+      privacyMode: 'normal',
+      pinned: false,
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    useAppStore.getState().upsertQuest(quest)
+    useAppStore.setState((current) => ({
+      ...current,
+      aiConfig: {
+        ...current.aiConfig,
+        providers: {
+          ...current.aiConfig.providers,
+          openai: {
+            ...current.aiConfig.providers.openai,
+            apiKey: 'sk-test',
+          },
+        },
+      },
+    }))
+
+    let resolveSkillResult: ((value: SkillResolutionResult) => void) | undefined
+    const resolveSkillPromise = new Promise<SkillResolutionResult>((resolve) => {
+      resolveSkillResult = resolve
+    })
+
+    const generatedText = '生成されたLilyコメント'
+    const resolveSkillSpy = vi.spyOn(aiLib, 'resolveSkillWithProvider').mockReturnValue(resolveSkillPromise)
+    const lilySpy = vi.spyOn(aiLib, 'generateLilyMessageWithProvider').mockResolvedValue({
+      intent: 'quest_completed',
+      mood: 'bright',
+      text: generatedText,
+      shouldSpeak: false,
+    })
+
+    const completionResult = await useAppStore.getState().completeQuest(quest.id, {
+      completedAt: new Date().toISOString(),
+      sourceScreen: 'home',
+    })
+    expect(completionResult.completionId).toBeTruthy()
+    const completionId = completionResult.completionId!
+
+    await vi.waitFor(() => {
+      const store = useAppStore.getState()
+      const completion = store.completions.find((entry) => entry.id === completionId)
+      const message = completion?.assistantMessageId
+        ? store.assistantMessages.find((entry) => entry.id === completion.assistantMessageId)
+        : undefined
+      expect(message?.text).toBe(generatedText)
+    })
+
+    resolveSkillResult?.({
+      action: 'assign_existing',
+      skillName: skill!.name,
+      category: skill!.category,
+      confidence: 0.95,
+      reason: 'テスト解決',
+      candidateSkills: [skill!.name],
+    })
+
+    await vi.waitFor(() => {
+      const store = useAppStore.getState()
+      const completion = store.completions.find((entry) => entry.id === completionId)
+      expect(completion?.resolvedSkillId).toBe(skill!.id)
+
+      const message = completion?.assistantMessageId
+        ? store.assistantMessages.find((entry) => entry.id === completion.assistantMessageId)
+        : undefined
+      expect(message?.text).toBe(generatedText)
+    })
+
+    expect(lilySpy).toHaveBeenCalledTimes(1)
+    expect(resolveSkillSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps resolvedSkillId aligned with the created skill id in fallback mode', async () => {
+    const now = new Date().toISOString()
+    const quest: Quest = {
+      id: 'quest_fallback_skill_id_alignment',
+      title: '記号スキル作成テスト',
+      description: 'fallback path',
+      questType: 'repeatable',
+      xpReward: 6,
+      category: 'その他',
+      skillMappingMode: 'ai_auto',
+      status: 'active',
+      privacyMode: 'normal',
+      pinned: false,
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    useAppStore.getState().upsertQuest(quest)
+    useAppStore.setState((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        aiEnabled: false,
+      },
+    }))
+
+    vi.spyOn(domainLogic, 'buildTemplateSkillResolution').mockReturnValue({
+      action: 'assign_seed',
+      skillName: '!!!',
+      category: 'その他',
+      confidence: 0.9,
+      reason: 'fallback test',
+      candidateSkills: ['!!!'],
+    })
+
+    const completionResult = await useAppStore.getState().completeQuest(quest.id, {
+      completedAt: now,
+      sourceScreen: 'home',
+    })
+
+    expect(completionResult.completionId).toBeTruthy()
+    const store = useAppStore.getState()
+    const completion = store.completions.find((entry) => entry.id === completionResult.completionId)
+    expect(completion?.resolvedSkillId).toBeTruthy()
+    expect(completion?.skillResolutionStatus).toBe('resolved')
+
+    const resolvedSkill = completion?.resolvedSkillId
+      ? store.skills.find((skill) => skill.id === completion.resolvedSkillId)
+      : undefined
+    expect(resolvedSkill?.name).toBe('!!!')
   })
 })

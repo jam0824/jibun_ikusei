@@ -426,29 +426,23 @@ export const useAppStore = create<AppStore>((set, get) => ({
         reason: '前回の解決結果を再利用',
       })
     } else if (!hasUsableAi(state.aiConfig, state.settings) || quest.privacyMode === 'no_ai') {
-      if (fallbackResolution.confidence >= 0.8 && fallbackResolution.skillName !== '未分類') {
+      const fallbackSkillName = fallbackResolution.skillName.trim()
+      if (fallbackResolution.confidence >= 0.8 && fallbackSkillName && fallbackSkillName !== '未分類') {
         const existing = nextState.skills.find(
-          (skill) => normalizeSkillName(skill.name) === normalizeSkillName(fallbackResolution.skillName),
+          (skill) => normalizeSkillName(skill.name) === normalizeSkillName(fallbackSkillName),
         )
-        const skillId =
-          existing?.id ??
-          createSkillRecord(
-            fallbackResolution.skillName,
+        let skillId = existing?.id
+
+        if (!skillId) {
+          const created = createSkillRecord(
+            fallbackSkillName,
             fallbackResolution.category,
             fallbackResolution.action === 'assign_seed' ? 'seed' : 'manual',
-          ).id
-
-        if (!existing) {
+          )
+          skillId = created.id
           nextState = {
             ...nextState,
-            skills: [
-              createSkillRecord(
-                fallbackResolution.skillName,
-                fallbackResolution.category,
-                fallbackResolution.action === 'assign_seed' ? 'seed' : 'manual',
-              ),
-              ...nextState.skills,
-            ],
+            skills: [created, ...nextState.skills],
           }
         }
 
@@ -462,6 +456,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         })
       } else {
         const candidateSkillIds = fallbackResolution.candidateSkills
+          .map((skillName) => skillName.trim())
+          .filter((skillName) => skillName.length > 0)
           .map((skillName) => {
             const existing = nextState.skills.find(
               (skill) => normalizeSkillName(skill.name) === normalizeSkillName(skillName),
@@ -586,43 +582,63 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   resolveCompletionCandidates: async (completionId, result) => {
-    const state = get()
-    const completion = state.completions.find((entry) => entry.id === completionId)
-    if (!completion || completion.undoneAt || completion.resolvedSkillId) {
+    const requestState = get()
+    const requestCompletion = requestState.completions.find((entry) => entry.id === completionId)
+    if (!requestCompletion || requestCompletion.undoneAt || requestCompletion.resolvedSkillId) {
       return
     }
 
-    const quest = state.quests.find((entry) => entry.id === completion.questId)
-    if (!quest) {
+    const requestQuest = requestState.quests.find((entry) => entry.id === requestCompletion.questId)
+    if (!requestQuest) {
       return
     }
 
     const resolution =
       result ??
       (await resolveSkillWithProvider({
-        aiConfig: state.aiConfig,
-        settings: state.settings,
-        quest,
-        note: completion.note,
-        skills: state.skills.filter((skill) => skill.status === 'active'),
-        dictionary: state.personalSkillDictionary
+        aiConfig: requestState.aiConfig,
+        settings: requestState.settings,
+        quest: requestQuest,
+        note: requestCompletion.note,
+        skills: requestState.skills.filter((skill) => skill.status === 'active'),
+        dictionary: requestState.personalSkillDictionary
           .map((entry) => {
-            const skill = state.skills.find((item) => item.id === entry.mappedSkillId)
+            const skill = requestState.skills.find((item) => item.id === entry.mappedSkillId)
             return skill ? { phrase: entry.phrase, mappedSkillName: skill.name } : undefined
           })
           .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
       }))
 
-    let nextState: PersistedAppState = toPersistedState(state)
-    const maybeCreateSkill = (skillName: string, category: string, source: 'manual' | 'ai' | 'seed') => {
+    const latestState = get()
+    const completion = latestState.completions.find((entry) => entry.id === completionId)
+    if (!completion || completion.undoneAt || completion.resolvedSkillId) {
+      return
+    }
+
+    const quest = latestState.quests.find((entry) => entry.id === completion.questId)
+    if (!quest) {
+      return
+    }
+
+    let nextState: PersistedAppState = toPersistedState(latestState)
+    const maybeCreateSkill = (
+      skillName: string,
+      category: string,
+      source: 'manual' | 'ai' | 'seed',
+    ): string | undefined => {
+      const normalizedSkillName = skillName.trim()
+      if (!normalizedSkillName) {
+        return undefined
+      }
+
       const existing = nextState.skills.find(
-        (skill) => skill.status === 'active' && normalizeSkillName(skill.name) === normalizeSkillName(skillName),
+        (skill) => skill.status === 'active' && normalizeSkillName(skill.name) === normalizeSkillName(normalizedSkillName),
       )
       if (existing) {
         return existing.id
       }
 
-      const created = createSkillRecord(skillName, category, source)
+      const created = createSkillRecord(normalizedSkillName, category, source)
       nextState = {
         ...nextState,
         skills: [created, ...nextState.skills],
@@ -636,15 +652,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
         resolution.category,
         resolution.action === 'assign_seed' ? 'seed' : resolution.action === 'propose_new' ? 'ai' : 'manual',
       )
-      nextState = applySkillResolutionToCompletion({
-        state: nextState,
-        completionId,
-        skillId,
-        mode: quest.skillMappingMode,
-        source:
-          resolution.action === 'assign_seed' ? 'seed' : resolution.action === 'propose_new' ? 'ai' : 'manual',
-        reason: resolution.reason,
-      })
+      if (skillId) {
+        nextState = applySkillResolutionToCompletion({
+          state: nextState,
+          completionId,
+          skillId,
+          mode: quest.skillMappingMode,
+          source:
+            resolution.action === 'assign_seed' ? 'seed' : resolution.action === 'propose_new' ? 'ai' : 'manual',
+          reason: resolution.reason,
+        })
+      } else {
+        nextState = reconcileState({
+          ...nextState,
+          completions: nextState.completions.map((entry) =>
+            entry.id === completionId
+              ? {
+                  ...entry,
+                  skillResolutionStatus: 'unclassified',
+                  resolutionReason: resolution.reason,
+                }
+              : entry,
+          ),
+        })
+      }
     } else if (resolution.confidence >= 0.55) {
       const candidateSkillIds = resolution.candidateSkills
         .map((skillName) =>
@@ -654,6 +685,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
             resolution.action === 'assign_seed' ? 'seed' : resolution.action === 'propose_new' ? 'ai' : 'manual',
           ),
         )
+        .filter((skillId): skillId is string => Boolean(skillId))
         .slice(0, 3)
 
       nextState = reconcileState({
