@@ -1,7 +1,9 @@
-import { useEffect, useEffectEvent, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowRight, Play, ScrollText, Sparkles, Star, Trophy } from 'lucide-react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { CompletionResolutionCard } from '@/components/completion-resolution-card'
+import { getLevelFromXp } from '@/domain/logic'
+import { SKILL_LEVEL_XP, USER_LEVEL_XP } from '@/domain/constants'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Progress } from '@/components/ui'
 import { useAppStore } from '@/store/app-store'
@@ -23,23 +25,21 @@ export function ClearEffectScreen() {
     .map((skillId) => state.skills.find((skillEntry) => skillEntry.id === skillId))
     .filter((value): value is NonNullable<typeof value> => Boolean(value))
 
-  const playAutoMessage = useEffectEvent(async (messageId: string) => {
-    const error = await state.playAssistantMessage(messageId)
-    setAudioError(error)
-  })
+  const playAssistantMessageRef = useRef(state.playAssistantMessage)
+  playAssistantMessageRef.current = state.playAssistantMessage
 
-  const handlePlayMessage = async (messageId: string) => {
-    const error = await state.playAssistantMessage(messageId)
+  const handlePlayMessage = useCallback(async (messageId: string) => {
+    const error = await playAssistantMessageRef.current(messageId)
     setAudioError(error)
-  }
+  }, [])
 
   useEffect(() => {
     if (!message?.id || state.settings.lilyAutoPlay !== 'on') {
       return
     }
 
-    void playAutoMessage(message.id)
-  }, [message?.id, state.settings.lilyAutoPlay])
+    void handlePlayMessage(message.id)
+  }, [message?.id, state.settings.lilyAutoPlay, handlePlayMessage])
 
   if (!completion || !quest) {
     return (
@@ -99,11 +99,11 @@ export function ClearEffectScreen() {
               <div className="mb-2 flex items-end justify-between gap-3">
                 <div>
                   <div className="text-2xl font-black tracking-tight text-slate-900">Lv.{state.user.level}</div>
-                  <div className="mt-1 text-sm text-slate-500">次のレベルまであと {100 - (state.user.totalXp % 100 || 0)}XP</div>
+                  <div className="mt-1 text-sm text-slate-500">次のレベルまであと {getLevelFromXp(state.user.totalXp, USER_LEVEL_XP).nextStepXp}XP</div>
                 </div>
                 <Badge>{state.user.totalXp} XP</Badge>
               </div>
-              <Progress value={((state.user.totalXp % 100) / 100) * 100} />
+              <Progress value={getLevelFromXp(state.user.totalXp, USER_LEVEL_XP).progress} />
             </CardContent>
           </Card>
 
@@ -119,11 +119,11 @@ export function ClearEffectScreen() {
                     <div className="text-lg font-black tracking-tight text-slate-900">
                       {skill.name} Lv.{skill.level}
                     </div>
-                    <div className="mt-1 text-sm text-slate-500">次のレベルまであと {50 - (skill.totalXp % 50 || 0)}XP</div>
+                    <div className="mt-1 text-sm text-slate-500">次のレベルまであと {getLevelFromXp(skill.totalXp, SKILL_LEVEL_XP).nextStepXp}XP</div>
                   </div>
                   <Badge>{skill.totalXp} XP</Badge>
                 </div>
-                <Progress value={((skill.totalXp % 50) / 50) * 100} />
+                <Progress value={getLevelFromXp(skill.totalXp, SKILL_LEVEL_XP).progress} />
               </CardContent>
             </Card>
           ) : null}

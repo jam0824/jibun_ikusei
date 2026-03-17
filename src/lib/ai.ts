@@ -176,9 +176,13 @@ async function wait(ms: number) {
 
 async function readErrorResponse(response: Response) {
   try {
-    const contentType = response.headers.get('content-type') ?? ''
-    if (contentType.includes('application/json')) {
-      const payload = (await response.json()) as {
+    const text = await response.text()
+    if (!text.trim()) {
+      return undefined
+    }
+
+    try {
+      const payload = JSON.parse(text) as {
         error?: {
           message?: string
           type?: string
@@ -190,10 +194,11 @@ async function readErrorResponse(response: Response) {
         const details = [payload.error.type, payload.error.code].filter(Boolean).join('/')
         return details ? `${payload.error.message} (${details})` : payload.error.message
       }
+    } catch {
+      // Not valid JSON — fall through to return raw text.
     }
 
-    const text = await response.text()
-    return text.trim() || undefined
+    return text.trim()
   } catch {
     return undefined
   }

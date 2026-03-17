@@ -1,6 +1,10 @@
 const audioCache = new Map<string, string>()
 
 export async function playAudioUrl(cacheKey: string, audioUrl: string) {
+  const previous = audioCache.get(cacheKey)
+  if (previous && previous !== audioUrl) {
+    URL.revokeObjectURL(previous)
+  }
   audioCache.set(cacheKey, audioUrl)
   const audio = new Audio(audioUrl)
   audio.preload = 'auto'

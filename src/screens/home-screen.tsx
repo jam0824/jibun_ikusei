@@ -54,7 +54,13 @@ export function HomeScreen() {
     })
     .slice(0, 5)
 
-  const latestMessage = assistantMessages[0]
+  const latestMessage = useMemo(
+    () =>
+      [...assistantMessages].sort(
+        (left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
+      )[0],
+    [assistantMessages],
+  )
   const activeQuestId = searchParams.get('complete')
   const activeQuest = activeQuestId ? quests.find((quest) => quest.id === activeQuestId) : undefined
 
