@@ -269,7 +269,7 @@ describe('domain logic', () => {
   })
 
   it('migrates legacy provider defaults to current models and speaker', () => {
-    for (const legacyGeminiTtsModel of ['gemini-2.5-flash-preview-tts', 'gemini-2.5-flash-lite-tts']) {
+    for (const legacyGeminiTtsModel of ['gemini-2.5-flash-tts', 'gemini-2.5-flash-lite-tts']) {
       const state = hydratePersistedState({
         aiConfig: {
           activeProvider: 'openai',
@@ -293,7 +293,7 @@ describe('domain logic', () => {
       })
 
       expect(state.aiConfig.providers.openai.model).toBe('gpt-5.4')
-      expect(state.aiConfig.providers.gemini.ttsModel).toBe('gemini-2.5-flash-tts')
+      expect(state.aiConfig.providers.gemini.ttsModel).toBe('gemini-2.5-flash-preview-tts')
       expect(state.aiConfig.providers.gemini.voice).toBe('Zephyr')
     }
   })

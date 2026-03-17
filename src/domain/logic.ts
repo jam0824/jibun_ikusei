@@ -366,7 +366,7 @@ function normalizeQuestConstraints(quest: Quest): Quest {
 }
 
 const LEGACY_GEMINI_TTS_MODEL_ALIASES: Record<string, string> = {
-  'gemini-2.5-flash-preview-tts': GEMINI_MODELS.tts,
+  'gemini-2.5-flash-tts': GEMINI_MODELS.tts,
   'gemini-2.5-flash-lite-tts': GEMINI_MODELS.tts,
   'gemini-2.5-flash-lite-preview-tts': GEMINI_MODELS.tts,
   'gemini-2.5-pro-preview-tts': 'gemini-2.5-pro-tts',

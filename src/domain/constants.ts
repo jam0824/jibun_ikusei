@@ -37,7 +37,7 @@ export const OPENAI_MODELS = {
 
 export const GEMINI_MODELS = {
   text: 'gemini-2.5-flash',
-  tts: 'gemini-2.5-flash-tts',
+  tts: 'gemini-2.5-flash-preview-tts',
 } as const
 
 export const GEMINI_VOICES = [
