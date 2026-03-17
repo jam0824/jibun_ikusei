@@ -586,34 +586,45 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   resolveCompletionCandidates: async (completionId, result) => {
-    const state = get()
-    const completion = state.completions.find((entry) => entry.id === completionId)
-    if (!completion || completion.undoneAt || completion.resolvedSkillId) {
+    const requestState = get()
+    const requestCompletion = requestState.completions.find((entry) => entry.id === completionId)
+    if (!requestCompletion || requestCompletion.undoneAt || requestCompletion.resolvedSkillId) {
       return
     }
 
-    const quest = state.quests.find((entry) => entry.id === completion.questId)
-    if (!quest) {
+    const requestQuest = requestState.quests.find((entry) => entry.id === requestCompletion.questId)
+    if (!requestQuest) {
       return
     }
 
     const resolution =
       result ??
       (await resolveSkillWithProvider({
-        aiConfig: state.aiConfig,
-        settings: state.settings,
-        quest,
-        note: completion.note,
-        skills: state.skills.filter((skill) => skill.status === 'active'),
-        dictionary: state.personalSkillDictionary
+        aiConfig: requestState.aiConfig,
+        settings: requestState.settings,
+        quest: requestQuest,
+        note: requestCompletion.note,
+        skills: requestState.skills.filter((skill) => skill.status === 'active'),
+        dictionary: requestState.personalSkillDictionary
           .map((entry) => {
-            const skill = state.skills.find((item) => item.id === entry.mappedSkillId)
+            const skill = requestState.skills.find((item) => item.id === entry.mappedSkillId)
             return skill ? { phrase: entry.phrase, mappedSkillName: skill.name } : undefined
           })
           .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry)),
       }))
 
-    let nextState: PersistedAppState = toPersistedState(state)
+    const latestState = get()
+    const completion = latestState.completions.find((entry) => entry.id === completionId)
+    if (!completion || completion.undoneAt || completion.resolvedSkillId) {
+      return
+    }
+
+    const quest = latestState.quests.find((entry) => entry.id === completion.questId)
+    if (!quest) {
+      return
+    }
+
+    let nextState: PersistedAppState = toPersistedState(latestState)
     const maybeCreateSkill = (skillName: string, category: string, source: 'manual' | 'ai' | 'seed') => {
       const existing = nextState.skills.find(
         (skill) => skill.status === 'active' && normalizeSkillName(skill.name) === normalizeSkillName(skillName),
