@@ -250,7 +250,9 @@ describe('ai adapter', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
     const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toContain('/models/gemini-2.5-flash-preview-tts:generateContent')
+
+    expect(url).toContain('/models/gemini-2.5-flash-lite-preview-tts:generateContent')
+
     expect(request.headers).toMatchObject({
       'Content-Type': 'application/json',
       'x-goog-api-key': 'gm-test',
