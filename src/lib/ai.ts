@@ -348,18 +348,6 @@ async function requestGeminiJson<T>({
   return JSON.parse(text) as T
 }
 
-function getGeminiTtsRuntimeModel(ttsModel: string) {
-  if (ttsModel === 'gemini-2.5-flash-tts') {
-    return 'gemini-2.5-flash-preview-tts'
-  }
-
-  if (ttsModel === 'gemini-2.5-pro-tts') {
-    return 'gemini-2.5-pro-preview-tts'
-  }
-
-  return ttsModel
-}
-
 function decodeBase64(data: string) {
   return Uint8Array.from(atob(data), (character) => character.charCodeAt(0))
 }
@@ -595,9 +583,8 @@ export async function generateTtsAudio(params: {
     throw new Error('Gemini TTS key is unavailable.')
   }
 
-  const runtimeModel = getGeminiTtsRuntimeModel(providerConfig.ttsModel)
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${runtimeModel}:generateContent`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${providerConfig.ttsModel}:generateContent`,
     {
       method: 'POST',
       headers: {

@@ -210,7 +210,7 @@ describe('ai adapter', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('uses the Gemini API TTS runtime model and wraps PCM audio as wav', async () => {
+  it('uses the configured Gemini TTS model and wraps PCM audio as wav', async () => {
     const state = hydratePersistedState()
     state.aiConfig.activeProvider = 'gemini'
     state.aiConfig.providers.gemini.apiKey = 'gm-test'
@@ -250,7 +250,7 @@ describe('ai adapter', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
     const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toContain('/models/gemini-2.5-flash-preview-tts:generateContent')
+    expect(url).toContain('/models/gemini-2.5-flash-tts:generateContent')
     expect(request.headers).toMatchObject({
       'Content-Type': 'application/json',
       'x-goog-api-key': 'gm-test',
