@@ -269,30 +269,32 @@ describe('domain logic', () => {
   })
 
   it('migrates legacy provider defaults to current models and speaker', () => {
-    const state = hydratePersistedState({
-      aiConfig: {
-        activeProvider: 'openai',
-        providers: {
-          openai: {
-            apiKey: 'sk-test',
-            model: 'gpt-5-mini',
-            ttsModel: 'gpt-4o-mini-tts',
-            voice: 'alloy',
-            updatedAt: new Date().toISOString(),
-          },
-          gemini: {
-            apiKey: 'gm-test',
-            model: 'gemini-2.5-flash',
-            ttsModel: 'gemini-2.5-flash-preview-tts',
-            voice: 'Kore',
-            updatedAt: new Date().toISOString(),
+    for (const legacyGeminiTtsModel of ['gemini-2.5-flash-preview-tts', 'gemini-2.5-flash-lite-tts']) {
+      const state = hydratePersistedState({
+        aiConfig: {
+          activeProvider: 'openai',
+          providers: {
+            openai: {
+              apiKey: 'sk-test',
+              model: 'gpt-5-mini',
+              ttsModel: 'gpt-4o-mini-tts',
+              voice: 'alloy',
+              updatedAt: new Date().toISOString(),
+            },
+            gemini: {
+              apiKey: 'gm-test',
+              model: 'gemini-2.5-flash',
+              ttsModel: legacyGeminiTtsModel,
+              voice: 'Kore',
+              updatedAt: new Date().toISOString(),
+            },
           },
         },
-      },
-    })
+      })
 
-    expect(state.aiConfig.providers.openai.model).toBe('gpt-5.4')
-    expect(state.aiConfig.providers.gemini.ttsModel).toBe('gemini-2.5-flash-tts')
-    expect(state.aiConfig.providers.gemini.voice).toBe('Zephyr')
+      expect(state.aiConfig.providers.openai.model).toBe('gpt-5.4')
+      expect(state.aiConfig.providers.gemini.ttsModel).toBe('gemini-2.5-flash-tts')
+      expect(state.aiConfig.providers.gemini.voice).toBe('Zephyr')
+    }
   })
 })
