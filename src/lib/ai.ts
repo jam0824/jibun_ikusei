@@ -348,6 +348,12 @@ async function requestGeminiJson<T>({
   return JSON.parse(text) as T
 }
 
+/** Models that must go through the Cloud Text-to-Speech API instead of generateContent. */
+const CLOUD_TTS_MODELS = new Set([
+  'gemini-2.5-flash-lite-tts',
+  'gemini-2.5-flash-lite-preview-tts',
+])
+
 function getGeminiTtsRuntimeModel(ttsModel: string) {
   const previewMap: Record<string, string> = {
     'gemini-2.5-flash-tts': 'gemini-2.5-flash-preview-tts',
@@ -356,6 +362,10 @@ function getGeminiTtsRuntimeModel(ttsModel: string) {
   }
 
   return previewMap[ttsModel] ?? ttsModel
+}
+
+function isCloudTtsModel(ttsModel: string) {
+  return CLOUD_TTS_MODELS.has(ttsModel) || CLOUD_TTS_MODELS.has(getGeminiTtsRuntimeModel(ttsModel))
 }
 
 function decodeBase64(data: string) {
@@ -594,13 +604,83 @@ export async function generateTtsAudio(params: {
   }
 
   const runtimeModel = getGeminiTtsRuntimeModel(providerConfig.ttsModel)
+
+  if (isCloudTtsModel(providerConfig.ttsModel)) {
+    return generateTtsViaCloudApi({
+      apiKey: providerConfig.apiKey,
+      model: runtimeModel,
+      voice: providerConfig.voice,
+      text,
+    })
+  }
+
+  return generateTtsViaGenerativeApi({
+    apiKey: providerConfig.apiKey,
+    model: runtimeModel,
+    voice: providerConfig.voice,
+    text,
+  })
+}
+
+/** Cloud Text-to-Speech API (texttospeech.googleapis.com) */
+async function generateTtsViaCloudApi(params: {
+  apiKey: string
+  model: string
+  voice: string
+  text: string
+}) {
+  const { apiKey, model, voice, text } = params
+
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${runtimeModel}:generateContent`,
+    `https://texttospeech.googleapis.com/v1beta1/text:synthesize?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        input: { text },
+        voice: {
+          languageCode: 'ja-JP',
+          name: voice,
+          model_name: model,
+        },
+        audioConfig: {
+          audioEncoding: 'MP3',
+        },
+      }),
+    },
+  )
+
+  if (!response.ok) {
+    const details = await readErrorResponse(response)
+    throw new Error(`Gemini TTS failed: ${response.status}${details ? ` - ${details}` : ''}`)
+  }
+
+  const payload = (await response.json()) as { audioContent?: string }
+  if (!payload.audioContent) {
+    throw new Error('Gemini TTS payload was empty.')
+  }
+
+  const bytes = decodeBase64(payload.audioContent)
+  const blob = new Blob([bytes], { type: 'audio/mp3' })
+  return URL.createObjectURL(blob)
+}
+
+/** Generative Language API (generativelanguage.googleapis.com) */
+async function generateTtsViaGenerativeApi(params: {
+  apiKey: string
+  model: string
+  voice: string
+  text: string
+}) {
+  const { apiKey, model, voice, text } = params
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
     {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': providerConfig.apiKey,
+        'x-goog-api-key': apiKey,
       },
       body: JSON.stringify({
         contents: [
@@ -614,7 +694,7 @@ export async function generateTtsAudio(params: {
           speechConfig: {
             voiceConfig: {
               prebuiltVoiceConfig: {
-                voiceName: providerConfig.voice,
+                voiceName: voice,
               },
             },
           },
