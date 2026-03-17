@@ -221,20 +221,7 @@ describe('ai adapter', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          candidates: [
-            {
-              content: {
-                parts: [
-                  {
-                    inlineData: {
-                      data: btoa(String.fromCharCode(1, 0, 255, 127)),
-                      mimeType: 'audio/L16;rate=24000',
-                    },
-                  },
-                ],
-              },
-            },
-          ],
+          audioContent: btoa(String.fromCharCode(0xff, 0xfb, 0x90, 0x00)),
         }),
         { status: 200 },
       ),
@@ -250,24 +237,19 @@ describe('ai adapter', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
     const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toContain('/models/gemini-2.5-flash-lite-preview-tts:generateContent')
-    expect(request.headers).toMatchObject({
-      'Content-Type': 'application/json',
-      'x-goog-api-key': 'gm-test',
-    })
+    expect(url).toContain('texttospeech.googleapis.com/v1beta1/text:synthesize')
+    expect(url).toContain('key=gm-test')
 
     const body = JSON.parse(String(request.body))
-    expect(body.generationConfig.responseModalities).toEqual(['AUDIO'])
-    expect(body.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Zephyr')
-    expect(body.speechConfig).toBeUndefined()
+    expect(body.voice.model_name).toBe('gemini-2.5-flash-lite-preview-tts')
+    expect(body.voice.name).toBe('Zephyr')
+    expect(body.voice.languageCode).toBe('ja-JP')
+    expect(body.audioConfig.audioEncoding).toBe('MP3')
 
     const createdBlob = createObjectUrl.mock.calls[0]?.[0]
     expect(createdBlob).toBeInstanceOf(Blob)
     const audioBlob = createdBlob as Blob
-    expect(audioBlob.type).toBe('audio/wav')
-
-    const wavHeader = new Uint8Array(await audioBlob.arrayBuffer()).slice(0, 4)
-    expect(Array.from(wavHeader)).toEqual([82, 73, 70, 70])
+    expect(audioBlob.type).toBe('audio/mp3')
   })
 
   it('includes Gemini TTS error details when the API returns 400', async () => {
