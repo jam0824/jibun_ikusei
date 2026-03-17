@@ -407,6 +407,19 @@ export function getActiveCompletions(completions: QuestCompletion[]) {
   return completions.filter((completion) => !completion.undoneAt)
 }
 
+export function getTodayActiveCompletions(
+  completions: QuestCompletion[],
+  referenceDate = new Date(),
+) {
+  return getActiveCompletions(completions).filter((completion) =>
+    isSameCalendarDay(completion.completedAt, referenceDate),
+  )
+}
+
+export function getQuestIdsWithActiveCompletions(completions: QuestCompletion[]) {
+  return new Set(getActiveCompletions(completions).map((completion) => completion.questId))
+}
+
 export function getQuestCompletions(completions: QuestCompletion[], questId: string) {
   return getActiveCompletions(completions)
     .filter((completion) => completion.questId === questId)

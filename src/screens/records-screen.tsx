@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { History, RotateCcw, Settings2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { CompletionResolutionCard } from '@/components/completion-resolution-card'
+import { getTodayActiveCompletions } from '@/domain/logic'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent } from '@/components/ui'
 import { formatDateTime, isUndoable } from '@/lib/date'
@@ -14,8 +15,9 @@ export function RecordsScreen() {
     () => state.completions.filter((completion) => !completion.undoneAt),
     [state.completions],
   )
-  const todayCompletions = activeCompletions.filter(
-    (completion) => completion.completedAt.slice(0, 10) === new Date().toISOString().slice(0, 10),
+  const todayCompletions = useMemo(
+    () => getTodayActiveCompletions(state.completions),
+    [state.completions],
   )
   const todayXp = todayCompletions.reduce((sum, completion) => sum + completion.userXpAwarded, 0)
 
