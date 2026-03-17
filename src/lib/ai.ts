@@ -349,15 +349,13 @@ async function requestGeminiJson<T>({
 }
 
 function getGeminiTtsRuntimeModel(ttsModel: string) {
-  if (ttsModel === 'gemini-2.5-flash-tts') {
-    return 'gemini-2.5-flash-preview-tts'
+  const previewMap: Record<string, string> = {
+    'gemini-2.5-flash-tts': 'gemini-2.5-flash-preview-tts',
+    'gemini-2.5-flash-lite-tts': 'gemini-2.5-flash-lite-preview-tts',
+    'gemini-2.5-pro-tts': 'gemini-2.5-pro-preview-tts',
   }
 
-  if (ttsModel === 'gemini-2.5-pro-tts') {
-    return 'gemini-2.5-pro-preview-tts'
-  }
-
-  return ttsModel
+  return previewMap[ttsModel] ?? ttsModel
 }
 
 function decodeBase64(data: string) {
