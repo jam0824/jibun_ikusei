@@ -2,8 +2,7 @@
   "permissions": {
     "allow": [
       "Bash(npx vitest:*)",
-      "Bash(npx tsc:*)",
-      "WebFetch(domain:docs.cloud.google.com)"
+      "Bash(npx tsc:*)"
     ]
   }
 }
