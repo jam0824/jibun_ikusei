@@ -16,6 +16,10 @@ export const SKILL_LEVEL_XP = 50
 export const SKILL_XP_CAP = 20
 export const DEFAULT_REPEATABLE_COOLDOWN = 30
 export const DEFAULT_REPEATABLE_DAILY_CAP = 1
+export const MIN_REPEATABLE_COOLDOWN = 0
+export const MAX_REPEATABLE_COOLDOWN = 1440
+export const MIN_REPEATABLE_DAILY_CAP = 1
+export const MAX_REPEATABLE_DAILY_CAP = 10
 
 export const QUEST_CATEGORIES = [
   '学習',

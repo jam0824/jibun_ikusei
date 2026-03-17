@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import * as domainLogic from '@/domain/logic'
 import { hydratePersistedState } from '@/domain/logic'
 import type { Quest, SkillResolutionResult } from '@/domain/types'
 import * as aiLib from '@/lib/ai'
@@ -24,6 +25,10 @@ function resetStore() {
 describe('app store', () => {
   beforeEach(() => {
     resetStore()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
   it('deletes an uncompleted quest', () => {
@@ -230,5 +235,57 @@ describe('app store', () => {
 
     expect(lilySpy).toHaveBeenCalledTimes(1)
     expect(resolveSkillSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps resolvedSkillId aligned with the created skill id in fallback mode', async () => {
+    const now = new Date().toISOString()
+    const quest: Quest = {
+      id: 'quest_fallback_skill_id_alignment',
+      title: '記号スキル作成テスト',
+      description: 'fallback path',
+      questType: 'repeatable',
+      xpReward: 6,
+      category: 'その他',
+      skillMappingMode: 'ai_auto',
+      status: 'active',
+      privacyMode: 'normal',
+      pinned: false,
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    useAppStore.getState().upsertQuest(quest)
+    useAppStore.setState((current) => ({
+      ...current,
+      settings: {
+        ...current.settings,
+        aiEnabled: false,
+      },
+    }))
+
+    vi.spyOn(domainLogic, 'buildTemplateSkillResolution').mockReturnValue({
+      action: 'assign_seed',
+      skillName: '!!!',
+      category: 'その他',
+      confidence: 0.9,
+      reason: 'fallback test',
+      candidateSkills: ['!!!'],
+    })
+
+    const completionResult = await useAppStore.getState().completeQuest(quest.id, {
+      completedAt: now,
+      sourceScreen: 'home',
+    })
+
+    expect(completionResult.completionId).toBeTruthy()
+    const store = useAppStore.getState()
+    const completion = store.completions.find((entry) => entry.id === completionResult.completionId)
+    expect(completion?.resolvedSkillId).toBeTruthy()
+    expect(completion?.skillResolutionStatus).toBe('resolved')
+
+    const resolvedSkill = completion?.resolvedSkillId
+      ? store.skills.find((skill) => skill.id === completion.resolvedSkillId)
+      : undefined
+    expect(resolvedSkill?.name).toBe('!!!')
   })
 })

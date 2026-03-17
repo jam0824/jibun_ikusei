@@ -4,6 +4,7 @@ import {
   endOfDay,
   format,
   getISOWeek,
+  getISOWeekYear,
   isAfter,
   isBefore,
   isSameDay,
@@ -81,7 +82,7 @@ export function getDayKey(value: string | Date) {
 
 export function getWeekKey(value: string | Date) {
   const date = parseDate(value)
-  return `${format(date, 'yyyy')}-W${String(getISOWeek(date)).padStart(2, '0')}`
+  return `${getISOWeekYear(date)}-W${String(getISOWeek(date)).padStart(2, '0')}`
 }
 
 export function getDateRangeLast7Days() {

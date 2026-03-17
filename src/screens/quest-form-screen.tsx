@@ -5,7 +5,13 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { buildQuestDraft } from '@/domain/logic'
 import type { Quest, SkillMappingMode } from '@/domain/types'
-import { QUEST_CATEGORIES } from '@/domain/constants'
+import {
+  MAX_REPEATABLE_COOLDOWN,
+  MAX_REPEATABLE_DAILY_CAP,
+  MIN_REPEATABLE_COOLDOWN,
+  MIN_REPEATABLE_DAILY_CAP,
+  QUEST_CATEGORIES,
+} from '@/domain/constants'
 import { toDateTimeLocalValue } from '@/lib/date'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Select, Switch, Textarea } from '@/components/ui'
@@ -77,7 +83,40 @@ export function QuestFormScreen() {
       return
     }
 
-    upsertQuest(form)
+    if (form.questType === 'repeatable') {
+      if (
+        !Number.isInteger(form.cooldownMinutes ?? Number.NaN) ||
+        (form.cooldownMinutes ?? 0) < MIN_REPEATABLE_COOLDOWN ||
+        (form.cooldownMinutes ?? 0) > MAX_REPEATABLE_COOLDOWN
+      ) {
+        setError(`クールダウンは${MIN_REPEATABLE_COOLDOWN}〜${MAX_REPEATABLE_COOLDOWN}分の整数で入力してください。`)
+        return
+      }
+
+      if (
+        !Number.isInteger(form.dailyCompletionCap ?? Number.NaN) ||
+        (form.dailyCompletionCap ?? 0) < MIN_REPEATABLE_DAILY_CAP ||
+        (form.dailyCompletionCap ?? 0) > MAX_REPEATABLE_DAILY_CAP
+      ) {
+        setError(`1日上限は${MIN_REPEATABLE_DAILY_CAP}〜${MAX_REPEATABLE_DAILY_CAP}回の整数で入力してください。`)
+        return
+      }
+    }
+
+    const normalizedQuest: Quest =
+      form.questType === 'one_time'
+        ? {
+            ...form,
+            cooldownMinutes: undefined,
+            dailyCompletionCap: undefined,
+          }
+        : {
+            ...form,
+            cooldownMinutes: Math.trunc(form.cooldownMinutes ?? MIN_REPEATABLE_COOLDOWN),
+            dailyCompletionCap: Math.trunc(form.dailyCompletionCap ?? MIN_REPEATABLE_DAILY_CAP),
+          }
+
+    upsertQuest(normalizedQuest)
     navigate('/quests')
   }
 
@@ -297,6 +336,10 @@ export function QuestFormScreen() {
               <Input
                 type="number"
                 className="w-28 bg-white"
+                min={MIN_REPEATABLE_COOLDOWN}
+                max={MAX_REPEATABLE_COOLDOWN}
+                step={1}
+                disabled={form.questType !== 'repeatable'}
                 value={form.cooldownMinutes ?? 30}
                 onChange={(event) => update('cooldownMinutes', Number(event.target.value))}
               />
@@ -312,6 +355,10 @@ export function QuestFormScreen() {
               <Input
                 type="number"
                 className="w-28 bg-white"
+                min={MIN_REPEATABLE_DAILY_CAP}
+                max={MAX_REPEATABLE_DAILY_CAP}
+                step={1}
+                disabled={form.questType !== 'repeatable'}
                 value={form.dailyCompletionCap ?? 1}
                 onChange={(event) => update('dailyCompletionCap', Number(event.target.value))}
               />

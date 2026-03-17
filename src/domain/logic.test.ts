@@ -7,6 +7,7 @@ import {
   hydratePersistedState,
   mergeImportedState,
 } from '@/domain/logic'
+import { getWeekKey } from '@/lib/date'
 
 describe('domain logic', () => {
   it('marks repeatable quest as cooling down after completion', () => {
@@ -105,6 +106,10 @@ describe('domain logic', () => {
     expect(todayCompletions[0]?.id).toBe('completion_today_active')
   })
 
+  it('uses ISO week-year for week keys at year boundaries', () => {
+    expect(getWeekKey('2027-01-01T12:00:00+09:00')).toBe('2026-W53')
+  })
+
   it('collects quest ids that still have active completion history', () => {
     const now = new Date().toISOString()
     const completions = [
@@ -169,6 +174,98 @@ describe('domain logic', () => {
     )
 
     expect(replaced.aiConfig.providers.openai.apiKey).toBe('sk-live-current')
+  })
+
+  it('normalizes repeatable limits and strips one-time limits on hydrate', () => {
+    const now = new Date().toISOString()
+    const state = hydratePersistedState({
+      meta: {
+        schemaVersion: 1,
+        seededSampleData: true,
+      },
+      quests: [
+        {
+          id: 'quest_repeatable_invalid',
+          title: '制約外クエスト',
+          description: '',
+          questType: 'repeatable',
+          xpReward: 5,
+          category: '学習',
+          skillMappingMode: 'fixed',
+          cooldownMinutes: -12,
+          dailyCompletionCap: 999,
+          status: 'active',
+          privacyMode: 'normal',
+          pinned: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+        {
+          id: 'quest_one_time_invalid',
+          title: '単発クエスト',
+          description: '',
+          questType: 'one_time',
+          xpReward: 8,
+          category: '生活',
+          skillMappingMode: 'ai_auto',
+          cooldownMinutes: 120,
+          dailyCompletionCap: 3,
+          status: 'active',
+          privacyMode: 'normal',
+          pinned: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    })
+
+    const repeatable = state.quests.find((quest) => quest.id === 'quest_repeatable_invalid')
+    const oneTime = state.quests.find((quest) => quest.id === 'quest_one_time_invalid')
+
+    expect(repeatable?.cooldownMinutes).toBe(0)
+    expect(repeatable?.dailyCompletionCap).toBe(10)
+    expect(oneTime?.cooldownMinutes).toBeUndefined()
+    expect(oneTime?.dailyCompletionCap).toBeUndefined()
+  })
+
+  it('normalizes imported repeatable limits before merge result is returned', () => {
+    const current = hydratePersistedState({
+      meta: {
+        schemaVersion: 1,
+        seededSampleData: true,
+      },
+      quests: [],
+    })
+    const now = new Date().toISOString()
+
+    const merged = mergeImportedState(
+      current,
+      {
+        quests: [
+          {
+            id: 'quest_import_invalid',
+            title: 'imported',
+            description: '',
+            questType: 'repeatable',
+            xpReward: 5,
+            category: '仕事',
+            skillMappingMode: 'ai_auto',
+            cooldownMinutes: 99999,
+            dailyCompletionCap: 0,
+            status: 'active',
+            privacyMode: 'normal',
+            pinned: false,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+      },
+      'merge',
+    )
+
+    const importedQuest = merged.quests.find((quest) => quest.id === 'quest_import_invalid')
+    expect(importedQuest?.cooldownMinutes).toBe(1440)
+    expect(importedQuest?.dailyCompletionCap).toBe(1)
   })
 
   it('migrates legacy provider defaults to current models and speaker', () => {

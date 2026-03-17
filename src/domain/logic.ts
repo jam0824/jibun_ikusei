@@ -2,6 +2,10 @@ import { differenceInCalendarDays, differenceInMinutes, isBefore, parseISO, star
 import {
   DEFAULT_REPEATABLE_COOLDOWN,
   DEFAULT_REPEATABLE_DAILY_CAP,
+  MAX_REPEATABLE_COOLDOWN,
+  MAX_REPEATABLE_DAILY_CAP,
+  MIN_REPEATABLE_COOLDOWN,
+  MIN_REPEATABLE_DAILY_CAP,
   QUEST_CATEGORIES,
   SAMPLE_QUESTS,
   SEED_SKILLS,
@@ -331,6 +335,35 @@ function createSampleState(baseState: PersistedAppState) {
   }
 }
 
+function toWholeNumber(value?: number) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined
+  }
+
+  return Math.trunc(value)
+}
+
+function normalizeQuestConstraints(quest: Quest): Quest {
+  if (quest.questType !== 'repeatable') {
+    return {
+      ...quest,
+      cooldownMinutes: undefined,
+      dailyCompletionCap: undefined,
+    }
+  }
+
+  const cooldown = toWholeNumber(quest.cooldownMinutes)
+  const dailyCap = toWholeNumber(quest.dailyCompletionCap)
+
+  return {
+    ...quest,
+    cooldownMinutes:
+      cooldown === undefined ? undefined : clamp(cooldown, MIN_REPEATABLE_COOLDOWN, MAX_REPEATABLE_COOLDOWN),
+    dailyCompletionCap:
+      dailyCap === undefined ? undefined : clamp(dailyCap, MIN_REPEATABLE_DAILY_CAP, MAX_REPEATABLE_DAILY_CAP),
+  }
+}
+
 function migrateAiConfig(aiConfig: AiConfig): AiConfig {
   const defaults = createDefaultAiConfig()
   const openai =
@@ -428,6 +461,7 @@ export function getQuestCompletions(completions: QuestCompletion[], questId: str
 
 export function reconcileState(input: PersistedAppState): PersistedAppState {
   const state = deepCopy(input)
+  const normalizedQuests = state.quests.map((quest) => normalizeQuestConstraints(quest))
   const activeCompletions = getActiveCompletions(state.completions)
   const skillMap = new Map(
     state.skills.map((skill) => [
@@ -464,6 +498,7 @@ export function reconcileState(input: PersistedAppState): PersistedAppState {
 
   return {
     ...state,
+    quests: normalizedQuests,
     user,
     skills: Array.from(skillMap.values()).sort((left, right) => {
       if (left.status !== right.status) {
@@ -478,10 +513,11 @@ export function reconcileState(input: PersistedAppState): PersistedAppState {
 }
 
 export function getQuestAvailability(
-  quest: Quest,
+  inputQuest: Quest,
   completions: QuestCompletion[],
   referenceDate = new Date(),
 ): QuestAvailability {
+  const quest = normalizeQuestConstraints(inputQuest)
   if (quest.status === 'archived') {
     return { canComplete: false, state: 'archived', label: 'アーカイブ済み', countToday: 0 }
   }
@@ -744,24 +780,26 @@ export function buildFallbackCompletionMessage(params: {
 
 export function buildQuestDraft(quest?: Quest): Quest {
   const now = nowIso()
-  return (
-    quest ?? {
-      id: createId('quest'),
-      title: '',
-      description: '',
-      questType: 'repeatable',
-      xpReward: 5,
-      category: '学習',
-      skillMappingMode: 'ai_auto',
-      cooldownMinutes: DEFAULT_REPEATABLE_COOLDOWN,
-      dailyCompletionCap: DEFAULT_REPEATABLE_DAILY_CAP,
-      status: 'active',
-      privacyMode: 'normal',
-      pinned: false,
-      createdAt: now,
-      updatedAt: now,
-    }
-  )
+  if (quest) {
+    return normalizeQuestConstraints(quest)
+  }
+
+  return {
+    id: createId('quest'),
+    title: '',
+    description: '',
+    questType: 'repeatable',
+    xpReward: 5,
+    category: '学習',
+    skillMappingMode: 'ai_auto',
+    cooldownMinutes: DEFAULT_REPEATABLE_COOLDOWN,
+    dailyCompletionCap: DEFAULT_REPEATABLE_DAILY_CAP,
+    status: 'active',
+    privacyMode: 'normal',
+    pinned: false,
+    createdAt: now,
+    updatedAt: now,
+  }
 }
 
 export function mergeRecordArrays<T extends MergeableRecord>(current: T[], incoming: T[]) {
