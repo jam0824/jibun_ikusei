@@ -292,7 +292,7 @@ describe('domain logic', () => {
     })
 
     expect(state.aiConfig.providers.openai.model).toBe('gpt-5.4')
-    expect(state.aiConfig.providers.gemini.ttsModel).toBe('gemini-2.5-flash-tts')
+    expect(state.aiConfig.providers.gemini.ttsModel).toBe('gemini-2.5-flash-lite-tts')
     expect(state.aiConfig.providers.gemini.voice).toBe('Zephyr')
   })
 })

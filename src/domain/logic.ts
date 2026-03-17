@@ -371,10 +371,10 @@ function migrateAiConfig(aiConfig: AiConfig): AiConfig {
       ? { ...aiConfig.providers.openai, model: defaults.providers.openai.model }
       : aiConfig.providers.openai
 
-  const geminiTtsModel =
-    aiConfig.providers.gemini.ttsModel === 'gemini-2.5-flash-preview-tts'
-      ? defaults.providers.gemini.ttsModel
-      : aiConfig.providers.gemini.ttsModel
+  const deprecatedTtsModels = new Set(['gemini-2.5-flash-preview-tts', 'gemini-2.5-flash-tts'])
+  const geminiTtsModel = deprecatedTtsModels.has(aiConfig.providers.gemini.ttsModel ?? '')
+    ? defaults.providers.gemini.ttsModel
+    : aiConfig.providers.gemini.ttsModel
 
   const geminiVoice =
     !aiConfig.providers.gemini.voice || aiConfig.providers.gemini.voice === 'Kore'
