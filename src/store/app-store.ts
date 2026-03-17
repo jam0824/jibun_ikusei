@@ -734,7 +734,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       completionId,
       skillId,
       mode: quest.skillMappingMode,
-      source: skill.source,
+      source: 'manual',
       reason: 'ユーザー確認で確定',
     })
     persistState(nextState)
@@ -996,7 +996,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   importData: (jsonText, mode) => {
     try {
-      const parsed = JSON.parse(jsonText) as Partial<PersistedAppState>
+      const raw = JSON.parse(jsonText) as unknown
+      if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+        return { ok: false, reason: 'インポートデータはオブジェクト形式である必要があります。' }
+      }
+
+      const data = raw as Record<string, unknown>
+      for (const key of ['quests', 'completions', 'skills', 'personalSkillDictionary', 'assistantMessages'] as const) {
+        if (key in data && !Array.isArray(data[key])) {
+          return { ok: false, reason: `"${key}" は配列である必要があります。` }
+        }
+      }
+
+      const parsed = data as Partial<PersistedAppState>
       const merged = mergeImportedState(get(), parsed, mode)
       persistState(merged)
       set(merged)

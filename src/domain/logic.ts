@@ -237,7 +237,7 @@ export function getLevelFromXp(totalXp: number, stepXp: number) {
 export function createSkillRecord(name: string, category: string, source: Skill['source'] = 'manual'): Skill {
   const now = nowIso()
   return {
-    id: `skill_${slugify(name) || createId('skill')}`,
+    id: `skill_${slugify(name)}_${createId('s')}`,
     name,
     normalizedName: normalizeSkillName(name),
     category,
