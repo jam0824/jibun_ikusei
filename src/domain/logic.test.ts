@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildTemplateSkillResolution,
+  getFilteredActiveCompletions,
   getQuestAvailability,
   getQuestIdsWithActiveCompletions,
   getTodayActiveCompletions,
+  getWeekActiveCompletions,
   hydratePersistedState,
   mergeImportedState,
 } from '@/domain/logic'
@@ -106,8 +108,87 @@ describe('domain logic', () => {
     expect(todayCompletions[0]?.id).toBe('completion_today_active')
   })
 
+  it('returns only active completions completed during the same ISO week', () => {
+    const referenceDate = new Date('2026-03-19T12:00:00+09:00')
+    const completions = [
+      {
+        id: 'completion_this_week_today',
+        questId: 'quest_today',
+        clientRequestId: 'req_today',
+        completedAt: '2026-03-19T08:30:00+09:00',
+        userXpAwarded: 5,
+        skillResolutionStatus: 'resolved' as const,
+        createdAt: '2026-03-19T08:30:00+09:00',
+      },
+      {
+        id: 'completion_this_week_monday',
+        questId: 'quest_monday',
+        clientRequestId: 'req_monday',
+        completedAt: '2026-03-16T19:45:00+09:00',
+        userXpAwarded: 8,
+        skillResolutionStatus: 'resolved' as const,
+        createdAt: '2026-03-16T19:45:00+09:00',
+      },
+      {
+        id: 'completion_last_week_sunday',
+        questId: 'quest_sunday',
+        clientRequestId: 'req_sunday',
+        completedAt: '2026-03-15T21:00:00+09:00',
+        userXpAwarded: 10,
+        skillResolutionStatus: 'resolved' as const,
+        createdAt: '2026-03-15T21:00:00+09:00',
+      },
+      {
+        id: 'completion_undone_this_week',
+        questId: 'quest_undone',
+        clientRequestId: 'req_undone',
+        completedAt: '2026-03-17T07:00:00+09:00',
+        userXpAwarded: 3,
+        skillResolutionStatus: 'resolved' as const,
+        undoneAt: '2026-03-17T07:05:00+09:00',
+        createdAt: '2026-03-17T07:00:00+09:00',
+      },
+    ]
+
+    const weekCompletions = getWeekActiveCompletions(completions, referenceDate)
+
+    expect(weekCompletions.map((completion) => completion.id)).toEqual([
+      'completion_this_week_today',
+      'completion_this_week_monday',
+    ])
+  })
+
   it('uses ISO week-year for week keys at year boundaries', () => {
     expect(getWeekKey('2027-01-01T12:00:00+09:00')).toBe('2026-W53')
+  })
+
+  it('keeps year-boundary week filtering aligned with ISO week-year', () => {
+    const referenceDate = new Date('2027-01-01T12:00:00+09:00')
+    const completions = [
+      {
+        id: 'completion_same_iso_week',
+        questId: 'quest_december',
+        clientRequestId: 'req_december',
+        completedAt: '2026-12-28T09:00:00+09:00',
+        userXpAwarded: 5,
+        skillResolutionStatus: 'resolved' as const,
+        createdAt: '2026-12-28T09:00:00+09:00',
+      },
+      {
+        id: 'completion_next_iso_week',
+        questId: 'quest_next_week',
+        clientRequestId: 'req_next_week',
+        completedAt: '2027-01-04T09:00:00+09:00',
+        userXpAwarded: 5,
+        skillResolutionStatus: 'resolved' as const,
+        createdAt: '2027-01-04T09:00:00+09:00',
+      },
+    ]
+
+    const weekCompletions = getFilteredActiveCompletions(completions, 'week', referenceDate)
+
+    expect(weekCompletions).toHaveLength(1)
+    expect(weekCompletions[0]?.id).toBe('completion_same_iso_week')
   })
 
   it('collects quest ids that still have active completion history', () => {

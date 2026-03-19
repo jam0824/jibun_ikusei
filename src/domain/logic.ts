@@ -219,6 +219,8 @@ function compareDates(left?: string, right?: string) {
   return rightValue - leftValue
 }
 
+export type CompletionHistoryFilter = 'today' | 'week' | 'all'
+
 export function normalizeSkillName(name: string) {
   return name.trim().toLowerCase().replace(/\s+/g, '')
 }
@@ -460,13 +462,38 @@ export function getActiveCompletions(completions: QuestCompletion[]) {
   return completions.filter((completion) => !completion.undoneAt)
 }
 
+export function getFilteredActiveCompletions(
+  completions: QuestCompletion[],
+  filter: CompletionHistoryFilter,
+  referenceDate = new Date(),
+) {
+  const activeCompletions = getActiveCompletions(completions)
+
+  if (filter === 'all') {
+    return [...activeCompletions].sort((left, right) => compareDates(left.completedAt, right.completedAt))
+  }
+
+  return activeCompletions
+    .filter((completion) =>
+      filter === 'today'
+        ? isSameCalendarDay(completion.completedAt, referenceDate)
+        : getWeekKey(completion.completedAt) === getWeekKey(referenceDate),
+    )
+    .sort((left, right) => compareDates(left.completedAt, right.completedAt))
+}
+
 export function getTodayActiveCompletions(
   completions: QuestCompletion[],
   referenceDate = new Date(),
 ) {
-  return getActiveCompletions(completions).filter((completion) =>
-    isSameCalendarDay(completion.completedAt, referenceDate),
-  )
+  return getFilteredActiveCompletions(completions, 'today', referenceDate)
+}
+
+export function getWeekActiveCompletions(
+  completions: QuestCompletion[],
+  referenceDate = new Date(),
+) {
+  return getFilteredActiveCompletions(completions, 'week', referenceDate)
 }
 
 export function getQuestIdsWithActiveCompletions(completions: QuestCompletion[]) {
