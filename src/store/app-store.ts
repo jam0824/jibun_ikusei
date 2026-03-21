@@ -33,7 +33,7 @@ import {
   testProviderConnection,
 } from '@/lib/ai'
 import { getOfflineMessage, isOffline, OfflineFeatureError } from '@/lib/network'
-import { clearPersistedState, loadPersistedState, loadPersistedStateFromCloud, persistState } from '@/lib/storage'
+import { clearPersistedState, loadFromCloud, loadPersistedState, persistState } from '@/lib/storage'
 import { getCachedAudio, playAudioUrl } from '@/lib/tts'
 import { createId, downloadJson } from '@/lib/utils'
 import { SKILL_XP_CAP } from '@/domain/constants'
@@ -220,7 +220,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     // まずlocalStorageで即時初期化（画面をすぐ表示するため）
-    const local = maybeCreatePeriodicMessages(hydratePersistedState(loadPersistedState()))
+    const rawLocal = loadPersistedState()
+    const local = maybeCreatePeriodicMessages(hydratePersistedState(rawLocal))
     set({
       ...local,
       hydrated: true,
@@ -231,11 +232,25 @@ export const useAppStore = create<AppStore>((set, get) => ({
       },
     })
 
-    // バックグラウンドでクラウドからロードし、より新しいデータがあれば上書き
-    void loadPersistedStateFromCloud().then((cloud) => {
-      const cloudUpdatedAt = (cloud as { user?: { updatedAt?: string } })?.user?.updatedAt
-      const localUpdatedAt = local.user?.updatedAt
-      if (cloudUpdatedAt && cloudUpdatedAt > (localUpdatedAt ?? '')) {
+    // バックグラウンドでクラウドからロード
+    void loadFromCloud().then((cloud) => {
+      const cloudUpdatedAt = cloud?.user?.updatedAt as string | undefined
+      const localUpdatedAt = rawLocal.user?.updatedAt as string | undefined
+
+      // クラウドにデータがない場合：実データがあればクラウドに同期
+      if (!cloudUpdatedAt) {
+        if (localUpdatedAt) persistState(local)
+        return
+      }
+
+      // クラウドにデータがある場合：
+      // localStorageに実データがなければクラウドを優先
+      // 両方あれば新しい方を採用
+      if (localUpdatedAt && localUpdatedAt > cloudUpdatedAt) {
+        // ローカルが新しい → ローカルを使い、クラウドに同期
+        persistState(local)
+      } else {
+        // クラウドが新しい or ローカルにデータなし → クラウドを使う
         const hydrated = maybeCreatePeriodicMessages(hydratePersistedState(cloud))
         persistState(hydrated)
         set({
@@ -247,8 +262,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
               typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
           },
         })
-      } else {
-        persistState(local)
       }
     })
   },
