@@ -396,6 +396,7 @@ export function SettingsScreen() {
               variant="danger"
               onClick={() => {
                 if (window.confirm('ログアウトしますか？')) {
+                  state.resetLocalData()
                   logout()
                   window.location.reload()
                 }
