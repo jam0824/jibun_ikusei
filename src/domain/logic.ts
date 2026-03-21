@@ -237,6 +237,36 @@ export function getLevelFromXp(totalXp: number, stepXp: number) {
   }
 }
 
+function didGainLevel(totalXp: number, awardedXp: number | undefined, stepXp: number) {
+  const safeAwardedXp = Math.max(0, awardedXp ?? 0)
+  if (safeAwardedXp === 0) {
+    return false
+  }
+
+  const afterLevel = getLevelFromXp(totalXp, stepXp).level
+  const beforeLevel = getLevelFromXp(Math.max(0, totalXp - safeAwardedXp), stepXp).level
+  return afterLevel > beforeLevel
+}
+
+export function getCompletionCelebration(params: {
+  userTotalXp: number
+  userXpAwarded: number
+  skillTotalXp?: number
+  skillXpAwarded?: number
+}) {
+  const userLevelUp = didGainLevel(params.userTotalXp, params.userXpAwarded, USER_LEVEL_XP)
+  const skillLevelUp =
+    typeof params.skillTotalXp === 'number'
+      ? didGainLevel(params.skillTotalXp, params.skillXpAwarded, SKILL_LEVEL_XP)
+      : false
+
+  return {
+    effect: userLevelUp ? 'user-level-up' : skillLevelUp ? 'skill-level-up' : 'clear',
+    userLevelUp,
+    skillLevelUp,
+  } as const
+}
+
 export function createSkillRecord(name: string, category: string, source: Skill['source'] = 'manual'): Skill {
   const now = nowIso()
   return {

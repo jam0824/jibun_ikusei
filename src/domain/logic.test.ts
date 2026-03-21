@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildTemplateSkillResolution,
+  getCompletionCelebration,
   getFilteredActiveCompletions,
   getQuestAvailability,
   getQuestIdsWithActiveCompletions,
@@ -64,6 +65,95 @@ describe('domain logic', () => {
     expect(result.action).toBe('assign_existing')
     expect(result.skillName).toBe('読書')
     expect(result.confidence).toBeGreaterThan(0.8)
+  })
+
+  it('returns a clear celebration when no level changed', () => {
+    expect(
+      getCompletionCelebration({
+        userTotalXp: 45,
+        userXpAwarded: 5,
+        skillTotalXp: 18,
+        skillXpAwarded: 8,
+      }),
+    ).toEqual({
+      effect: 'clear',
+      userLevelUp: false,
+      skillLevelUp: false,
+    })
+  })
+
+  it('returns a user level-up celebration when the user crosses the threshold', () => {
+    expect(
+      getCompletionCelebration({
+        userTotalXp: 100,
+        userXpAwarded: 10,
+        skillTotalXp: 12,
+        skillXpAwarded: 6,
+      }),
+    ).toEqual({
+      effect: 'user-level-up',
+      userLevelUp: true,
+      skillLevelUp: false,
+    })
+  })
+
+  it('returns a skill level-up celebration when only the skill crosses the threshold', () => {
+    expect(
+      getCompletionCelebration({
+        userTotalXp: 55,
+        userXpAwarded: 5,
+        skillTotalXp: 50,
+        skillXpAwarded: 7,
+      }),
+    ).toEqual({
+      effect: 'skill-level-up',
+      userLevelUp: false,
+      skillLevelUp: true,
+    })
+  })
+
+  it('prioritizes the user celebration when both user and skill level up', () => {
+    expect(
+      getCompletionCelebration({
+        userTotalXp: 200,
+        userXpAwarded: 10,
+        skillTotalXp: 100,
+        skillXpAwarded: 5,
+      }),
+    ).toEqual({
+      effect: 'user-level-up',
+      userLevelUp: true,
+      skillLevelUp: true,
+    })
+  })
+
+  it('does not mark a skill level-up when there is no awarded skill xp', () => {
+    expect(
+      getCompletionCelebration({
+        userTotalXp: 40,
+        userXpAwarded: 5,
+        skillTotalXp: 50,
+      }),
+    ).toEqual({
+      effect: 'clear',
+      userLevelUp: false,
+      skillLevelUp: false,
+    })
+  })
+
+  it('treats exact threshold hits as level-ups', () => {
+    expect(
+      getCompletionCelebration({
+        userTotalXp: 100,
+        userXpAwarded: 100,
+        skillTotalXp: 50,
+        skillXpAwarded: 50,
+      }),
+    ).toEqual({
+      effect: 'user-level-up',
+      userLevelUp: true,
+      skillLevelUp: true,
+    })
   })
 
   it('returns only active completions completed on the same local calendar day', () => {
