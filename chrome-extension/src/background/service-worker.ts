@@ -1,5 +1,6 @@
 import { TabTracker } from './tab-tracker'
 import { TimeAccumulator } from './time-accumulator'
+import { setupAlarms, handleAlarm } from './alarm-handlers'
 
 const tabTracker = new TabTracker()
 const timeAccumulator = new TimeAccumulator()
@@ -60,9 +61,16 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
 
 // Periodic flush via alarm (every 30 seconds)
 chrome.alarms.create('flush-tracker', { periodInMinutes: 0.5 })
+
+// Set up periodic sync and daily reset alarms
+setupAlarms()
+
+// Dispatch all alarms
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'flush-tracker') {
     const result = tabTracker.flush()
     await recordElapsed(result)
+  } else {
+    await handleAlarm(alarm)
   }
 })
