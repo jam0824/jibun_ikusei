@@ -46,6 +46,9 @@ export function setupMessageListener(): void {
       handlePageInfo(sender.tab.id, message.payload as PageInfo).catch(() => {
         // Classification failure is non-fatal — tab will use default (その他)
       })
+    } else if (message.type === 'OPEN_POPUP') {
+      const popupUrl = chrome.runtime.getURL('popup.html')
+      chrome.tabs.create({ url: popupUrl }).catch(() => {})
     }
   })
 }

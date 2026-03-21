@@ -1,10 +1,12 @@
 import { SyncQueue } from '@ext/lib/sync-queue'
 import { createApiClient } from '@ext/lib/api-client'
-import { getLocal } from '@ext/lib/storage'
+import { getLocal, setLocal } from '@ext/lib/storage'
 import type { ExtensionSettings } from '@ext/types/settings'
+import type { DailyProgress } from '@ext/types/browsing'
 import { sendToastToActiveTab } from '@ext/lib/notifications'
 import { TimeAccumulator } from './time-accumulator'
 import { evaluateProgress } from './quest-evaluator'
+import { generateWeeklyReport } from './weekly-report-generator'
 
 const syncQueue = new SyncQueue()
 const apiClient = createApiClient()
@@ -16,6 +18,9 @@ export function setupAlarms(): void {
 
   // Daily reset check every minute (checks date boundary)
   chrome.alarms.create('daily-reset-check', { periodInMinutes: 1 })
+
+  // Weekly report generation check every hour
+  chrome.alarms.create('weekly-report-gen', { periodInMinutes: 60 })
 }
 
 export async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
@@ -26,6 +31,9 @@ export async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {
     case 'daily-reset-check':
       // getDailyProgress handles date boundary reset automatically
       await timeAccumulator.getDailyProgress()
+      break
+    case 'weekly-report-gen':
+      await handleWeeklyReportGen()
       break
   }
 }
@@ -100,4 +108,23 @@ async function evaluateAndEnqueue(): Promise<void> {
       }
     }
   })
+}
+
+function getWeekKey(): string {
+  const now = new Date()
+  const jan1 = new Date(now.getFullYear(), 0, 1)
+  const days = Math.floor((now.getTime() - jan1.getTime()) / (24 * 60 * 60 * 1000))
+  const weekNum = Math.ceil((days + jan1.getDay() + 1) / 7)
+  return `${now.getFullYear()}-W${String(weekNum).padStart(2, '0')}`
+}
+
+async function handleWeeklyReportGen(): Promise<void> {
+  // Only generate on Monday (day 1)
+  if (new Date().getDay() !== 1) return
+
+  const history = (await getLocal<DailyProgress[]>('dailyProgressHistory')) ?? []
+  const weekKey = getWeekKey()
+
+  const report = generateWeeklyReport(history, weekKey)
+  await setLocal('weeklyReport', report)
 }

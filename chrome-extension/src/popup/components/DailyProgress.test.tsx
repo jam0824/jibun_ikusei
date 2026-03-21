@@ -46,4 +46,36 @@ describe('DailyProgress', () => {
     expect(screen.getByText(/次の\+2XPまで/)).toBeInTheDocument()
     expect(screen.getByText(/10分/)).toBeInTheDocument()
   })
+
+  it('バッド閲覧がある場合に次のペナルティまでの残り時間を表示する', () => {
+    const progress = createMockDailyProgress({
+      badBrowsingSeconds: 40 * 60, // 40分 — 60分ペナルティまで20分
+      lastBadPenaltyAtSeconds: 0,
+    })
+    render(<DailyProgress progress={progress} />)
+
+    expect(screen.getByText(/次のペナルティまで/)).toBeInTheDocument()
+    expect(screen.getByText(/20分/)).toBeInTheDocument()
+  })
+
+  it('ペナルティ済みの場合は次のペナルティまでの残り時間を表示する', () => {
+    const progress = createMockDailyProgress({
+      badBrowsingSeconds: 90 * 60, // 90分 — 次は120分
+      lastBadPenaltyAtSeconds: 60 * 60,
+    })
+    render(<DailyProgress progress={progress} />)
+
+    const penaltyEl = screen.getByText(/次のペナルティまで/)
+    expect(penaltyEl).toBeInTheDocument()
+    expect(penaltyEl.textContent).toContain('30分')
+  })
+
+  it('バッド閲覧がない場合はペナルティ残り時間を表示しない', () => {
+    const progress = createMockDailyProgress({
+      badBrowsingSeconds: 0,
+    })
+    render(<DailyProgress progress={progress} />)
+
+    expect(screen.queryByText(/次のペナルティまで/)).not.toBeInTheDocument()
+  })
 })

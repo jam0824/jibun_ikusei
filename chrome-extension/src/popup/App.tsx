@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
-import type { DailyProgress as DailyProgressType } from '@ext/types/browsing'
+import type { DailyProgress as DailyProgressType, WeeklyReport as WeeklyReportType } from '@ext/types/browsing'
 import { DailyProgress } from './components/DailyProgress'
 import { QuestList } from './components/QuestList'
+import { WeeklyReport } from './components/WeeklyReport'
 
 function getTodayString(): string {
   return new Date().toISOString().split('T')[0]
@@ -9,13 +10,18 @@ function getTodayString(): string {
 
 export function App() {
   const [progress, setProgress] = useState<DailyProgressType | null>(null)
+  const [weeklyReport, setWeeklyReport] = useState<WeeklyReportType | null>(null)
 
   useEffect(() => {
     // Initial load with date check
-    chrome.storage.local.get('dailyProgress').then((result) => {
+    chrome.storage.local.get(['dailyProgress', 'weeklyReport']).then((result) => {
       const data = result.dailyProgress as DailyProgressType | undefined
       if (data && data.date === getTodayString()) {
         setProgress(data)
+      }
+      const report = result.weeklyReport as WeeklyReportType | undefined
+      if (report) {
+        setWeeklyReport(report)
       }
     })
 
@@ -26,6 +32,9 @@ export function App() {
         if (data.date === getTodayString()) {
           setProgress(data)
         }
+      }
+      if (changes.weeklyReport?.newValue) {
+        setWeeklyReport(changes.weeklyReport.newValue as WeeklyReportType)
       }
     }
     chrome.storage.onChanged.addListener(listener)
@@ -44,6 +53,13 @@ export function App() {
         </>
       ) : (
         <p style={{ color: '#999', fontSize: 13 }}>まだデータがありません</p>
+      )}
+
+      {weeklyReport && (
+        <>
+          <h3 style={{ margin: '16px 0 8px', fontSize: 13 }}>週間レポート</h3>
+          <WeeklyReport report={weeklyReport} />
+        </>
       )}
     </div>
   )

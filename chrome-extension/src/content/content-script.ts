@@ -69,6 +69,9 @@ function showToast(payload: { text: string; variant: 'good' | 'warning' | 'bad' 
     toast.style.opacity = '0'
     setTimeout(() => toast.remove(), 300)
   }
-  toast.addEventListener('click', dismiss)
+  toast.addEventListener('click', () => {
+    chrome.runtime.sendMessage({ type: 'OPEN_POPUP' }).catch(() => {})
+    dismiss()
+  })
   setTimeout(dismiss, 5000)
 }
