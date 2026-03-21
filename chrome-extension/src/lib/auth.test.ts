@@ -24,6 +24,13 @@ vi.mock('amazon-cognito-identity-js', () => {
 
 import { login, logout, getStoredToken, isLoggedIn } from '@ext/lib/auth'
 
+/** Create a mock JWT with the given payload */
+function createMockJwt(payload: Record<string, unknown>): string {
+  const header = btoa(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
+  const body = btoa(JSON.stringify(payload))
+  return `${header}.${body}.fake-signature`
+}
+
 describe('auth', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -82,17 +89,62 @@ describe('auth', () => {
     }
   })
 
-  it('retrieves stored token from chrome.storage.local', async () => {
+  it('有効期限内のトークンをそのまま返す', async () => {
+    const validToken = createMockJwt({ exp: Math.floor(Date.now() / 1000) + 3600 })
     await chrome.storage.local.set({
       authState: {
-        idToken: 'stored-jwt',
+        idToken: validToken,
         email: 'user@example.com',
         loggedInAt: new Date().toISOString(),
       },
     })
 
     const token = await getStoredToken()
-    expect(token).toBe('stored-jwt')
+    expect(token).toBe(validToken)
+  })
+
+  it('期限切れトークンの場合はCognitoセッションでリフレッシュする', async () => {
+    const expiredToken = createMockJwt({ exp: Math.floor(Date.now() / 1000) - 60 })
+    const refreshedToken = createMockJwt({ exp: Math.floor(Date.now() / 1000) + 3600 })
+    await chrome.storage.local.set({
+      authState: {
+        idToken: expiredToken,
+        email: 'user@example.com',
+        loggedInAt: new Date().toISOString(),
+      },
+    })
+
+    mockGetCurrentUser.mockReturnValue({
+      getSession: (cb: (err: null, session: unknown) => void) => {
+        cb(null, {
+          isValid: () => true,
+          getIdToken: () => ({ getJwtToken: () => refreshedToken }),
+        })
+      },
+    })
+
+    const token = await getStoredToken()
+    expect(token).toBe(refreshedToken)
+
+    // ストレージも更新されていること
+    const stored = await chrome.storage.local.get('authState')
+    expect(stored.authState.idToken).toBe(refreshedToken)
+  })
+
+  it('リフレッシュ失敗時はnullを返す', async () => {
+    const expiredToken = createMockJwt({ exp: Math.floor(Date.now() / 1000) - 60 })
+    await chrome.storage.local.set({
+      authState: {
+        idToken: expiredToken,
+        email: 'user@example.com',
+        loggedInAt: new Date().toISOString(),
+      },
+    })
+
+    mockGetCurrentUser.mockReturnValue(null)
+
+    const token = await getStoredToken()
+    expect(token).toBeNull()
   })
 
   it('returns null when no token is stored', async () => {
@@ -118,9 +170,10 @@ describe('auth', () => {
   })
 
   it('isLoggedIn returns true when token exists', async () => {
+    const validToken = createMockJwt({ exp: Math.floor(Date.now() / 1000) + 3600 })
     await chrome.storage.local.set({
       authState: {
-        idToken: 'valid-token',
+        idToken: validToken,
         email: 'user@example.com',
         loggedInAt: new Date().toISOString(),
       },

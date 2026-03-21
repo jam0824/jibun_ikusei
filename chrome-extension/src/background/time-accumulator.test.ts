@@ -99,6 +99,43 @@ describe('TimeAccumulator', () => {
     expect(progress.xpLost).toBe(0)
   })
 
+  it('ブロックリスト変更時に既存エントリの秒数がbadBrowsingSecondsに移動する', async () => {
+    // 最初は isBlocklisted=false で記録
+    await accumulator.addTime('game.com', 'game.com:/', 100, false, false)
+    let progress = await accumulator.getDailyProgress()
+    expect(progress.otherBrowsingSeconds).toBe(100)
+    expect(progress.badBrowsingSeconds).toBe(0)
+
+    // ブロックリストに追加された（isBlocklisted=true で再度呼ばれる）
+    await accumulator.addTime('game.com', 'game.com:/', 30, false, true)
+    progress = await accumulator.getDailyProgress()
+    // 既存100秒がotherからbadに移動 + 新規30秒もbad
+    expect(progress.badBrowsingSeconds).toBe(130)
+    expect(progress.otherBrowsingSeconds).toBe(0)
+  })
+
+  it('isGrowth変更時に秒数がgoodBrowsingSecondsに移動する', async () => {
+    // 最初は isGrowth=false で記録
+    await accumulator.addTime('learn.com', 'learn.com:/', 200, false, false)
+    let progress = await accumulator.getDailyProgress()
+    expect(progress.otherBrowsingSeconds).toBe(200)
+    expect(progress.goodBrowsingSeconds).toBe(0)
+
+    // AI分類でisGrowth=trueに変わった
+    await accumulator.addTime('learn.com', 'learn.com:/', 50, true, false)
+    progress = await accumulator.getDailyProgress()
+    expect(progress.goodBrowsingSeconds).toBe(250)
+    expect(progress.otherBrowsingSeconds).toBe(0)
+  })
+
+  it('カテゴリ変更がない場合は従来通り加算のみ', async () => {
+    await accumulator.addTime('game.com', 'game.com:/', 60, false, true)
+    await accumulator.addTime('game.com', 'game.com:/', 40, false, true)
+    const progress = await accumulator.getDailyProgress()
+    expect(progress.badBrowsingSeconds).toBe(100)
+    expect(progress.domainTimes['game.com:/'].totalSeconds).toBe(100)
+  })
+
   it('allows updating progress fields directly', async () => {
     await accumulator.updateProgress((p: DailyProgress) => {
       p.goodQuestsCleared = 3

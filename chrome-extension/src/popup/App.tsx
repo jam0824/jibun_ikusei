@@ -3,15 +3,33 @@ import type { DailyProgress as DailyProgressType } from '@ext/types/browsing'
 import { DailyProgress } from './components/DailyProgress'
 import { QuestList } from './components/QuestList'
 
+function getTodayString(): string {
+  return new Date().toISOString().split('T')[0]
+}
+
 export function App() {
   const [progress, setProgress] = useState<DailyProgressType | null>(null)
 
   useEffect(() => {
+    // Initial load with date check
     chrome.storage.local.get('dailyProgress').then((result) => {
-      if (result.dailyProgress) {
-        setProgress(result.dailyProgress as DailyProgressType)
+      const data = result.dailyProgress as DailyProgressType | undefined
+      if (data && data.date === getTodayString()) {
+        setProgress(data)
       }
     })
+
+    // Listen for storage changes
+    const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
+      if (changes.dailyProgress?.newValue) {
+        const data = changes.dailyProgress.newValue as DailyProgressType
+        if (data.date === getTodayString()) {
+          setProgress(data)
+        }
+      }
+    }
+    chrome.storage.onChanged.addListener(listener)
+    return () => chrome.storage.onChanged.removeListener(listener)
   }, [])
 
   return (

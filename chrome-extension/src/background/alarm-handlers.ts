@@ -1,8 +1,10 @@
 import { SyncQueue } from '@ext/lib/sync-queue'
 import { createApiClient } from '@ext/lib/api-client'
+import { getLocal } from '@ext/lib/storage'
+import type { ExtensionSettings } from '@ext/types/settings'
+import { sendToastToActiveTab } from '@ext/lib/notifications'
 import { TimeAccumulator } from './time-accumulator'
 import { evaluateProgress } from './quest-evaluator'
-import type { QuestEvent } from './quest-evaluator'
 
 const syncQueue = new SyncQueue()
 const apiClient = createApiClient()
@@ -33,7 +35,11 @@ async function handlePeriodicSync(): Promise<void> {
     // 1. Evaluate progress and generate quest events
     await evaluateAndEnqueue()
 
-    // 2. Replay queued requests (including newly enqueued ones)
+    // 2. Only replay if sync is enabled and server URL is configured
+    const settings = await getLocal<ExtensionSettings>('extensionSettings')
+    if (!settings?.syncEnabled || !settings?.serverBaseUrl) return
+
+    // 3. Replay queued requests (including newly enqueued ones)
     await syncQueue.replay(async (req) => {
       if (req.method === 'PUT') {
         await apiClient.putUser(req.body as Record<string, unknown>)
@@ -52,8 +58,16 @@ async function evaluateAndEnqueue(): Promise<void> {
 
   if (events.length === 0) return
 
-  // Enqueue each XP event as a POST /completions request
+  const settings = await getLocal<ExtensionSettings>('extensionSettings')
+  const notificationsEnabled = settings?.notificationsEnabled ?? true
+
   for (const event of events) {
+    // Send toast notification
+    if (notificationsEnabled) {
+      await sendToastToActiveTab(event).catch(() => {})
+    }
+
+    // Enqueue XP events as POST /completions requests
     if (event.type === 'good_quest' || event.type === 'bad_quest') {
       await syncQueue.enqueue({
         path: '/completions',
