@@ -33,7 +33,7 @@ import {
   testProviderConnection,
 } from '@/lib/ai'
 import { getOfflineMessage, isOffline, OfflineFeatureError } from '@/lib/network'
-import { clearPersistedState, loadPersistedState, persistState } from '@/lib/storage'
+import { clearPersistedState, loadPersistedState, loadPersistedStateFromCloud, persistState } from '@/lib/storage'
 import { getCachedAudio, playAudioUrl } from '@/lib/tts'
 import { createId, downloadJson } from '@/lib/utils'
 import { SKILL_XP_CAP } from '@/domain/constants'
@@ -219,16 +219,37 @@ export const useAppStore = create<AppStore>((set, get) => ({
       return
     }
 
-    const hydrated = maybeCreatePeriodicMessages(hydratePersistedState(loadPersistedState()))
-    persistState(hydrated)
+    // まずlocalStorageで即時初期化（画面をすぐ表示するため）
+    const local = maybeCreatePeriodicMessages(hydratePersistedState(loadPersistedState()))
     set({
-      ...hydrated,
+      ...local,
       hydrated: true,
       meta: {
-        ...hydrated.meta,
+        ...local.meta,
         notificationPermission:
           typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
       },
+    })
+
+    // バックグラウンドでクラウドからロードし、より新しいデータがあれば上書き
+    void loadPersistedStateFromCloud().then((cloud) => {
+      const cloudUpdatedAt = (cloud as { user?: { updatedAt?: string } })?.user?.updatedAt
+      const localUpdatedAt = local.user?.updatedAt
+      if (cloudUpdatedAt && cloudUpdatedAt > (localUpdatedAt ?? '')) {
+        const hydrated = maybeCreatePeriodicMessages(hydratePersistedState(cloud))
+        persistState(hydrated)
+        set({
+          ...hydrated,
+          hydrated: true,
+          meta: {
+            ...hydrated.meta,
+            notificationPermission:
+              typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
+          },
+        })
+      } else {
+        persistState(local)
+      }
     })
   },
 
