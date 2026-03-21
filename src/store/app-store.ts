@@ -251,7 +251,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         persistState(local)
       } else {
         // クラウドが新しい or ローカルにデータなし → クラウドを使う
-        const hydrated = maybeCreatePeriodicMessages(hydratePersistedState(cloud))
+        const hydrated = maybeCreatePeriodicMessages(hydratePersistedState(cloud ?? undefined))
         persistState(hydrated)
         set({
           ...hydrated,

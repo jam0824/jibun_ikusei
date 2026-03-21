@@ -11,9 +11,10 @@ const BASE_URL = import.meta.env.VITE_API_BASE_URL as string
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = await getIdToken()
-  const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...authHeader },
+    headers,
     ...options,
   })
   if (!res.ok) {
