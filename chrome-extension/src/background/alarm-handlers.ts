@@ -1,16 +1,10 @@
-import { SyncQueue } from '@ext/lib/sync-queue'
-import { createApiClient } from '@ext/lib/api-client'
 import { getLocal, setLocal } from '@ext/lib/storage'
 import type { ExtensionSettings } from '@ext/types/settings'
-import type { DailyProgress } from '@ext/types/browsing'
+import type { DailyProgress, WeeklyReport } from '@ext/types/browsing'
 import { sendToastToActiveTab } from '@ext/lib/notifications'
-import { TimeAccumulator } from './time-accumulator'
+import { timeAccumulator, syncQueue, apiClient } from './shared-instances'
 import { evaluateProgress } from './quest-evaluator'
 import { generateWeeklyReport } from './weekly-report-generator'
-
-const syncQueue = new SyncQueue()
-const apiClient = createApiClient()
-const timeAccumulator = new TimeAccumulator()
 
 export function setupAlarms(): void {
   // Periodic sync every 5 minutes
@@ -122,9 +116,11 @@ async function handleWeeklyReportGen(): Promise<void> {
   // Only generate on Monday (day 1)
   if (new Date().getDay() !== 1) return
 
-  const history = (await getLocal<DailyProgress[]>('dailyProgressHistory')) ?? []
   const weekKey = getWeekKey()
+  const existing = await getLocal<WeeklyReport>('weeklyReport')
+  if (existing?.weekKey === weekKey) return // Already generated this week
 
+  const history = (await getLocal<DailyProgress[]>('dailyProgressHistory')) ?? []
   const report = generateWeeklyReport(history, weekKey)
   await setLocal('weeklyReport', report)
 }

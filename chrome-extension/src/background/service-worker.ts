@@ -1,30 +1,18 @@
 import { TabTracker } from './tab-tracker'
 import type { TabElapsedResult } from './tab-tracker'
-import { TimeAccumulator } from './time-accumulator'
 import { setupAlarms, handleAlarm } from './alarm-handlers'
 import { getTabClassification, setupMessageListener } from './message-handler'
-import { getLocal } from '@ext/lib/storage'
-import type { ExtensionSettings } from '@ext/types/settings'
+import { recordElapsed } from './record-elapsed'
 
 const tabTracker = new TabTracker()
-const timeAccumulator = new TimeAccumulator()
 
 /** Record elapsed time from tab tracker result, using classification data */
-async function recordElapsed(result: TabElapsedResult | null) {
-  if (!result || result.elapsedSeconds <= 0 || !result.domain) return
-
+async function handleElapsed(result: TabElapsedResult | null) {
+  if (!result || !result.domain) return
   const classification = getTabClassification(result.tabId)
-  const isGrowth = classification?.isGrowth ?? false
-
-  const settings = await getLocal<ExtensionSettings>('extensionSettings')
-  const isBlocklisted = settings?.blocklist?.includes(result.domain) ?? false
-
-  await timeAccumulator.addTime(
-    result.domain,
-    classification?.cacheKey ?? `${result.domain}:${new URL(result.url).pathname}`,
-    result.elapsedSeconds,
-    isGrowth,
-    isBlocklisted,
+  await recordElapsed(
+    { tabId: result.tabId, domain: result.domain, url: result.url, elapsedSeconds: result.elapsedSeconds },
+    classification,
   )
 }
 
@@ -37,7 +25,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     const tab = await chrome.tabs.get(activeInfo.tabId)
     if (!tab.url) return
     const result = tabTracker.onTabActivated(activeInfo.tabId, tab.url)
-    await recordElapsed(result)
+    await handleElapsed(result)
   } catch {
     // Tab may have been closed
   }
@@ -48,7 +36,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   if (!changeInfo.url) return
   try {
     const result = tabTracker.onUrlChanged(tabId, changeInfo.url)
-    await recordElapsed(result)
+    await handleElapsed(result)
   } catch {
     // Ignore
   }
@@ -58,7 +46,7 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
 chrome.windows.onFocusChanged.addListener(async (windowId) => {
   if (windowId === chrome.windows.WINDOW_ID_NONE) {
     const result = tabTracker.onWindowBlur()
-    await recordElapsed(result)
+    await handleElapsed(result)
   } else {
     try {
       const [tab] = await chrome.tabs.query({ active: true, windowId })
@@ -81,7 +69,7 @@ setupAlarms()
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'flush-tracker') {
     const result = tabTracker.flush()
-    await recordElapsed(result)
+    await handleElapsed(result)
   } else {
     await handleAlarm(alarm)
   }

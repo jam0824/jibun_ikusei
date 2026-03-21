@@ -97,6 +97,32 @@ describe('Popup App', () => {
     expect(screen.getByText(/今週はよく頑張りました/)).toBeInTheDocument()
   })
 
+  it('2週間以上前のweeklyReportは表示しない', async () => {
+    await setLocal('dailyProgress', createMockDailyProgress({ date: todayString() }))
+    const oldDate = new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString()
+    await chrome.storage.local.set({
+      weeklyReport: {
+        weekKey: '2026-W10',
+        totalMinutes: 300,
+        goodMinutes: 200,
+        badMinutes: 100,
+        categoryBreakdown: {},
+        topGrowthDomains: [],
+        goodQuestsCleared: 5,
+        badQuestsTriggered: 2,
+        lilyComment: '古いレポートです。',
+        generatedAt: oldDate,
+      },
+    })
+
+    await act(async () => {
+      render(<App />)
+    })
+
+    expect(screen.queryByText('週間レポート')).not.toBeInTheDocument()
+    expect(screen.queryByText(/古いレポート/)).not.toBeInTheDocument()
+  })
+
   it('週次レポートがない場合は週間レポートセクションを表示しない', async () => {
     await setLocal('dailyProgress', createMockDailyProgress({ date: todayString() }))
 

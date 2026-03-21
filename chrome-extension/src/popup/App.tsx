@@ -20,7 +20,7 @@ export function App() {
         setProgress(data)
       }
       const report = result.weeklyReport as WeeklyReportType | undefined
-      if (report) {
+      if (report && Date.now() - new Date(report.generatedAt).getTime() < 14 * 24 * 60 * 60 * 1000) {
         setWeeklyReport(report)
       }
     })
