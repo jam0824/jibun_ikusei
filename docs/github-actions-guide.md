@@ -193,9 +193,9 @@ API キーや URL など、**コードに直接書きたくない値**を GitHub
 
 | 名前 | 値 | 説明 |
 |------|------|------|
-| `VITE_API_BASE_URL` | `https://kzt5678s5b.execute-api.ap-northeast-1.amazonaws.com` | API Gateway のURL |
-| `VITE_COGNITO_USER_POOL_ID` | `ap-northeast-1_sdcbFbWBY` | Cognito ユーザープールID |
-| `VITE_COGNITO_CLIENT_ID` | `4vcj0n0b0b55354k29frt2q6ku` | Cognito クライアントID |
+| `VITE_API_BASE_URL` | `https://**************.ap-northeast-1.amazonaws.com` | API Gateway のURL |
+| `VITE_COGNITO_USER_POOL_ID` | `ap-northeast-1_**********` | Cognito ユーザープールID |
+| `VITE_COGNITO_CLIENT_ID` | `************` | Cognito クライアントID |
 | `VITE_COGNITO_REGION` | `ap-northeast-1` | AWSリージョン（東京） |
 
 ### Secrets の変更方法
