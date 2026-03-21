@@ -119,6 +119,26 @@ function scheduleNotification(message: AssistantMessage, settings: UserSettings)
   new Notification('自分育成アプリ', { body: message.text })
 }
 
+/** IDを持つ配列をマージ。同じIDは updatedAt/createdAt が新しい方を採用 */
+function mergeArrayById<T extends { id: string; updatedAt?: string; createdAt?: string }>(
+  local: T[],
+  cloud: T[],
+): T[] {
+  const map = new Map<string, T>()
+  for (const item of cloud) map.set(item.id, item)
+  for (const item of local) {
+    const existing = map.get(item.id)
+    if (!existing) {
+      map.set(item.id, item)
+    } else {
+      const localTs = item.updatedAt ?? item.createdAt ?? ''
+      const cloudTs = existing.updatedAt ?? existing.createdAt ?? ''
+      if (localTs >= cloudTs) map.set(item.id, item)
+    }
+  }
+  return Array.from(map.values())
+}
+
 function buildCompletionFallbackMessage(state: PersistedAppState, completion: QuestCompletion) {
   const quest = state.quests.find((entry) => entry.id === completion.questId)
   if (!quest) {
@@ -233,37 +253,44 @@ export const useAppStore = create<AppStore>((set, get) => ({
       },
     })
 
-    // バックグラウンドでクラウドからロード
+    // バックグラウンドでクラウドからロード → エンティティ単位でマージ
     void loadFromCloud().then((cloud) => {
-      const cloudUpdatedAt = cloud?.user?.updatedAt as string | undefined
-      const localUpdatedAt = rawLocal.user?.updatedAt as string | undefined
-
-      // クラウドにデータがない場合：実データがあればクラウドに同期
-      if (!cloudUpdatedAt) {
+      if (!cloud) {
+        // クラウドにデータなし → ローカルに実データがあれば保持
+        const localUpdatedAt = rawLocal.user?.updatedAt as string | undefined
         if (localUpdatedAt) persistState(local)
         return
       }
 
-      // クラウドにデータがある場合：
-      // localStorageに実データがなければクラウドを優先
-      // 両方あれば新しい方を採用
-      if (localUpdatedAt && localUpdatedAt > cloudUpdatedAt) {
-        // ローカルが新しい → ローカルを使い、クラウドに同期
-        persistState(local)
-      } else {
-        // クラウドが新しい or ローカルにデータなし → クラウドを使う
-        const hydrated = maybeCreatePeriodicMessages(hydratePersistedState(cloud ?? undefined))
-        persistState(hydrated)
-        set({
-          ...hydrated,
-          hydrated: true,
-          meta: {
-            ...hydrated.meta,
-            notificationPermission:
-              typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
-          },
-        })
+      // 各エンティティを個別にマージ（updatedAt が新しい方を採用）
+      const pickNewer = <T extends { updatedAt?: string }>(localVal: T, cloudVal: T | undefined): T => {
+        if (!cloudVal) return localVal
+        return (cloudVal.updatedAt ?? '') > (localVal.updatedAt ?? '') ? cloudVal : localVal
       }
+
+      const merged = reconcileState({
+        ...local,
+        user: pickNewer(local.user, cloud.user as typeof local.user | undefined),
+        settings: pickNewer(local.settings, cloud.settings as typeof local.settings | undefined),
+        aiConfig: local.aiConfig, // APIキーはローカル優先
+        meta: local.meta,
+        quests: mergeArrayById(local.quests, cloud.quests ?? []),
+        completions: mergeArrayById(local.completions, cloud.completions ?? []),
+        skills: mergeArrayById(local.skills, cloud.skills ?? []),
+        personalSkillDictionary: mergeArrayById(local.personalSkillDictionary, cloud.personalSkillDictionary ?? []),
+        assistantMessages: mergeArrayById(local.assistantMessages, cloud.assistantMessages ?? []),
+      })
+      const hydrated = maybeCreatePeriodicMessages(merged)
+      persistState(hydrated)
+      set({
+        ...hydrated,
+        hydrated: true,
+        meta: {
+          ...hydrated.meta,
+          notificationPermission:
+            typeof Notification === 'undefined' ? 'unsupported' : Notification.permission,
+        },
+      })
     })
   },
 
@@ -562,6 +589,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         const comp = nextState.completions.find((e) => e.id === completionId)
         if (comp) await api.postCompletion(comp).catch(() => undefined)
         await api.putUser(nextState.user).catch(() => undefined)
+        // ワンタイムクエストの status 変更を同期
+        if (quest.questType === 'one_time') {
+          await api.putQuest(quest.id, { status: 'completed', updatedAt: nowIso() }).catch(() => undefined)
+        }
         // 新しいスキルがあればPOST
         for (const skill of nextState.skills) {
           if (!state.skills.some((s) => s.id === skill.id)) {
@@ -842,6 +873,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     persistState(nextState)
     set(nextState)
     void api.putCompletion(completionId, { undoneAt: nowIso() }).catch(() => undefined)
+    const quest = state.quests.find((e) => e.id === completion.questId)
+    if (quest?.questType === 'one_time') {
+      void api.putQuest(quest.id, { status: 'active', updatedAt: nowIso() }).catch(() => undefined)
+    }
     return { ok: true }
   },
 
@@ -887,7 +922,28 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     persistState(nextState)
     set(nextState)
-    void api.putSkill(sourceSkillId, { status: 'merged', mergedIntoSkillId: targetSkillId, updatedAt: nowIso() }).catch(() => undefined)
+    void (async () => {
+      await api.putSkill(sourceSkillId, { status: 'merged', mergedIntoSkillId: targetSkillId, updatedAt: nowIso() }).catch(() => undefined)
+      // 影響を受けたクエスト・完了記録・辞書も同期
+      for (const quest of nextState.quests) {
+        const orig = state.quests.find((q) => q.id === quest.id)
+        if (orig?.fixedSkillId !== quest.fixedSkillId || orig?.defaultSkillId !== quest.defaultSkillId) {
+          await api.putQuest(quest.id, quest).catch(() => undefined)
+        }
+      }
+      for (const comp of nextState.completions) {
+        const orig = state.completions.find((c) => c.id === comp.id)
+        if (orig?.resolvedSkillId !== comp.resolvedSkillId) {
+          await api.putCompletion(comp.id, comp).catch(() => undefined)
+        }
+      }
+      for (const dict of nextState.personalSkillDictionary) {
+        const orig = state.personalSkillDictionary.find((d) => d.id === dict.id)
+        if (orig?.mappedSkillId !== dict.mappedSkillId) {
+          await api.putDictEntry(dict.id, dict).catch(() => undefined)
+        }
+      }
+    })()
     return { ok: true }
   },
 
