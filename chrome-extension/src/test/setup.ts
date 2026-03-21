@@ -94,6 +94,7 @@ const chromeMock = {
   tabs: {
     query: vi.fn(() => Promise.resolve([])),
     get: vi.fn(() => Promise.resolve({})),
+    sendMessage: vi.fn(() => Promise.resolve()),
     onActivated: {
       addListener: vi.fn(),
       removeListener: vi.fn(),

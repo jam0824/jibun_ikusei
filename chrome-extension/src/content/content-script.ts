@@ -1,10 +1,29 @@
 import { extractPageInfo } from './page-info-extractor'
+import { createUrlChangeDetector } from './spa-navigation'
+
+function sendPageInfo() {
+  const pageInfo = extractPageInfo()
+  chrome.runtime.sendMessage({ type: 'PAGE_INFO', payload: pageInfo }).catch(() => {
+    // Background may not be ready yet
+  })
+}
 
 // Send page info to background on load
-const pageInfo = extractPageInfo()
-chrome.runtime.sendMessage({ type: 'PAGE_INFO', payload: pageInfo }).catch(() => {
-  // Background may not be ready yet
-})
+sendPageInfo()
+
+// Detect SPA navigation (pushState/replaceState/popstate)
+const detector = createUrlChangeDetector(location.href, sendPageInfo)
+const originalPushState = history.pushState.bind(history)
+const originalReplaceState = history.replaceState.bind(history)
+history.pushState = (...args: Parameters<typeof history.pushState>) => {
+  originalPushState(...args)
+  detector.check(location.href)
+}
+history.replaceState = (...args: Parameters<typeof history.replaceState>) => {
+  originalReplaceState(...args)
+  detector.check(location.href)
+}
+window.addEventListener('popstate', () => detector.check(location.href))
 
 // Listen for toast notification messages from background
 chrome.runtime.onMessage.addListener((message) => {

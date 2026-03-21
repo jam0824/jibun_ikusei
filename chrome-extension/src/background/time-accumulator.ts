@@ -53,13 +53,20 @@ export class TimeAccumulator {
     // Update or create domain time entry
     const existing = progress.domainTimes[cacheKey]
     if (existing) {
+      // If category changed (e.g. blocklist updated), move existing seconds
+      if (existing.isGrowth !== isGrowth || existing.isBlocklisted !== isBlocklisted) {
+        adjustAggregate(progress, existing.isGrowth, existing.isBlocklisted, -existing.totalSeconds)
+        existing.isGrowth = isGrowth
+        existing.isBlocklisted = isBlocklisted
+        adjustAggregate(progress, isGrowth, isBlocklisted, existing.totalSeconds)
+      }
       existing.totalSeconds += seconds
       existing.lastUpdated = new Date().toISOString()
     } else {
       const entry: DomainTimeEntry = {
         domain,
         cacheKey,
-        category: 'その他', // Will be updated when classification is available
+        category: 'その他',
         isGrowth,
         isBlocklisted,
         totalSeconds: seconds,
@@ -68,14 +75,8 @@ export class TimeAccumulator {
       progress.domainTimes[cacheKey] = entry
     }
 
-    // Update aggregate seconds
-    if (isGrowth) {
-      progress.goodBrowsingSeconds += seconds
-    } else if (isBlocklisted) {
-      progress.badBrowsingSeconds += seconds
-    } else {
-      progress.otherBrowsingSeconds += seconds
-    }
+    // Add new seconds to aggregate
+    adjustAggregate(progress, isGrowth, isBlocklisted, seconds)
 
     await setLocal(STORAGE_KEY, progress)
     return progress
@@ -87,5 +88,20 @@ export class TimeAccumulator {
     mutator(progress)
     await setLocal(STORAGE_KEY, progress)
     return progress
+  }
+}
+
+function adjustAggregate(
+  progress: DailyProgress,
+  isGrowth: boolean,
+  isBlocklisted: boolean,
+  seconds: number,
+): void {
+  if (isGrowth) {
+    progress.goodBrowsingSeconds += seconds
+  } else if (isBlocklisted) {
+    progress.badBrowsingSeconds += seconds
+  } else {
+    progress.otherBrowsingSeconds += seconds
   }
 }

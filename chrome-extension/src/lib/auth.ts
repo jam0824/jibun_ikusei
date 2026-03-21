@@ -69,10 +69,47 @@ export async function logout(): Promise<void> {
 
 export async function getStoredToken(): Promise<string | null> {
   const result = await chrome.storage.local.get('authState')
-  if (result.authState && result.authState.idToken) {
-    return result.authState.idToken
+  const authState = result.authState as AuthState | undefined
+  if (!authState?.idToken) return null
+
+  // Check JWT expiration
+  try {
+    const payload = JSON.parse(atob(authState.idToken.split('.')[1]))
+    const expiresAt = payload.exp * 1000
+    if (Date.now() < expiresAt) {
+      return authState.idToken
+    }
+  } catch {
+    return null
   }
-  return null
+
+  // Token expired — attempt Cognito session refresh
+  return refreshToken()
+}
+
+async function refreshToken(): Promise<string | null> {
+  return new Promise((resolve) => {
+    const currentUser = userPool.getCurrentUser()
+    if (!currentUser) {
+      resolve(null)
+      return
+    }
+
+    currentUser.getSession(async (err: Error | null, session: { isValid: () => boolean; getIdToken: () => { getJwtToken: () => string } } | null) => {
+      if (err || !session?.isValid()) {
+        resolve(null)
+        return
+      }
+
+      const idToken = session.getIdToken().getJwtToken()
+      const stored = await chrome.storage.local.get('authState')
+      const authState = stored.authState as AuthState | undefined
+      await chrome.storage.local.set({
+        authState: { ...authState, idToken, loggedInAt: new Date().toISOString() },
+      })
+      resolve(idToken)
+    })
+  })
 }
 
 export async function isLoggedIn(): Promise<boolean> {
