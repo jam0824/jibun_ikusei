@@ -3,7 +3,7 @@ import { classifyPage } from '@ext/lib/ai-classifier'
 import { getLocal } from '@ext/lib/storage'
 import { createDefaultSettings } from '@ext/types/settings'
 import type { ExtensionSettings } from '@ext/types/settings'
-import type { ClassificationResult, PageInfo } from '@ext/types/browsing'
+import type { ClassificationResult, ClassificationCacheEntry, PageInfo } from '@ext/types/browsing'
 
 const classificationCache = new ClassificationCache()
 
@@ -49,6 +49,20 @@ export function setupMessageListener(): void {
     } else if (message.type === 'OPEN_POPUP') {
       const popupUrl = chrome.runtime.getURL('popup.html')
       chrome.tabs.create({ url: popupUrl }).catch(() => {})
+    }
+  })
+
+  // Sync in-memory tabClassifications when classificationCache is manually corrected
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== 'local' || !changes.classificationCache) return
+    const newStore = changes.classificationCache.newValue as Record<string, ClassificationCacheEntry> | undefined
+    if (!newStore) return
+
+    for (const [tabId, classification] of tabClassifications) {
+      const updated = newStore[classification.cacheKey]
+      if (updated && updated.source === 'manual') {
+        tabClassifications.set(tabId, updated.result)
+      }
     }
   })
 }

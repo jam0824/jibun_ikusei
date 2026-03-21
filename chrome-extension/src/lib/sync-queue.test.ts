@@ -56,6 +56,56 @@ describe('SyncQueue', () => {
     expect(remaining[0].path).toBe('/completions')
   })
 
+  it('MAX_RETRIES回失敗したリクエストをキューから削除する', async () => {
+    const queue = new SyncQueue()
+    await queue.enqueue({ path: '/fail', method: 'POST', body: {} })
+
+    const executor = async () => {
+      throw new Error('Server error')
+    }
+
+    // 10回リプレイ（MAX_RETRIES = 10）
+    for (let i = 0; i < 10; i++) {
+      await queue.replay(executor)
+    }
+
+    const remaining = await queue.getPending()
+    expect(remaining).toHaveLength(0)
+  })
+
+  it('NonRetryableErrorの場合は即座にキューから削除する', async () => {
+    const { NonRetryableError } = await import('@ext/lib/sync-queue')
+    const queue = new SyncQueue()
+    await queue.enqueue({ path: '/bad-request', method: 'POST', body: {} })
+
+    const executor = async () => {
+      throw new NonRetryableError('400 Bad Request')
+    }
+
+    await queue.replay(executor)
+
+    const remaining = await queue.getPending()
+    expect(remaining).toHaveLength(0)
+  })
+
+  it('retryCountが未定義の既存データでも正しく動作する', async () => {
+    const queue = new SyncQueue()
+    // 既存データを直接ストレージに書き込み（retryCountなし）
+    await chrome.storage.local.set({
+      syncQueue: [{ path: '/old', method: 'POST', body: {}, enqueuedAt: '2026-01-01' }],
+    })
+
+    const executor = async () => {
+      throw new Error('fail')
+    }
+
+    await queue.replay(executor)
+
+    const remaining = await queue.getPending()
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].retryCount).toBe(1)
+  })
+
   it('persists queue to chrome.storage.local', async () => {
     const queue1 = new SyncQueue()
     await queue1.enqueue({ path: '/test', method: 'POST', body: {} })

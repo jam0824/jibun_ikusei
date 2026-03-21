@@ -355,6 +355,47 @@ describe('alarm-handlers', () => {
       expect(stored.weeklyReport.badMinutes).toBe(30)
     })
 
+    it('同じweekKeyのレポートが既に存在する場合はスキップする', async () => {
+      vi.spyOn(Date.prototype, 'getDay').mockReturnValue(1)
+
+      const history = [
+        createMockDailyProgress({
+          date: '2026-03-16',
+          goodBrowsingSeconds: 60 * 60,
+        }),
+      ]
+      await setLocal('dailyProgressHistory', history)
+
+      // 既存レポートをセット（同じweekKey）
+      const now = new Date()
+      const jan1 = new Date(now.getFullYear(), 0, 1)
+      const days = Math.floor((now.getTime() - jan1.getTime()) / (24 * 60 * 60 * 1000))
+      const weekNum = Math.ceil((days + jan1.getDay() + 1) / 7)
+      const weekKey = `${now.getFullYear()}-W${String(weekNum).padStart(2, '0')}`
+
+      await chrome.storage.local.set({
+        weeklyReport: {
+          weekKey,
+          totalMinutes: 100,
+          goodMinutes: 50,
+          badMinutes: 50,
+          categoryBreakdown: {},
+          topGrowthDomains: [],
+          goodQuestsCleared: 1,
+          badQuestsTriggered: 0,
+          lilyComment: '既存レポート',
+          generatedAt: new Date().toISOString(),
+        },
+      })
+
+      const { handleAlarm } = await import('./alarm-handlers')
+      await handleAlarm({ name: 'weekly-report-gen', scheduledTime: Date.now() })
+
+      // 既存のレポートが上書きされていないこと
+      const stored = await chrome.storage.local.get('weeklyReport')
+      expect(stored.weeklyReport.lilyComment).toBe('既存レポート')
+    })
+
     it('月曜日以外はレポートを生成しない', async () => {
       // 火曜日
       vi.spyOn(Date.prototype, 'getDay').mockReturnValue(2)

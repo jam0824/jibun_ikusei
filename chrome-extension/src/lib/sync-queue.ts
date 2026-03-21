@@ -1,12 +1,21 @@
 import { getLocal, setLocal } from '@ext/lib/storage'
 
 const STORAGE_KEY = 'syncQueue'
+const MAX_RETRIES = 10
+
+export class NonRetryableError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'NonRetryableError'
+  }
+}
 
 export interface QueuedRequest {
   path: string
   method: string
   body: unknown
   enqueuedAt: string
+  retryCount?: number
 }
 
 export class SyncQueue {
@@ -32,8 +41,12 @@ export class SyncQueue {
     for (const req of queue) {
       try {
         await executor(req)
-      } catch {
-        failed.push(req)
+      } catch (err) {
+        if (err instanceof NonRetryableError) continue
+        req.retryCount = (req.retryCount ?? 0) + 1
+        if (req.retryCount < MAX_RETRIES) {
+          failed.push(req)
+        }
       }
     }
 

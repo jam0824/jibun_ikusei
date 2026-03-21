@@ -229,6 +229,112 @@ describe('message-handler', () => {
       )
     })
 
+    it('classificationCache変更時にtabClassificationsを更新する', async () => {
+      await setLocal('extensionSettings', {
+        aiProvider: 'openai',
+        openaiApiKey: 'test-key',
+        blocklist: [],
+        serverBaseUrl: '',
+        syncEnabled: false,
+        notificationsEnabled: true,
+      })
+
+      const { setupMessageListener, handlePageInfo, getTabClassification } = await import('./message-handler')
+      setupMessageListener()
+
+      // タブ1にAI分類結果を設定
+      await handlePageInfo(1, {
+        domain: 'game.com',
+        url: 'https://game.com/play',
+        title: 'Game',
+      })
+
+      // AI結果を確認（娯楽 → 学習 に手動補正する）
+      const before = getTabClassification(1)
+      expect(before).toBeDefined()
+
+      // onChanged リスナーを取得
+      const onChangedCalls = vi.mocked(chrome.storage.onChanged.addListener).mock.calls
+      expect(onChangedCalls.length).toBeGreaterThanOrEqual(1)
+      const storageListener = onChangedCalls[0][0] as (
+        changes: Record<string, { newValue?: unknown }>,
+        areaName: string,
+      ) => void
+
+      // classificationCache の手動補正をシミュレート
+      const cacheKey = before!.cacheKey
+      storageListener({
+        classificationCache: {
+          newValue: {
+            [cacheKey]: {
+              result: {
+                category: '学習',
+                isGrowth: true,
+                confidence: 1.0,
+                suggestedQuestTitle: '学習',
+                suggestedSkill: 'ゲーム開発',
+                cacheKey,
+              },
+              source: 'manual',
+              createdAt: new Date().toISOString(),
+              expiresAt: new Date(Date.now() + 86400000).toISOString(),
+            },
+          },
+        },
+      }, 'local')
+
+      // tabClassificationsが更新されていること
+      const after = getTabClassification(1)
+      expect(after).toBeDefined()
+      expect(after!.category).toBe('学習')
+      expect(after!.isGrowth).toBe(true)
+    })
+
+    it('手動修正されたcacheKeyに一致するタブのみ更新される', async () => {
+      await setLocal('extensionSettings', {
+        aiProvider: 'openai',
+        openaiApiKey: 'test-key',
+        blocklist: [],
+        serverBaseUrl: '',
+        syncEnabled: false,
+        notificationsEnabled: true,
+      })
+
+      const { setupMessageListener, handlePageInfo, getTabClassification } = await import('./message-handler')
+      setupMessageListener()
+
+      // 2つのタブに分類結果を設定
+      await handlePageInfo(1, { domain: 'game.com', url: 'https://game.com/play', title: 'Game' })
+      await handlePageInfo(2, { domain: 'learn.com', url: 'https://learn.com/course', title: 'Course' })
+
+      const tab1Before = getTabClassification(1)
+      const tab2Before = getTabClassification(2)
+
+      // onChangedリスナーを取得
+      const storageListener = vi.mocked(chrome.storage.onChanged.addListener).mock.calls[0][0] as (
+        changes: Record<string, { newValue?: unknown }>,
+        areaName: string,
+      ) => void
+
+      // game.com のみ手動補正
+      storageListener({
+        classificationCache: {
+          newValue: {
+            [tab1Before!.cacheKey]: {
+              result: { ...tab1Before!, category: '学習', isGrowth: true },
+              source: 'manual',
+              createdAt: new Date().toISOString(),
+              expiresAt: new Date(Date.now() + 86400000).toISOString(),
+            },
+          },
+        },
+      }, 'local')
+
+      // tab1のみ更新、tab2は変更なし
+      expect(getTabClassification(1)!.category).toBe('学習')
+      expect(getTabClassification(2)!.category).toBe(tab2Before!.category)
+    })
+
     it('sender.tab.idがない場合は無視する', async () => {
       const { setupMessageListener, getTabClassification } = await import('./message-handler')
       setupMessageListener()
