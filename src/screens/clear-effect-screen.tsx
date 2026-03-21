@@ -201,6 +201,12 @@ export function ClearEffectScreen() {
     skill && completion
       ? getLevelFromXp(Math.max(0, skill.totalXp - (completion.skillXpAwarded ?? 0)), SKILL_LEVEL_XP)
       : skillLevelInfo
+  const isSkillCelebration = celebration.effect === 'skill-level-up'
+  const HeroIcon = isSkillCelebration ? Star : Trophy
+  const medallionLabel =
+    isSkillCelebration && completion?.skillXpAwarded
+      ? `+${completion.skillXpAwarded} Skill XP`
+      : `+${completion?.userXpAwarded ?? 0} XP`
   const playAssistantMessage = state.playAssistantMessage
 
   const handlePlayMessage = async (messageId: string) => {
@@ -302,12 +308,21 @@ export function ClearEffectScreen() {
                     aria-hidden="true"
                   />
                 ))}
-                <div className="celebration-medallion">
+                {isSkillCelebration ? (
+                  <div className="celebration-skill-sigil" aria-hidden="true">
+                    <span className="celebration-skill-sigil__ring celebration-skill-sigil__ring--outer" />
+                    <span className="celebration-skill-sigil__ring celebration-skill-sigil__ring--inner" />
+                    <span className="celebration-skill-sigil__spark celebration-skill-sigil__spark--one" />
+                    <span className="celebration-skill-sigil__spark celebration-skill-sigil__spark--two" />
+                    <span className="celebration-skill-sigil__spark celebration-skill-sigil__spark--three" />
+                  </div>
+                ) : null}
+                <div className={cn('celebration-medallion', isSkillCelebration && 'celebration-medallion--skill')}>
                   <span className="celebration-medallion__ring celebration-medallion__ring--inner" />
                   <span className="celebration-medallion__ring celebration-medallion__ring--outer" />
                   <span className="celebration-medallion__shine" />
-                  <span className="celebration-medallion__xp">+{completion.userXpAwarded} XP</span>
-                  <Trophy className="h-10 w-10" />
+                  <span className="celebration-medallion__xp">{medallionLabel}</span>
+                  <HeroIcon className="h-10 w-10" />
                 </div>
               </div>
 
@@ -319,6 +334,9 @@ export function ClearEffectScreen() {
                 <div className="celebration-callout">{effectMessage}</div>
                 <div className="mt-3 text-2xl font-black tracking-tight text-slate-900 sm:text-3xl">{quest.title}</div>
                 <div className="mt-2 text-sm leading-6 text-slate-600">{quest.description || '説明はまだありません'}</div>
+                {isSkillCelebration && skill ? (
+                  <div className="celebration-skill-focus">Focus Skill: {skill.name}</div>
+                ) : null}
                 {celebration.userLevelUp && celebration.skillLevelUp && skill ? (
                   <div className="celebration-support-note">{skill.name} もいっしょにレベルアップしました</div>
                 ) : null}
@@ -400,9 +418,11 @@ export function ClearEffectScreen() {
                 className={cn(
                   'celebration-growth-card celebration-growth-card--skill',
                   celebration.skillLevelUp && 'celebration-growth-card--active',
+                  isSkillCelebration && 'celebration-growth-card--skill-spotlight',
                 )}
               >
                 <CardContent className="p-4">
+                  {isSkillCelebration ? <div className="celebration-skill-spotlight" aria-hidden="true" /> : null}
                   <div className="mb-3 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
                       <Star className="h-4 w-4 text-fuchsia-500" />

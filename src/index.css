@@ -208,6 +208,21 @@ a {
   color: rgb(var(--celebration-primary) / 0.92);
 }
 
+.celebration-skill-focus {
+  margin-top: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, rgb(16 185 129 / 0.14), rgb(217 70 239 / 0.1));
+  padding: 0.45rem 0.9rem;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  color: rgb(6 95 70);
+  box-shadow: 0 10px 24px rgb(16 185 129 / 0.12);
+}
+
 .celebration-medallion-wrap {
   position: relative;
   display: inline-flex;
@@ -230,6 +245,13 @@ a {
     0 18px 42px rgb(var(--celebration-primary) / 0.34),
     inset 0 1px 0 rgb(255 255 255 / 0.36);
   animation: celebration-medallion-burst 880ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.celebration-medallion--skill {
+  box-shadow:
+    0 20px 46px rgb(16 185 129 / 0.28),
+    0 0 34px rgb(217 70 239 / 0.18),
+    inset 0 1px 0 rgb(255 255 255 / 0.36);
 }
 
 .celebration-close-orb {
@@ -264,6 +286,60 @@ a {
 .celebration-close-orb--skill {
   background: radial-gradient(circle, rgb(255 255 255 / 0.98) 0%, rgb(16 185 129 / 0.66) 42%, transparent 76%);
   box-shadow: 0 0 18px rgb(16 185 129 / 0.2);
+}
+
+.celebration-skill-sigil {
+  position: absolute;
+  inset: -1.8rem;
+  pointer-events: none;
+}
+
+.celebration-skill-sigil__ring,
+.celebration-skill-sigil__spark {
+  position: absolute;
+  pointer-events: none;
+}
+
+.celebration-skill-sigil__ring {
+  border-radius: 9999px;
+}
+
+.celebration-skill-sigil__ring--outer {
+  inset: 0;
+  border: 1px dashed rgb(16 185 129 / 0.34);
+  animation: celebration-skill-spin 7.5s linear infinite;
+}
+
+.celebration-skill-sigil__ring--inner {
+  inset: 0.85rem;
+  border: 1px solid rgb(217 70 239 / 0.24);
+  animation: celebration-skill-spin 5.5s linear infinite reverse;
+}
+
+.celebration-skill-sigil__spark {
+  height: 0.9rem;
+  width: 0.9rem;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgb(255 255 255 / 0.98) 0%, rgb(16 185 129 / 0.7) 48%, transparent 78%);
+  box-shadow: 0 0 16px rgb(16 185 129 / 0.26);
+  animation: celebration-skill-spark 1800ms ease-in-out infinite;
+}
+
+.celebration-skill-sigil__spark--one {
+  left: 10%;
+  top: 14%;
+}
+
+.celebration-skill-sigil__spark--two {
+  right: 8%;
+  top: 30%;
+  animation-delay: 300ms;
+}
+
+.celebration-skill-sigil__spark--three {
+  bottom: 10%;
+  left: 24%;
+  animation-delay: 620ms;
 }
 
 .celebration-medallion__ring,
@@ -346,6 +422,25 @@ a {
   border-color: rgb(var(--celebration-primary) / 0.22);
   box-shadow: 0 18px 40px rgb(var(--celebration-primary) / 0.14);
   animation: celebration-panel-glow 2200ms ease-in-out infinite;
+}
+
+.celebration-growth-card--skill-spotlight {
+  border-color: rgb(16 185 129 / 0.24);
+  background:
+    linear-gradient(135deg, rgb(16 185 129 / 0.1), rgb(255 255 255 / 0.96) 36%, rgb(217 70 239 / 0.08)),
+    rgb(255 255 255 / 0.98);
+  box-shadow: 0 22px 52px rgb(16 185 129 / 0.16);
+}
+
+.celebration-skill-spotlight {
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at top right, rgb(16 185 129 / 0.16), transparent 42%),
+    radial-gradient(circle at bottom left, rgb(217 70 239 / 0.12), transparent 38%);
+  opacity: 0.95;
+  pointer-events: none;
 }
 
 .celebration-inline-badge {
@@ -485,6 +580,27 @@ a {
   }
 }
 
+@keyframes celebration-skill-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes celebration-skill-spark {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.86);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.14);
+  }
+}
+
 @keyframes celebration-number-punch {
   0% {
     opacity: 0;
@@ -583,6 +699,10 @@ a {
     opacity: 1;
     filter: saturate(1.08);
   }
+
+  .celebration-skill-sigil {
+    inset: -1.45rem;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -597,6 +717,8 @@ a {
   .celebration-medallion__shine,
   .celebration-medallion__xp,
   .celebration-close-orb,
+  .celebration-skill-sigil__ring,
+  .celebration-skill-sigil__spark,
   .celebration-reward-value,
   .celebration-level-value,
   .celebration-growth-card--active {
