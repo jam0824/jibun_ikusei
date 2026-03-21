@@ -66,6 +66,62 @@ export class JibunIkuseiStack extends cdk.Stack {
     table.grantReadData(getStateFn)
     table.grantWriteData(putStateFn)
 
+    // ---- Lambda (個別API) ----
+    const sharedLayer = new lambda.LayerVersion(this, 'SharedLayer', {
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/shared-layer')),
+      compatibleRuntimes: [lambda.Runtime.NODEJS_24_X],
+      description: 'Shared utilities for Lambda functions',
+    })
+
+    const lambdaDefaults = {
+      runtime: lambda.Runtime.NODEJS_24_X,
+      handler: 'index.handler',
+      environment: { TABLE_NAME: table.tableName },
+      timeout: cdk.Duration.seconds(10),
+      layers: [sharedLayer],
+    }
+
+    const questFn = new lambda.Function(this, 'QuestHandler', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-questHandler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/questHandler')),
+    })
+
+    const completionFn = new lambda.Function(this, 'CompletionHandler', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-completionHandler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/completionHandler')),
+    })
+
+    const skillFn = new lambda.Function(this, 'SkillHandler', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-skillHandler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/skillHandler')),
+    })
+
+    const userConfigFn = new lambda.Function(this, 'UserConfigHandler', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-userConfigHandler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/userConfigHandler')),
+    })
+
+    const messageFn = new lambda.Function(this, 'MessageHandler', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-messageHandler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/messageHandler')),
+    })
+
+    const migrateStateFn = new lambda.Function(this, 'MigrateState', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-migrateState',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/migrateState')),
+      timeout: cdk.Duration.seconds(60),
+    })
+
+    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, migrateStateFn]) {
+      table.grantReadWriteData(fn)
+    }
+
     // ---- API Gateway (HTTP API) ----
     const jwtAuthorizer = new authorizers.HttpJwtAuthorizer('CognitoAuthorizer',
       `https://cognito-idp.${this.region}.amazonaws.com/${userPool.userPoolId}`,
@@ -101,6 +157,46 @@ export class JibunIkuseiStack extends cdk.Stack {
       methods: [apigwv2.HttpMethod.PUT],
       integration: new integrations.HttpLambdaIntegration('PutStateIntegration', putStateFn),
     })
+
+    // ---- 個別APIルート ----
+    const questIntegration = new integrations.HttpLambdaIntegration('QuestIntegration', questFn)
+    const completionIntegration = new integrations.HttpLambdaIntegration('CompletionIntegration', completionFn)
+    const skillIntegration = new integrations.HttpLambdaIntegration('SkillIntegration', skillFn)
+    const userConfigIntegration = new integrations.HttpLambdaIntegration('UserConfigIntegration', userConfigFn)
+    const messageIntegration = new integrations.HttpLambdaIntegration('MessageIntegration', messageFn)
+
+    // Quests
+    api.addRoutes({ path: '/quests', methods: [apigwv2.HttpMethod.GET], integration: questIntegration })
+    api.addRoutes({ path: '/quests', methods: [apigwv2.HttpMethod.POST], integration: questIntegration })
+    api.addRoutes({ path: '/quests/{id}', methods: [apigwv2.HttpMethod.PUT], integration: questIntegration })
+    api.addRoutes({ path: '/quests/{id}', methods: [apigwv2.HttpMethod.DELETE], integration: questIntegration })
+
+    // Completions
+    api.addRoutes({ path: '/completions', methods: [apigwv2.HttpMethod.GET], integration: completionIntegration })
+    api.addRoutes({ path: '/completions', methods: [apigwv2.HttpMethod.POST], integration: completionIntegration })
+    api.addRoutes({ path: '/completions/{id}', methods: [apigwv2.HttpMethod.PUT], integration: completionIntegration })
+
+    // Skills
+    api.addRoutes({ path: '/skills', methods: [apigwv2.HttpMethod.GET], integration: skillIntegration })
+    api.addRoutes({ path: '/skills', methods: [apigwv2.HttpMethod.POST], integration: skillIntegration })
+    api.addRoutes({ path: '/skills/{id}', methods: [apigwv2.HttpMethod.PUT], integration: skillIntegration })
+
+    // User / Settings / AiConfig / Meta
+    api.addRoutes({ path: '/user', methods: [apigwv2.HttpMethod.GET], integration: userConfigIntegration })
+    api.addRoutes({ path: '/user', methods: [apigwv2.HttpMethod.PUT], integration: userConfigIntegration })
+    api.addRoutes({ path: '/settings', methods: [apigwv2.HttpMethod.GET], integration: userConfigIntegration })
+    api.addRoutes({ path: '/settings', methods: [apigwv2.HttpMethod.PUT], integration: userConfigIntegration })
+    api.addRoutes({ path: '/ai-config', methods: [apigwv2.HttpMethod.GET], integration: userConfigIntegration })
+    api.addRoutes({ path: '/ai-config', methods: [apigwv2.HttpMethod.PUT], integration: userConfigIntegration })
+    api.addRoutes({ path: '/meta', methods: [apigwv2.HttpMethod.GET], integration: userConfigIntegration })
+    api.addRoutes({ path: '/meta', methods: [apigwv2.HttpMethod.PUT], integration: userConfigIntegration })
+
+    // Messages / Dictionary
+    api.addRoutes({ path: '/messages', methods: [apigwv2.HttpMethod.GET], integration: messageIntegration })
+    api.addRoutes({ path: '/messages', methods: [apigwv2.HttpMethod.POST], integration: messageIntegration })
+    api.addRoutes({ path: '/dictionary', methods: [apigwv2.HttpMethod.GET], integration: messageIntegration })
+    api.addRoutes({ path: '/dictionary', methods: [apigwv2.HttpMethod.POST], integration: messageIntegration })
+    api.addRoutes({ path: '/dictionary/{id}', methods: [apigwv2.HttpMethod.PUT], integration: messageIntegration })
 
     // ---- Outputs ----
     new cdk.CfnOutput(this, 'ApiUrl', {

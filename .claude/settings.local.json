@@ -2,7 +2,23 @@
   "permissions": {
     "allow": [
       "Bash(npx vitest:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(find /d/codes/自分育成アプリ/src -type f -name *.ts -not -path */node_modules/*)",
+      "Bash(cd:*)",
+      "Bash(npx cdk:*)",
+      "Bash(\"/c/Program Files/Amazon/AWSCLIV2/aws.exe\" lambda invoke --function-name jibun-ikusei-migrateState --region ap-northeast-1 /tmp/migrate-output.json)",
+      "Read(//tmp/**)",
+      "Bash(for f:*)",
+      "Bash(do sed:*)",
+      "Bash(done)",
+      "Bash(aws lambda:*)",
+      "Bash(\"/c/Program Files/Amazon/AWSCLIV2/aws.exe\" lambda invoke --function-name jibun-ikusei-migrateState --region ap-northeast-1 /dev/stdout 2>&1)",
+      "Bash(find /d/codes/自分育成アプリ/infra -name *test* -o -name *spec*)",
+      "Bash(find /d/codes/自分育成アプリ/infra -maxdepth 2 -name vitest* -o -name *.config.*)",
+      "Bash(npm install:*)",
+      "Bash(npm test:*)",
+      "Bash(\"/c/Program Files/Amazon/AWSCLIV2/aws.exe\" lambda invoke --function-name jibun-ikusei-migrateState --region ap-northeast-1 /tmp/migrate-output2.json)",
+      "Bash(npm run:*)"
     ]
   }
 }

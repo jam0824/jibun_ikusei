@@ -1,9 +1,13 @@
 import type {
+  AiConfig,
+  AppMeta,
+  AssistantMessage,
   LocalUser,
-  UserSettings,
+  PersonalSkillDictionary,
   Quest,
   QuestCompletion,
   Skill,
+  UserSettings,
 } from '@/domain/types'
 import { getIdToken } from '@/lib/auth'
 
@@ -25,7 +29,14 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 // ユーザー
 export function getUser() {
-  return request<LocalUser>('/user')
+  return request<LocalUser | null>('/user')
+}
+
+export function putUser(user: Partial<LocalUser>) {
+  return request<{ updated: boolean }>('/user', {
+    method: 'PUT',
+    body: JSON.stringify(user),
+  })
 }
 
 // クエスト
@@ -33,7 +44,7 @@ export function getQuests() {
   return request<Quest[]>('/quests')
 }
 
-export function postQuest(quest: Omit<Quest, 'createdAt' | 'updatedAt'>) {
+export function postQuest(quest: Quest) {
   return request<Quest>('/quests', {
     method: 'POST',
     body: JSON.stringify(quest),
@@ -58,22 +69,17 @@ export function getCompletions() {
   return request<QuestCompletion[]>('/completions')
 }
 
-export function postCompletion(payload: { questId: string; note?: string; source?: string }) {
-  return request<{
-    completionId: string
-    xpAwarded: number
-    totalXp: number
-    level: number
-    levelUp: boolean
-  }>('/completions', {
+export function postCompletion(completion: QuestCompletion) {
+  return request<unknown>('/completions', {
     method: 'POST',
-    body: JSON.stringify(payload),
+    body: JSON.stringify(completion),
   })
 }
 
-export function deleteCompletion(id: string) {
-  return request<{ deleted: string }>(`/completions/${id}`, {
-    method: 'DELETE',
+export function putCompletion(id: string, updates: Partial<QuestCompletion>) {
+  return request<unknown>(`/completions/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
   })
 }
 
@@ -82,14 +88,83 @@ export function getSkills() {
   return request<Skill[]>('/skills')
 }
 
+export function postSkill(skill: Skill) {
+  return request<Skill>('/skills', {
+    method: 'POST',
+    body: JSON.stringify(skill),
+  })
+}
+
+export function putSkill(id: string, skill: Partial<Skill>) {
+  return request<Skill>(`/skills/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(skill),
+  })
+}
+
 // 設定
 export function getSettings() {
-  return request<UserSettings>('/settings')
+  return request<UserSettings | null>('/settings')
 }
 
 export function putSettings(settings: Partial<UserSettings>) {
   return request<{ updated: boolean }>('/settings', {
     method: 'PUT',
     body: JSON.stringify(settings),
+  })
+}
+
+// AI設定
+export function getAiConfig() {
+  return request<AiConfig | null>('/ai-config')
+}
+
+export function putAiConfig(config: Partial<AiConfig>) {
+  return request<{ updated: boolean }>('/ai-config', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  })
+}
+
+// メタ
+export function getMeta() {
+  return request<AppMeta | null>('/meta')
+}
+
+export function putMeta(meta: AppMeta) {
+  return request<{ updated: boolean }>('/meta', {
+    method: 'PUT',
+    body: JSON.stringify(meta),
+  })
+}
+
+// メッセージ
+export function getMessages() {
+  return request<AssistantMessage[]>('/messages')
+}
+
+export function postMessage(message: AssistantMessage) {
+  return request<AssistantMessage>('/messages', {
+    method: 'POST',
+    body: JSON.stringify(message),
+  })
+}
+
+// 辞書
+export function getDictionary() {
+  return request<PersonalSkillDictionary[]>('/dictionary')
+}
+
+export function postDictEntry(entry: PersonalSkillDictionary) {
+  return request<PersonalSkillDictionary>('/dictionary', {
+    method: 'POST',
+    body: JSON.stringify(entry),
+  })
+}
+
+export function putDictEntry(id: string, entry: Partial<PersonalSkillDictionary>) {
+  return request<PersonalSkillDictionary>(`/dictionary/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(entry),
   })
 }
