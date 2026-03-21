@@ -34,6 +34,7 @@ import {
 } from '@/lib/ai'
 import { getOfflineMessage, isOffline, OfflineFeatureError } from '@/lib/network'
 import { clearPersistedState, loadFromCloud, loadPersistedState, persistState } from '@/lib/storage'
+import * as api from '@/lib/api-client'
 import { getCachedAudio, playAudioUrl } from '@/lib/tts'
 import { createId, downloadJson } from '@/lib/utils'
 import { SKILL_XP_CAP } from '@/domain/constants'
@@ -269,21 +270,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
   upsertQuest: (quest) => {
     const state = get()
     const existing = state.quests.some((entry) => entry.id === quest.id)
+    const updatedQuest = existing
+      ? { ...quest, updatedAt: nowIso() }
+      : { ...quest, createdAt: nowIso(), updatedAt: nowIso() }
     const nextState = reconcileState({
       ...state,
       quests: existing
-        ? state.quests.map((entry) =>
-            entry.id === quest.id
-              ? {
-                  ...quest,
-                  updatedAt: nowIso(),
-                }
-              : entry,
-          )
-        : [{ ...quest, createdAt: nowIso(), updatedAt: nowIso() }, ...state.quests],
+        ? state.quests.map((entry) => (entry.id === quest.id ? updatedQuest : entry))
+        : [updatedQuest, ...state.quests],
     })
     persistState(nextState)
     set(nextState)
+    if (existing) {
+      void api.putQuest(quest.id, updatedQuest).catch(() => undefined)
+    } else {
+      void api.postQuest(updatedQuest).catch(() => undefined)
+    }
   },
 
   deleteQuest: (questId) => {
@@ -337,6 +339,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ? undefined
           : state.currentEffectCompletionId,
     })
+    void api.deleteQuest(questId).catch(() => undefined)
 
     return { ok: true }
   },
@@ -357,6 +360,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
     persistState(nextState)
     set(nextState)
+    void api.putQuest(questId, { status: 'archived', updatedAt: nowIso() }).catch(() => undefined)
   },
 
   reopenQuest: (questId) => {
@@ -375,6 +379,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
     persistState(nextState)
     set(nextState)
+    void api.putQuest(questId, { status: 'active', updatedAt: nowIso() }).catch(() => undefined)
   },
 
   completeQuest: async (questId, options) => {
@@ -551,6 +556,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
       currentEffectCompletionId: completionId,
     })
 
+    // バックグラウンドで個別APIにデータを同期
+    void (async () => {
+      try {
+        const comp = nextState.completions.find((e) => e.id === completionId)
+        if (comp) await api.postCompletion(comp).catch(() => undefined)
+        await api.putUser(nextState.user).catch(() => undefined)
+        // 新しいスキルがあればPOST
+        for (const skill of nextState.skills) {
+          if (!state.skills.some((s) => s.id === skill.id)) {
+            await api.postSkill(skill).catch(() => undefined)
+          }
+        }
+      } catch { /* ignore */ }
+    })()
+
     if (
       !completion.resolvedSkillId &&
       quest.privacyMode !== 'no_ai' &&
@@ -601,6 +621,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           })
           persistState(updated)
           set(updated)
+          void api.postMessage(generatedMessage).catch(() => undefined)
 
           if (messageResult.shouldSpeak && get().settings.lilyAutoPlay === 'on') {
             await get().playAssistantMessage(generatedMessage.id)
@@ -752,6 +773,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     persistState(nextState)
     set(nextState)
+    // スキル解決結果をクラウドに同期
+    void (async () => {
+      const comp = nextState.completions.find((e) => e.id === completionId)
+      if (comp) await api.putCompletion(completionId, comp).catch(() => undefined)
+      for (const skill of nextState.skills) {
+        if (!latestState.skills.some((s) => s.id === skill.id)) {
+          await api.postSkill(skill).catch(() => undefined)
+        }
+      }
+    })()
   },
 
   confirmCompletionSkill: (completionId, skillId) => {
@@ -773,6 +804,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
     persistState(nextState)
     set(nextState)
+    const updatedComp = nextState.completions.find((e) => e.id === completionId)
+    if (updatedComp) void api.putCompletion(completionId, updatedComp).catch(() => undefined)
   },
 
   undoCompletion: (completionId) => {
@@ -808,6 +841,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     persistState(nextState)
     set(nextState)
+    void api.putCompletion(completionId, { undoneAt: nowIso() }).catch(() => undefined)
     return { ok: true }
   },
 
@@ -853,6 +887,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     persistState(nextState)
     set(nextState)
+    void api.putSkill(sourceSkillId, { status: 'merged', mergedIntoSkillId: targetSkillId, updatedAt: nowIso() }).catch(() => undefined)
     return { ok: true }
   },
 
@@ -868,6 +903,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
     persistState(nextState)
     set(nextState)
+    void api.putSettings(nextState.settings).catch(() => undefined)
 
     if (partial.notificationsEnabled && typeof Notification !== 'undefined' && Notification.permission === 'default') {
       void Notification.requestPermission().then((permission) => {
@@ -900,6 +936,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
     persistState(nextState)
     set(nextState)
+    void api.putAiConfig(nextState.aiConfig).catch(() => undefined)
   },
 
   setActiveProvider: (provider) => {
@@ -913,6 +950,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     })
     persistState(nextState)
     set(nextState)
+    void api.putAiConfig(nextState.aiConfig).catch(() => undefined)
   },
 
   testConnection: async (provider) => {
@@ -945,6 +983,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         },
       })
       persistState(nextState)
+      void api.putAiConfig(nextState.aiConfig).catch(() => undefined)
       set({
         ...nextState,
         connectionState: {
@@ -975,6 +1014,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         },
       })
       persistState(nextState)
+      void api.putAiConfig(nextState.aiConfig).catch(() => undefined)
       set({
         ...nextState,
         connectionState: {
@@ -1046,6 +1086,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
       const merged = mergeImportedState(get(), parsed, mode)
       persistState(merged)
       set(merged)
+      // インポートデータをクラウドに同期
+      void (async () => {
+        await api.putUser(merged.user).catch(() => undefined)
+        await api.putSettings(merged.settings).catch(() => undefined)
+        await api.putAiConfig(merged.aiConfig).catch(() => undefined)
+        await api.putMeta(merged.meta).catch(() => undefined)
+        for (const q of merged.quests) await api.postQuest(q).catch(() => undefined)
+        for (const c of merged.completions) await api.postCompletion(c).catch(() => undefined)
+        for (const s of merged.skills) await api.postSkill(s).catch(() => undefined)
+        for (const m of merged.assistantMessages) await api.postMessage(m).catch(() => undefined)
+        for (const d of merged.personalSkillDictionary) await api.postDictEntry(d).catch(() => undefined)
+      })()
       return { ok: true }
     } catch (error) {
       return {
