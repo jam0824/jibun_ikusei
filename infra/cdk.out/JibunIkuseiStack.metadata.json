@@ -1,0 +1,154 @@
+{
+  "/JibunIkuseiStack/Table": [
+    {
+      "type": "aws:cdk:hasPhysicalName",
+      "data": {
+        "Ref": "TableCD117FA1"
+      }
+    }
+  ],
+  "/JibunIkuseiStack/ApiUrl": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiUrl"
+    }
+  ],
+  "/JibunIkuseiStack/UserPoolId": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "UserPoolId"
+    }
+  ],
+  "/JibunIkuseiStack/UserPoolClientId": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "UserPoolClientId"
+    }
+  ],
+  "/JibunIkuseiStack/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    }
+  ],
+  "/JibunIkuseiStack/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    }
+  ],
+  "/JibunIkuseiStack/Table/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "TableCD117FA1"
+    }
+  ],
+  "/JibunIkuseiStack/UserPool/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "UserPool6BA7E5F2"
+    }
+  ],
+  "/JibunIkuseiStack/GetState/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "GetState82E9AAB0"
+    }
+  ],
+  "/JibunIkuseiStack/PutState/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "PutState7DA834E9"
+    }
+  ],
+  "/JibunIkuseiStack/Api/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiF70053CD"
+    }
+  ],
+  "/JibunIkuseiStack/CDKMetadata/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CDKMetadata"
+    }
+  ],
+  "/JibunIkuseiStack/UserPool/WebClient/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "UserPoolWebClient4C9370B0"
+    }
+  ],
+  "/JibunIkuseiStack/GetState/ServiceRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "GetStateServiceRole5CFC081F"
+    }
+  ],
+  "/JibunIkuseiStack/PutState/ServiceRole/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "PutStateServiceRole842450A3"
+    }
+  ],
+  "/JibunIkuseiStack/Api/DefaultStage/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiDefaultStage189A7074"
+    }
+  ],
+  "/JibunIkuseiStack/Api/GET--sync/GetStateIntegration-Permission": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiGETsyncGetStateIntegrationPermission209B239D"
+    }
+  ],
+  "/JibunIkuseiStack/Api/GET--sync/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiGETsync05EE39B6"
+    }
+  ],
+  "/JibunIkuseiStack/Api/CognitoAuthorizer/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiCognitoAuthorizer23B91BA2"
+    }
+  ],
+  "/JibunIkuseiStack/Api/PUT--sync/PutStateIntegration-Permission": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiPUTsyncPutStateIntegrationPermission184FCCA6"
+    }
+  ],
+  "/JibunIkuseiStack/Api/PUT--sync/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiPUTsyncAC2304A4"
+    }
+  ],
+  "/JibunIkuseiStack/GetState/ServiceRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "GetStateServiceRoleDefaultPolicy494CB900"
+    }
+  ],
+  "/JibunIkuseiStack/PutState/ServiceRole/DefaultPolicy/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "PutStateServiceRoleDefaultPolicy7FF95E19"
+    }
+  ],
+  "/JibunIkuseiStack/Api/GET--sync/GetStateIntegration/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiGETsyncGetStateIntegration1EF1E2D3"
+    }
+  ],
+  "/JibunIkuseiStack/Api/PUT--sync/PutStateIntegration/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ApiPUTsyncPutStateIntegration381AF871"
+    }
+  ]
+}
