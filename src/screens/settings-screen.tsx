@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react'
-import { Download, Eye, EyeOff, Settings2, Trash2, Upload } from 'lucide-react'
+import { Download, Eye, EyeOff, LogOut, Settings2, Trash2, Upload } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { GEMINI_VOICES } from '@/domain/constants'
 import { maskApiKey } from '@/domain/logic'
 import { usePwaInstall } from '@/lib/pwa'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Select, Switch } from '@/components/ui'
+import { logout } from '@/lib/auth'
 import { useAppStore } from '@/store/app-store'
 
 export function SettingsScreen() {
@@ -385,6 +386,23 @@ export function SettingsScreen() {
             >
               <Trash2 className="h-4 w-4" />
               ローカルデータ削除
+            </Button>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-4">Account</div>
+            <Button
+              variant="danger"
+              onClick={() => {
+                if (window.confirm('ログアウトしますか？')) {
+                  logout()
+                  window.location.reload()
+                }
+              }}
+            >
+              <LogOut className="h-4 w-4" />
+              ログアウト
             </Button>
           </CardContent>
         </Card>
