@@ -1,6 +1,7 @@
 import type { PersistedAppState } from '@/domain/types'
 import { STORAGE_KEYS } from '@/domain/constants'
 import { safeJsonParse } from '@/lib/utils'
+import { getIdToken } from '@/lib/auth'
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL as string | undefined
 
@@ -35,17 +36,26 @@ function saveToLocalStorage(state: PersistedAppState) {
 
 async function syncToCloud(state: PersistedAppState): Promise<void> {
   if (!API_BASE_URL) return
+  const token = await getIdToken()
+  if (!token) return
   await fetch(`${API_BASE_URL}/sync`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify(state),
   })
 }
 
-async function loadFromCloud(): Promise<Partial<PersistedAppState> | null> {
+export async function loadFromCloud(): Promise<Partial<PersistedAppState> | null> {
   if (!API_BASE_URL) return null
+  const token = await getIdToken()
+  if (!token) return null
   try {
-    const res = await fetch(`${API_BASE_URL}/sync`)
+    const res = await fetch(`${API_BASE_URL}/sync`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
     if (!res.ok) return null
     const data = await res.json() as Partial<PersistedAppState> | null
     return data
@@ -61,16 +71,6 @@ export function loadPersistedState(): Partial<PersistedAppState> {
   return loadFromLocalStorage()
 }
 
-// アプリ起動時にクラウドからロードを試みる。失敗時はlocalStorageにフォールバック。
-export async function loadPersistedStateFromCloud(): Promise<Partial<PersistedAppState>> {
-  if (typeof window === 'undefined') return {}
-  const cloud = await loadFromCloud()
-  if (cloud) {
-    saveToLocalStorage(cloud as PersistedAppState)
-    return cloud
-  }
-  return loadFromLocalStorage()
-}
 
 export function persistState(state: PersistedAppState) {
   if (typeof window === 'undefined') {

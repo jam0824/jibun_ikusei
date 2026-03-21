@@ -5,12 +5,15 @@ import type {
   QuestCompletion,
   Skill,
 } from '@/domain/types'
+import { getIdToken } from '@/lib/auth'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL as string
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
+  const token = await getIdToken()
+  const authHeader = token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...authHeader },
     ...options,
   })
   if (!res.ok) {
