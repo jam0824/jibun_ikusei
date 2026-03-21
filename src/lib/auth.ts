@@ -36,6 +36,12 @@ export function getIdToken(): Promise<string | null> {
   )
 }
 
+export function getUserEmail(): Promise<string | null> {
+  return getCurrentSession().then((session) =>
+    session ? (session.getIdToken().payload['email'] as string | undefined) ?? null : null,
+  )
+}
+
 export function login(email: string, password: string): Promise<LoginResult> {
   return new Promise((resolve) => {
     const cognitoUser = new CognitoUser({ Username: email, Pool: userPool })
