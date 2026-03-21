@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Download, Eye, EyeOff, LogOut, Settings2, Trash2, Upload } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { GEMINI_VOICES } from '@/domain/constants'
@@ -6,7 +6,7 @@ import { maskApiKey } from '@/domain/logic'
 import { usePwaInstall } from '@/lib/pwa'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Select, Switch } from '@/components/ui'
-import { logout } from '@/lib/auth'
+import { getUserEmail, logout } from '@/lib/auth'
 import { useAppStore } from '@/store/app-store'
 
 export function SettingsScreen() {
@@ -17,6 +17,11 @@ export function SettingsScreen() {
   const [geminiVisible, setGeminiVisible] = useState(false)
   const [importError, setImportError] = useState<string>()
   const [installMessage, setInstallMessage] = useState<string>()
+  const [email, setEmail] = useState<string | null>(null)
+
+  useEffect(() => {
+    void getUserEmail().then(setEmail)
+  }, [])
 
   const providerStatus = useMemo(
     () => ({
@@ -392,6 +397,9 @@ export function SettingsScreen() {
         <Card>
           <CardContent className="p-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500 mb-4">Account</div>
+            {email ? (
+              <div className="text-sm text-slate-700 mb-4">{email}</div>
+            ) : null}
             <Button
               variant="danger"
               onClick={() => {
