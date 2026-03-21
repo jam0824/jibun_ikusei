@@ -72,6 +72,41 @@ describe('Popup App', () => {
     expect(screen.getByText('45分')).toBeInTheDocument()
   })
 
+  it('週次レポートがある場合に表示する', async () => {
+    await setLocal('dailyProgress', createMockDailyProgress({ date: todayString() }))
+    await chrome.storage.local.set({
+      weeklyReport: {
+        weekKey: '2026-W12',
+        totalMinutes: 300,
+        goodMinutes: 200,
+        badMinutes: 100,
+        categoryBreakdown: {},
+        topGrowthDomains: [],
+        goodQuestsCleared: 5,
+        badQuestsTriggered: 2,
+        lilyComment: '今週はよく頑張りました。',
+        generatedAt: new Date().toISOString(),
+      },
+    })
+
+    await act(async () => {
+      render(<App />)
+    })
+
+    expect(screen.getByText('週間レポート')).toBeInTheDocument()
+    expect(screen.getByText(/今週はよく頑張りました/)).toBeInTheDocument()
+  })
+
+  it('週次レポートがない場合は週間レポートセクションを表示しない', async () => {
+    await setLocal('dailyProgress', createMockDailyProgress({ date: todayString() }))
+
+    await act(async () => {
+      render(<App />)
+    })
+
+    expect(screen.queryByText('週間レポート')).not.toBeInTheDocument()
+  })
+
   it('アンマウント時にonChangedリスナーを解除する', async () => {
     await setLocal('dailyProgress', createMockDailyProgress({ date: todayString() }))
 

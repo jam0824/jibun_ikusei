@@ -188,6 +188,30 @@ describe('quest-evaluator', () => {
     })
   })
 
+  describe('isFirstReward フラグ', () => {
+    it('初回報酬(30分)で isFirstReward: true を返す', () => {
+      const progress = createMockDailyProgress({
+        goodBrowsingSeconds: 30 * 60,
+        lastGoodRewardAtSeconds: 0,
+      })
+      const events = evaluateProgress(progress, [])
+      const goodEvent = events.find((e) => e.type === 'good_quest')
+      expect(goodEvent).toBeDefined()
+      expect(goodEvent!.isFirstReward).toBe(true)
+    })
+
+    it('追加報酬(90分)で isFirstReward: false を返す', () => {
+      const progress = createMockDailyProgress({
+        goodBrowsingSeconds: 90 * 60,
+        lastGoodRewardAtSeconds: 30 * 60,
+      })
+      const events = evaluateProgress(progress, [])
+      const goodEvent = events.find((e) => e.type === 'good_quest')
+      expect(goodEvent).toBeDefined()
+      expect(goodEvent!.isFirstReward).toBe(false)
+    })
+  })
+
   describe('warning domain aggregation', () => {
     it('triggers warning per blocklisted domain at 50 minutes', () => {
       const progress = createMockDailyProgress({

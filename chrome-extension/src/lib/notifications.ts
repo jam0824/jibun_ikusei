@@ -10,7 +10,7 @@ interface ToastPayload {
 function eventToToast(event: QuestEvent): ToastPayload | null {
   switch (event.type) {
     case 'good_quest':
-      if (event.xp === 2) {
+      if (event.isFirstReward) {
         return {
           text: 'Lily: 学習クエスト達成です。+2 XP 獲得しました。',
           variant: 'good',

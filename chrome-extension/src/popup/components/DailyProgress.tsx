@@ -22,8 +22,18 @@ function getTimeToNextReward(progress: DailyProgressType): number {
   return Math.max(0, nextThreshold - goodBrowsingSeconds)
 }
 
+function getTimeToNextPenalty(progress: DailyProgressType): number {
+  const { badBrowsingSeconds, lastBadPenaltyAtSeconds } = progress
+  const nextThreshold =
+    lastBadPenaltyAtSeconds === 0
+      ? BROWSING_XP.BAD_THRESHOLD_SECONDS
+      : lastBadPenaltyAtSeconds + BROWSING_XP.BAD_INTERVAL_SECONDS
+  return Math.max(0, nextThreshold - badBrowsingSeconds)
+}
+
 export function DailyProgress({ progress }: Props) {
-  const remainingSeconds = getTimeToNextReward(progress)
+  const remainingRewardSeconds = getTimeToNextReward(progress)
+  const remainingPenaltySeconds = progress.badBrowsingSeconds > 0 ? getTimeToNextPenalty(progress) : 0
 
   return (
     <div style={{ fontFamily: 'sans-serif' }}>
@@ -48,9 +58,15 @@ export function DailyProgress({ progress }: Props) {
         </div>
       </div>
 
-      {remainingSeconds > 0 && (
+      {remainingRewardSeconds > 0 && (
         <div style={{ marginTop: 8, fontSize: 12, color: '#666' }}>
-          次の+2XPまで: {formatTime(remainingSeconds)}
+          次の+2XPまで: {formatTime(remainingRewardSeconds)}
+        </div>
+      )}
+
+      {progress.badBrowsingSeconds > 0 && remainingPenaltySeconds > 0 && (
+        <div style={{ marginTop: 4, fontSize: 12, color: '#e53935' }}>
+          次のペナルティまで: {formatTime(remainingPenaltySeconds)}
         </div>
       )}
     </div>

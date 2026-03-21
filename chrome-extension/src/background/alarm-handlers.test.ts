@@ -321,12 +321,49 @@ describe('alarm-handlers', () => {
   })
 
   describe('setupAlarms', () => {
-    it('periodic-syncとdaily-reset-checkアラームを作成する', async () => {
+    it('periodic-sync、daily-reset-check、weekly-report-genアラームを作成する', async () => {
       const { setupAlarms } = await import('./alarm-handlers')
       setupAlarms()
 
       expect(chrome.alarms.create).toHaveBeenCalledWith('periodic-sync', { periodInMinutes: 5 })
       expect(chrome.alarms.create).toHaveBeenCalledWith('daily-reset-check', { periodInMinutes: 1 })
+      expect(chrome.alarms.create).toHaveBeenCalledWith('weekly-report-gen', { periodInMinutes: 60 })
+    })
+  })
+
+  describe('weekly-report-gen', () => {
+    it('月曜日に週次レポートを生成してストレージに保存する', async () => {
+      // 月曜日をシミュレート (2026-03-23 は月曜日)
+      vi.spyOn(Date.prototype, 'getDay').mockReturnValue(1)
+
+      const history = [
+        createMockDailyProgress({
+          date: '2026-03-16',
+          goodBrowsingSeconds: 60 * 60,
+          badBrowsingSeconds: 30 * 60,
+          goodQuestsCleared: 2,
+        }),
+      ]
+      await setLocal('dailyProgressHistory', history)
+
+      const { handleAlarm } = await import('./alarm-handlers')
+      await handleAlarm({ name: 'weekly-report-gen', scheduledTime: Date.now() })
+
+      const stored = await chrome.storage.local.get('weeklyReport')
+      expect(stored.weeklyReport).toBeDefined()
+      expect(stored.weeklyReport.goodMinutes).toBe(60)
+      expect(stored.weeklyReport.badMinutes).toBe(30)
+    })
+
+    it('月曜日以外はレポートを生成しない', async () => {
+      // 火曜日
+      vi.spyOn(Date.prototype, 'getDay').mockReturnValue(2)
+
+      const { handleAlarm } = await import('./alarm-handlers')
+      await handleAlarm({ name: 'weekly-report-gen', scheduledTime: Date.now() })
+
+      const stored = await chrome.storage.local.get('weeklyReport')
+      expect(stored.weeklyReport).toBeUndefined()
     })
   })
 })

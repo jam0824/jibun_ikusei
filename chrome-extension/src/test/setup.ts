@@ -94,6 +94,7 @@ const chromeMock = {
   tabs: {
     query: vi.fn(() => Promise.resolve([])),
     get: vi.fn(() => Promise.resolve({})),
+    create: vi.fn(() => Promise.resolve({})),
     sendMessage: vi.fn(() => Promise.resolve()),
     onActivated: {
       addListener: vi.fn(),
@@ -131,6 +132,7 @@ const chromeMock = {
   },
   runtime: {
     sendMessage: vi.fn(() => Promise.resolve()),
+    getURL: vi.fn((path: string) => `chrome-extension://mock-id/${path}`),
     onMessage: {
       addListener: vi.fn(),
       removeListener: vi.fn(),

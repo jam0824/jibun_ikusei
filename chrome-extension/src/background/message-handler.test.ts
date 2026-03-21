@@ -210,6 +210,25 @@ describe('message-handler', () => {
       expect(result).toBeDefined()
     })
 
+    it('OPEN_POPUPメッセージでポップアップページを新タブで開く', async () => {
+      const { setupMessageListener } = await import('./message-handler')
+      setupMessageListener()
+
+      const callback = vi.mocked(chrome.runtime.onMessage.addListener).mock.calls[0][0]
+
+      callback(
+        { type: 'OPEN_POPUP' },
+        { tab: { id: 1 } } as chrome.runtime.MessageSender,
+        () => {},
+      )
+
+      await new Promise((r) => setTimeout(r, 50))
+
+      expect(chrome.tabs.create).toHaveBeenCalledWith(
+        expect.objectContaining({ url: expect.stringContaining('popup.html') }),
+      )
+    })
+
     it('sender.tab.idがない場合は無視する', async () => {
       const { setupMessageListener, getTabClassification } = await import('./message-handler')
       setupMessageListener()

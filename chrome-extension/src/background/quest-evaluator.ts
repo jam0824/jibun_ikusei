@@ -6,6 +6,7 @@ export interface QuestEvent {
   xp: number
   domain?: string
   message?: string
+  isFirstReward?: boolean
 }
 
 interface EvaluateOptions {
@@ -56,6 +57,7 @@ function evaluateGoodQuests(progress: DailyProgress, events: QuestEvent[]): void
     events.push({
       type: 'good_quest',
       xp: GOOD_REWARD,
+      isFirstReward: lastGoodRewardAtSeconds === 0,
     })
   }
 }

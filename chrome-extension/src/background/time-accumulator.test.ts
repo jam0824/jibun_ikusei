@@ -136,6 +136,55 @@ describe('TimeAccumulator', () => {
     expect(progress.domainTimes['game.com:/'].totalSeconds).toBe(100)
   })
 
+  it('日付変更時に前日分をdailyProgressHistoryに保存する', async () => {
+    // 前日のデータを作成
+    await accumulator.addTime('example.com', 'example.com:/', 60, true, false)
+
+    // 日付変更をシミュレート
+    vi.spyOn(Date.prototype, 'toISOString').mockReturnValue('2026-03-22T01:00:00.000Z')
+
+    await accumulator.getDailyProgress()
+
+    // 履歴にデータが保存されていることを確認
+    const stored = await chrome.storage.local.get('dailyProgressHistory')
+    const history = stored.dailyProgressHistory as Array<{ date: string }>
+    expect(history).toBeDefined()
+    expect(history).toHaveLength(1)
+    expect(history[0].date).toBe(TODAY)
+  })
+
+  it('dailyProgressHistoryは最大7日分を保持する', async () => {
+    // 7日分の履歴を事前にセット
+    const existingHistory = Array.from({ length: 7 }, (_, i) => ({
+      date: `2026-03-${14 + i}`,
+      goodBrowsingSeconds: 0,
+      badBrowsingSeconds: 0,
+      otherBrowsingSeconds: 0,
+      goodQuestsCleared: 0,
+      badQuestsTriggered: 0,
+      xpGained: 0,
+      xpLost: 0,
+      lastGoodRewardAtSeconds: 0,
+      lastBadPenaltyAtSeconds: 0,
+      warningShownDomains: [],
+      domainTimes: {},
+    }))
+    await chrome.storage.local.set({ dailyProgressHistory: existingHistory })
+
+    // 当日のデータを作成
+    await accumulator.addTime('example.com', 'example.com:/', 60, true, false)
+
+    // 日付変更
+    vi.spyOn(Date.prototype, 'toISOString').mockReturnValue('2026-03-22T01:00:00.000Z')
+    await accumulator.getDailyProgress()
+
+    const stored = await chrome.storage.local.get('dailyProgressHistory')
+    const history = stored.dailyProgressHistory as Array<{ date: string }>
+    expect(history).toHaveLength(7)
+    // 最古のエントリが削除されている
+    expect(history[0].date).toBe('2026-03-15')
+  })
+
   it('allows updating progress fields directly', async () => {
     await accumulator.updateProgress((p: DailyProgress) => {
       p.goodQuestsCleared = 3

@@ -3,6 +3,7 @@ import type { ExtensionSettings } from '@ext/types/settings'
 import { createDefaultSettings } from '@ext/types/settings'
 import { ApiKeySettings } from './components/ApiKeySettings'
 import { BlocklistEditor } from './components/BlocklistEditor'
+import { ClassificationManager } from './components/ClassificationManager'
 import { AuthSettings } from './components/AuthSettings'
 
 export function App() {
@@ -53,6 +54,11 @@ export function App() {
         blocklist={settings.blocklist}
         onSave={(blocklist) => saveSettings({ blocklist })}
       />
+
+      <hr style={{ margin: '24px 0' }} />
+
+      <h2 style={{ fontSize: 16, marginBottom: 12 }}>分類の手動補正</h2>
+      <ClassificationManager />
 
       <hr style={{ margin: '24px 0' }} />
 

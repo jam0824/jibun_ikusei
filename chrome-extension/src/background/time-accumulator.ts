@@ -2,6 +2,8 @@ import { getLocal, setLocal } from '@ext/lib/storage'
 import type { DailyProgress, DomainTimeEntry } from '@ext/types/browsing'
 
 const STORAGE_KEY = 'dailyProgress'
+const HISTORY_KEY = 'dailyProgressHistory'
+const MAX_HISTORY_DAYS = 7
 
 function getTodayString(): string {
   return new Date().toISOString().split('T')[0]
@@ -34,7 +36,12 @@ export class TimeAccumulator {
       return stored
     }
 
-    // Date changed or no data — create fresh progress
+    // Date changed — archive previous day's data before resetting
+    if (stored) {
+      await this.archiveProgress(stored)
+    }
+
+    // Create fresh progress
     const fresh = createEmptyProgress(today)
     await setLocal(STORAGE_KEY, fresh)
     return fresh
@@ -80,6 +87,17 @@ export class TimeAccumulator {
 
     await setLocal(STORAGE_KEY, progress)
     return progress
+  }
+
+  /** Archive a day's progress into history (max 7 days) */
+  private async archiveProgress(progress: DailyProgress): Promise<void> {
+    const history = (await getLocal<DailyProgress[]>(HISTORY_KEY)) ?? []
+    history.push(progress)
+    // Keep only the most recent MAX_HISTORY_DAYS entries
+    while (history.length > MAX_HISTORY_DAYS) {
+      history.shift()
+    }
+    await setLocal(HISTORY_KEY, history)
   }
 
   /** Update progress fields via a mutation callback */
