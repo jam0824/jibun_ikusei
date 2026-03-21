@@ -18,7 +18,13 @@
       "Bash(npm install:*)",
       "Bash(npm test:*)",
       "Bash(\"/c/Program Files/Amazon/AWSCLIV2/aws.exe\" lambda invoke --function-name jibun-ikusei-migrateState --region ap-northeast-1 /tmp/migrate-output2.json)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(node:*)",
+      "Bash(\"/c/Program Files/Amazon/AWSCLIV2/aws.exe\" dynamodb query --table-name jibun-ikusei-cdk --key-condition-expression \"PK = :pk AND begins_with\\(SK, :sk\\)\" --expression-attribute-values '{\"\"\"\":pk\"\"\"\":{\"\"\"\"S\"\"\"\":\"\"\"\"user#37d4fa08-4081-703b-3e44-e793c315e400\"\"\"\"},\"\"\"\":sk\"\"\"\":{\"\"\"\"S\"\"\"\":\"\"\"\"QUEST#\"\"\"\"}}' --projection-expression \"SK, title, #s\" --expression-attribute-names '{\"\"\"\"#s\"\"\"\":\"\"\"\"status\"\"\"\"}' --region ap-northeast-1)",
+      "Bash(iconv -f UTF-8 -t UTF-8)",
+      "Bash(\"/c/Program Files/Amazon/AWSCLIV2/aws.exe\" dynamodb query --table-name jibun-ikusei-cdk --key-condition-expression \"PK = :pk AND begins_with\\(SK, :sk\\)\" --expression-attribute-values '{\"\":pk\"\":{\"\"S\"\":\"\"user#37d4fa08-4081-703b-3e44-e793c315e400\"\"},\"\":sk\"\":{\"\"S\"\":\"\"QUEST#\"\"}}' --projection-expression \"title\" --region ap-northeast-1 --output json)",
+      "Bash(\"D:/codes/自分育成アプリ/tmp-quests.json\")",
+      "Bash(node -e \":*)"
     ]
   }
 }
