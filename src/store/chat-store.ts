@@ -5,6 +5,7 @@ import { nowIso, getDayKey } from '@/lib/date'
 import { subDays } from 'date-fns'
 import { isOffline } from '@/lib/network'
 import { buildLilyChatSystemPrompt, sendLilyChatMessage } from '@/lib/ai'
+import { logActivity } from '@/lib/activity-logger'
 import { useAppStore } from '@/store/app-store'
 import * as api from '@/lib/api-client'
 
@@ -234,6 +235,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         api.putChatSession(currentSessionId, { updatedAt: now }).catch(() => undefined)
       }
     } catch (err) {
+      logActivity('chat.error', 'error', { context: 'lily.chat.send', message: err instanceof Error ? err.message : String(err) })
       const message = err instanceof Error ? err.message : 'リリィからの応答に失敗しました。'
       set({ isSending: false, error: message })
     }

@@ -603,7 +603,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
             await api.postSkill(skill).catch(() => undefined)
           }
         }
-      } catch { /* ignore */ }
+      } catch (err) {
+        logActivity('sync.error', 'error', { context: 'quest.complete.sync', message: err instanceof Error ? err.message : String(err) })
+      }
     })()
 
     if (
@@ -661,8 +663,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
           if (messageResult.shouldSpeak && get().settings.lilyAutoPlay === 'on') {
             await get().playAssistantMessage(generatedMessage.id)
           }
-        } catch {
-          // AI failures never block core flow.
+        } catch (err) {
+          logActivity('ai.error', 'error', { context: 'lily.message.generate', message: err instanceof Error ? err.message : String(err) })
         }
       })()
     }
@@ -1061,6 +1063,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         },
       })
     } catch (error) {
+      logActivity('connection.error', 'error', { context: 'ai.connection.test', provider, message: error instanceof Error ? error.message : String(error) })
       const state = get()
       const providerConfig = getProviderConfig(state.aiConfig, provider)
       const nextProviderStatus =
@@ -1124,6 +1127,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       await playAudioUrl(message.id, url)
       return undefined
     } catch (error) {
+      logActivity('tts.error', 'error', { context: 'tts.generate', message: error instanceof Error ? error.message : String(error) })
       return error instanceof Error ? error.message : '音声再生に失敗しました。'
     }
   },
@@ -1166,6 +1170,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       })()
       return { ok: true }
     } catch (error) {
+      logActivity('import.error', 'error', { context: 'data.import', message: error instanceof Error ? error.message : String(error) })
       return {
         ok: false,
         reason: error instanceof Error ? error.message : 'JSON の読み込みに失敗しました。',
