@@ -29,15 +29,41 @@ export const handler = async (event) => {
       const body = parseBody(event);
       const now = new Date().toISOString();
 
+      // 冪等性チェック: 同じIDのcompletionが既に存在する場合はスキップ
+      const existingCompletion = await db.send(new GetCommand({
+        TableName: TABLE_NAME,
+        Key: { PK: pk, SK: `COMPLETION#${body.id}` },
+      }));
+      if (existingCompletion.Item) {
+        // 既に処理済み — 前回の結果を返す
+        const currentUserForIdempotent = await db.send(new GetCommand({
+          TableName: TABLE_NAME,
+          Key: { PK: pk, SK: "USER#profile" },
+        }));
+        const cu = currentUserForIdempotent.Item ?? { totalXp: 0, level: 1 };
+        return response(201, {
+          completionId: body.id,
+          userXpAwarded: existingCompletion.Item.userXpAwarded ?? body.userXpAwarded,
+          totalXp: cu.totalXp ?? 0,
+          level: cu.level ?? 1,
+          userLevelUp: false,
+          skillLevelUp: false,
+        });
+      }
+
       // ユーザーの現在のXPを取得
       const userResult = await db.send(new GetCommand({
         TableName: TABLE_NAME,
         Key: { PK: pk, SK: "USER#profile" },
       }));
       const currentUser = userResult.Item ?? { totalXp: 0, level: 1 };
-      const newTotalXp = (currentUser.totalXp ?? 0) + body.userXpAwarded;
+      const currentXp = currentUser.totalXp ?? 0;
+      const oldLevel = getLevelFromXp(currentXp, USER_LEVEL_XP);
+
+      // XPフロア: レベルダウンなし、そのレベル内のXPは0が下限
+      const levelFloor = (oldLevel - 1) * USER_LEVEL_XP;
+      const newTotalXp = Math.max(levelFloor, currentXp + body.userXpAwarded);
       const newLevel = getLevelFromXp(newTotalXp, USER_LEVEL_XP);
-      const oldLevel = getLevelFromXp(currentUser.totalXp ?? 0, USER_LEVEL_XP);
       const userLevelUp = newLevel > oldLevel;
 
       // トランザクション: completion作成 + user XP更新

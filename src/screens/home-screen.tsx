@@ -56,7 +56,7 @@ export function HomeScreen() {
   )
   const topSkills = skills.filter((skill) => skill.status === 'active').slice(0, 3)
   const recommendedQuests = [...quests]
-    .filter((quest) => quest.status !== 'archived')
+    .filter((quest) => quest.status !== 'archived' && quest.source !== 'browsing')
     .sort((left, right) => {
       const leftAvailability = getQuestAvailability(left, completions)
       const rightAvailability = getQuestAvailability(right, completions)
