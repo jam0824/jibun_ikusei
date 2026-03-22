@@ -1,21 +1,11 @@
 import type { BrowsingCategory, ClassificationResult, PageInfo } from '@ext/types/browsing'
 import { isGrowthCategory } from '@ext/types/browsing'
 import type { ExtensionSettings } from '@ext/types/settings'
+import CLASSIFICATION_SYSTEM_PROMPT from '@ext/lib/classification-prompt.txt?raw'
 
 const OPENAI_MODEL = 'gpt-5.4'
 const GEMINI_MODEL = 'gemini-2.5-flash'
 const RETRYABLE_STATUS_CODES = new Set([408, 409, 429, 500, 502, 503, 504])
-
-const CLASSIFICATION_SYSTEM_PROMPT = [
-  'You classify web browsing activity into categories for a self-growth app.',
-  'Return only valid JSON matching the provided schema.',
-  'Categories: 学習, 仕事, 健康, 生活, 創作, 対人, 娯楽, その他.',
-  'Growth categories: 学習, 仕事, 健康, 生活, 創作, 対人.',
-  'Non-growth categories: 娯楽, その他.',
-  'isGrowth must be true if the category is a growth category.',
-  'Classify based on the actual page content, not just the domain.',
-  'YouTube can be 学習 if the content is educational.',
-].join(' ')
 
 const CLASSIFICATION_SCHEMA = {
   type: 'object',
