@@ -150,6 +150,17 @@ export function postMessage(message: AssistantMessage) {
   })
 }
 
+// ブラウジング時間
+export interface BrowsingTimeData {
+  date: string
+  domains: Record<string, { totalSeconds: number; category: string; isGrowth: boolean }>
+  totalSeconds: number
+}
+
+export function getBrowsingTimes(from: string, to: string) {
+  return request<BrowsingTimeData[]>(`/browsing-times?from=${from}&to=${to}`)
+}
+
 // 辞書
 export function getDictionary() {
   return request<PersonalSkillDictionary[]>('/dictionary')

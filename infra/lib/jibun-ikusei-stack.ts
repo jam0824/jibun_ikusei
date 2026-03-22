@@ -111,6 +111,12 @@ export class JibunIkuseiStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/messageHandler')),
     })
 
+    const browsingTimeFn = new lambda.Function(this, 'BrowsingTimeHandler', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-browsingTimeHandler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/browsingTimeHandler')),
+    })
+
     const migrateStateFn = new lambda.Function(this, 'MigrateState', {
       ...lambdaDefaults,
       functionName: 'jibun-ikusei-migrateState',
@@ -118,7 +124,7 @@ export class JibunIkuseiStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(60),
     })
 
-    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, migrateStateFn]) {
+    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, migrateStateFn]) {
       table.grantReadWriteData(fn)
     }
 
@@ -190,6 +196,11 @@ export class JibunIkuseiStack extends cdk.Stack {
     api.addRoutes({ path: '/ai-config', methods: [apigwv2.HttpMethod.PUT], integration: userConfigIntegration })
     api.addRoutes({ path: '/meta', methods: [apigwv2.HttpMethod.GET], integration: userConfigIntegration })
     api.addRoutes({ path: '/meta', methods: [apigwv2.HttpMethod.PUT], integration: userConfigIntegration })
+
+    // Browsing Times
+    const browsingTimeIntegration = new integrations.HttpLambdaIntegration('BrowsingTimeIntegration', browsingTimeFn)
+    api.addRoutes({ path: '/browsing-times', methods: [apigwv2.HttpMethod.GET], integration: browsingTimeIntegration })
+    api.addRoutes({ path: '/browsing-times', methods: [apigwv2.HttpMethod.POST], integration: browsingTimeIntegration })
 
     // Messages / Dictionary
     api.addRoutes({ path: '/messages', methods: [apigwv2.HttpMethod.GET], integration: messageIntegration })
