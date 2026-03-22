@@ -53,5 +53,11 @@ export function createApiClient() {
         body: JSON.stringify(data),
       })
     },
+    postActivityLogs(data: { entries: Array<{ timestamp: string; source: string; action: string; category: string; details: Record<string, unknown> }> }) {
+      return request<{ logged: number }>('/activity-logs', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      })
+    },
   }
 }

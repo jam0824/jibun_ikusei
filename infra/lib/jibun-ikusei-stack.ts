@@ -19,6 +19,7 @@ export class JibunIkuseiStack extends cdk.Stack {
       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
+      timeToLiveAttribute: 'ttl',
     })
 
     // ---- Cognito ----
@@ -111,6 +112,12 @@ export class JibunIkuseiStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/messageHandler')),
     })
 
+    const activityLogFn = new lambda.Function(this, 'ActivityLogHandler', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-activityLogHandler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/activityLogHandler')),
+    })
+
     const browsingTimeFn = new lambda.Function(this, 'BrowsingTimeHandler', {
       ...lambdaDefaults,
       functionName: 'jibun-ikusei-browsingTimeHandler',
@@ -124,7 +131,7 @@ export class JibunIkuseiStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(60),
     })
 
-    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, migrateStateFn]) {
+    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, activityLogFn, migrateStateFn]) {
       table.grantReadWriteData(fn)
     }
 
@@ -201,6 +208,11 @@ export class JibunIkuseiStack extends cdk.Stack {
     const browsingTimeIntegration = new integrations.HttpLambdaIntegration('BrowsingTimeIntegration', browsingTimeFn)
     api.addRoutes({ path: '/browsing-times', methods: [apigwv2.HttpMethod.GET], integration: browsingTimeIntegration })
     api.addRoutes({ path: '/browsing-times', methods: [apigwv2.HttpMethod.POST], integration: browsingTimeIntegration })
+
+    // Activity Logs
+    const activityLogIntegration = new integrations.HttpLambdaIntegration('ActivityLogIntegration', activityLogFn)
+    api.addRoutes({ path: '/activity-logs', methods: [apigwv2.HttpMethod.GET], integration: activityLogIntegration })
+    api.addRoutes({ path: '/activity-logs', methods: [apigwv2.HttpMethod.POST], integration: activityLogIntegration })
 
     // Messages / Dictionary
     api.addRoutes({ path: '/messages', methods: [apigwv2.HttpMethod.GET], integration: messageIntegration })

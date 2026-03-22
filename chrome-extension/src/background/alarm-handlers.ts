@@ -5,6 +5,7 @@ import { sendToastToActiveTab } from '@ext/lib/notifications'
 import { timeAccumulator, syncQueue, classificationCache, apiClient } from './shared-instances'
 import { evaluateProgress } from './quest-evaluator'
 import { generateWeeklyReport } from './weekly-report-generator'
+import { logActivity, flushActivityLogs } from '@ext/lib/activity-logger'
 
 export function setupAlarms(): void {
   // Periodic sync every 5 minutes
@@ -44,7 +45,10 @@ async function handlePeriodicSync(): Promise<void> {
     // 3. Sync browsing time data to backend
     await syncBrowsingTimes().catch(() => {})
 
-    // 4. Replay queued requests (including newly enqueued ones)
+    // 4. Flush activity logs to backend
+    await flushActivityLogs(apiClient).catch(() => {})
+
+    // 5. Replay queued requests (including newly enqueued ones)
     await syncQueue.replay(async (req) => {
       if (req.method === 'PUT') {
         await apiClient.putUser(req.body as Record<string, unknown>)
@@ -77,6 +81,15 @@ async function evaluateAndEnqueue(): Promise<void> {
     // Send toast notification
     if (notificationsEnabled) {
       await sendToastToActiveTab(event).catch(() => {})
+    }
+
+    // Log activity for all event types
+    if (event.type === 'good_quest') {
+      await logActivity('xp.gain', 'xp', { xp: event.xp, domain: event.domain, type: 'browsing_reward' })
+    } else if (event.type === 'bad_quest') {
+      await logActivity('xp.penalty', 'xp', { xp: event.xp, domain: event.domain, type: 'browsing_penalty' })
+    } else if (event.type === 'warning') {
+      await logActivity('browsing.warning', 'browsing', { domain: event.domain })
     }
 
     // Enqueue Quest + Completion pair for XP events
@@ -210,6 +223,7 @@ export async function syncBrowsingTimes(): Promise<void> {
   if (entries.length === 0) return
 
   await apiClient.postBrowsingTimes({ entries })
+  await logActivity('browsing-time.sync', 'sync', { entryCount: entries.length })
 
   // Mark historical days as synced (not today — always re-send)
   const newSyncedDates = [

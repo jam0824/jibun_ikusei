@@ -161,6 +161,20 @@ export function getBrowsingTimes(from: string, to: string) {
   return request<BrowsingTimeData[]>(`/browsing-times?from=${from}&to=${to}`)
 }
 
+// アクティビティログ
+export function postActivityLogs(entries: Array<{
+  timestamp: string
+  source: string
+  action: string
+  category: string
+  details: Record<string, unknown>
+}>) {
+  return request<{ logged: number }>('/activity-logs', {
+    method: 'POST',
+    body: JSON.stringify({ entries }),
+  })
+}
+
 // 辞書
 export function getDictionary() {
   return request<PersonalSkillDictionary[]>('/dictionary')
