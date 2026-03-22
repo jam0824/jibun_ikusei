@@ -212,6 +212,81 @@ describe('quest-evaluator', () => {
     })
   })
 
+  describe('topCacheKey', () => {
+    it('good_questイベントに最も閲覧時間の長い成長ドメインのcacheKeyを含める', () => {
+      const progress = createMockDailyProgress({
+        goodBrowsingSeconds: 30 * 60,
+        lastGoodRewardAtSeconds: 0,
+        domainTimes: {
+          'docs.example.com:/api': {
+            domain: 'docs.example.com',
+            cacheKey: 'docs.example.com:/api',
+            category: '学習',
+            isGrowth: true,
+            isBlocklisted: false,
+            totalSeconds: 20 * 60,
+            lastUpdated: '',
+          },
+          'tutorial.example.com:/': {
+            domain: 'tutorial.example.com',
+            cacheKey: 'tutorial.example.com:/',
+            category: '学習',
+            isGrowth: true,
+            isBlocklisted: false,
+            totalSeconds: 10 * 60,
+            lastUpdated: '',
+          },
+        },
+      })
+      const events = evaluateProgress(progress, [])
+      const goodEvent = events.find((e) => e.type === 'good_quest')
+      expect(goodEvent).toBeDefined()
+      expect(goodEvent!.topCacheKey).toBe('docs.example.com:/api')
+    })
+
+    it('bad_questイベントに最も閲覧時間の長いバッドドメインのcacheKeyを含める', () => {
+      const progress = createMockDailyProgress({
+        badBrowsingSeconds: 60 * 60,
+        lastBadPenaltyAtSeconds: 0,
+        domainTimes: {
+          'game.com:/play': {
+            domain: 'game.com',
+            cacheKey: 'game.com:/play',
+            category: '娯楽',
+            isGrowth: false,
+            isBlocklisted: true,
+            totalSeconds: 40 * 60,
+            lastUpdated: '',
+          },
+          'social.com:/feed': {
+            domain: 'social.com',
+            cacheKey: 'social.com:/feed',
+            category: '娯楽',
+            isGrowth: false,
+            isBlocklisted: true,
+            totalSeconds: 20 * 60,
+            lastUpdated: '',
+          },
+        },
+      })
+      const events = evaluateProgress(progress, [])
+      const badEvent = events.find((e) => e.type === 'bad_quest')
+      expect(badEvent).toBeDefined()
+      expect(badEvent!.topCacheKey).toBe('game.com:/play')
+    })
+
+    it('domainTimesが空の場合topCacheKeyはundefined', () => {
+      const progress = createMockDailyProgress({
+        goodBrowsingSeconds: 30 * 60,
+        lastGoodRewardAtSeconds: 0,
+      })
+      const events = evaluateProgress(progress, [])
+      const goodEvent = events.find((e) => e.type === 'good_quest')
+      expect(goodEvent).toBeDefined()
+      expect(goodEvent!.topCacheKey).toBeUndefined()
+    })
+  })
+
   describe('warning domain aggregation', () => {
     it('triggers warning per blocklisted domain at 50 minutes', () => {
       const progress = createMockDailyProgress({

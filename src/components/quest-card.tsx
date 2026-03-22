@@ -1,7 +1,17 @@
-import { Clock3, Pin } from 'lucide-react'
+import { Clock3, Globe, Pin } from 'lucide-react'
 import type { Quest, QuestAvailability, Skill } from '@/domain/types'
 import { getQuestStatusTone } from '@/domain/logic'
 import { Badge, Button, Card, CardContent } from '@/components/ui'
+
+function getXpLabel(xp: number): string {
+  return `${xp >= 0 ? '+' : ''}${xp}XP`
+}
+
+function getBrowsingCardClass(quest: Quest): string {
+  if (quest.browsingType === 'good') return 'border-teal-200 bg-teal-50/40'
+  if (quest.browsingType === 'bad') return 'border-orange-200 bg-orange-50/40'
+  return ''
+}
 
 export function QuestCard({
   quest,
@@ -18,8 +28,10 @@ export function QuestCard({
   onAction: () => void
   onOpen?: () => void
 }) {
+  const isBrowsing = quest.source === 'browsing'
+
   return (
-    <Card className="overflow-hidden">
+    <Card className={`overflow-hidden ${getBrowsingCardClass(quest)}`}>
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
           <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
@@ -34,7 +46,15 @@ export function QuestCard({
               >
                 {quest.title}
               </button>
-              <Badge tone="soft">+{quest.xpReward}XP</Badge>
+              <Badge tone={quest.browsingType === 'bad' ? 'warning' : 'soft'}>
+                {getXpLabel(quest.xpReward)}
+              </Badge>
+              {isBrowsing && quest.browsingType === 'good' ? (
+                <Badge tone="browsing">閲覧</Badge>
+              ) : null}
+              {isBrowsing && quest.browsingType === 'bad' ? (
+                <Badge tone="warning">バッド閲覧</Badge>
+              ) : null}
               {quest.pinned ? (
                 <Badge tone="success">
                   <Pin className="h-3 w-3" />
@@ -42,10 +62,19 @@ export function QuestCard({
                 </Badge>
               ) : null}
             </div>
+            {isBrowsing && quest.domain ? (
+              <div className="mt-1 flex items-center gap-1 text-xs text-slate-400">
+                <Globe className="h-3 w-3" />
+                {quest.domain}
+              </div>
+            ) : null}
             <div className="mt-1 text-xs text-slate-500">{quest.description || '説明はまだありません'}</div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {skill ? <Badge>{skill.name}</Badge> : <Badge tone="outline">未設定</Badge>}
               <Badge tone="outline">{quest.questType === 'repeatable' ? '繰り返し' : '単発'}</Badge>
+              {isBrowsing && quest.browsingCategory ? (
+                <Badge tone="outline">{quest.browsingCategory}</Badge>
+              ) : null}
               <span className={`inline-flex items-center gap-1 text-[11px] ${getQuestStatusTone(availability)}`}>
                 <Clock3 className="h-3 w-3" />
                 {availability.label}

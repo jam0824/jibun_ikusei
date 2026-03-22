@@ -1,3 +1,5 @@
+export type QuestSource = 'manual' | 'browsing'
+export type BrowsingQuestType = 'good' | 'bad'
 export type QuestType = 'repeatable' | 'one_time'
 export type SkillMappingMode = 'fixed' | 'ai_auto' | 'ask_each_time'
 export type PrivacyMode = 'normal' | 'no_ai'
@@ -75,6 +77,10 @@ export interface Quest {
   status: QuestStatus
   privacyMode: PrivacyMode
   pinned: boolean
+  source?: QuestSource
+  domain?: string
+  browsingCategory?: string
+  browsingType?: BrowsingQuestType
   createdAt: string
   updatedAt: string
 }
