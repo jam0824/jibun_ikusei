@@ -52,7 +52,8 @@ export async function flush(): Promise<void> {
   const entries = buffer.splice(0)
   try {
     await postActivityLogs(entries)
-  } catch {
+  } catch (err) {
+    console.error('[activity-logger] flush failed:', err)
     buffer.unshift(...entries)
   }
 }
