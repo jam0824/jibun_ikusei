@@ -53,17 +53,18 @@ export function QuestListScreen() {
       .filter((quest) => {
         const availability = getQuestAvailability(quest, completions)
         if (tab === 'today') {
-          return availability.canComplete || availability.state === 'expired' || quest.pinned
+          return (availability.canComplete || availability.state === 'expired' || quest.pinned) && quest.source !== 'browsing'
         }
         if (tab === 'repeatable') {
-          return quest.questType === 'repeatable'
+          return quest.questType === 'repeatable' && quest.source !== 'browsing'
         }
         if (tab === 'one_time') {
-          return quest.questType === 'one_time'
+          return quest.questType === 'one_time' && quest.source !== 'browsing'
         }
         if (tab === 'completed') {
           return completionQuestIds.has(quest.id)
         }
+        // "すべて" tab: show browsing quests too
         return true
       })
       .filter((quest) => {

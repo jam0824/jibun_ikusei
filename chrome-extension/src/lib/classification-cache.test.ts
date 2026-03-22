@@ -82,6 +82,20 @@ describe('ClassificationCache', () => {
     expect(cached!.source).toBe('manual')
   })
 
+  it('エントリを削除できる', async () => {
+    const result = createMockClassificationResult({ cacheKey: 'delete.com:/' })
+    await cache.set('delete.com:/', result, 'manual')
+
+    await cache.delete('delete.com:/')
+
+    const cached = await cache.get('delete.com:/')
+    expect(cached).toBeNull()
+  })
+
+  it('存在しないキーの削除はエラーにならない', async () => {
+    await expect(cache.delete('nonexistent')).resolves.not.toThrow()
+  })
+
   it('persists cache to chrome.storage.local', async () => {
     const result = createMockClassificationResult({ cacheKey: 'persist.com:/' })
     await cache.set('persist.com:/', result, 'ai')

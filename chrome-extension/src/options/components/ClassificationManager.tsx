@@ -72,6 +72,13 @@ export function ClassificationManager() {
     await chrome.storage.local.set({ classificationCache: newCache })
   }
 
+  const handleReset = async (cacheKey: string) => {
+    const newCache = { ...cache }
+    delete newCache[cacheKey]
+    setCache(newCache)
+    await chrome.storage.local.set({ classificationCache: newCache })
+  }
+
   return (
     <div>
       <div style={{ marginBottom: 8 }}>
@@ -122,7 +129,7 @@ export function ClassificationManager() {
                     <td style={{ padding: '4px 8px', color: entry.source === 'manual' ? '#00897b' : '#999' }}>
                       {entry.source === 'manual' ? '手動' : 'AI'}
                     </td>
-                    <td style={{ padding: '4px 8px' }}>
+                    <td style={{ padding: '4px 8px', display: 'flex', gap: 4 }}>
                       {isEdited && (
                         <button
                           onClick={() => handleSave(key)}
@@ -137,6 +144,22 @@ export function ClassificationManager() {
                           }}
                         >
                           保存
+                        </button>
+                      )}
+                      {entry.source === 'manual' && (
+                        <button
+                          onClick={() => handleReset(key)}
+                          style={{
+                            fontSize: 12,
+                            padding: '2px 8px',
+                            background: '#ef5350',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: 4,
+                            cursor: 'pointer',
+                          }}
+                        >
+                          リセット
                         </button>
                       )}
                     </td>

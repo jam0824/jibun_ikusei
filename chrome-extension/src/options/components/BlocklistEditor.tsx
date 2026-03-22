@@ -1,16 +1,28 @@
 import { useState } from 'react'
 
+/** Extract hostname from a URL or return as-is if already a domain */
+function extractDomain(input: string): string {
+  const trimmed = input.trim().toLowerCase()
+  try {
+    const url = new URL(trimmed)
+    return url.hostname
+  } catch {
+    return trimmed
+  }
+}
+
 interface Props {
   blocklist: string[]
   onSave: (blocklist: string[]) => void
 }
 
 export function BlocklistEditor({ blocklist, onSave }: Props) {
-  const [domains, setDomains] = useState(blocklist)
+  // Normalize existing entries on mount (handles legacy full-URL entries)
+  const [domains, setDomains] = useState(() => blocklist.map(extractDomain))
   const [newDomain, setNewDomain] = useState('')
 
   const handleAdd = () => {
-    const domain = newDomain.trim().toLowerCase()
+    const domain = extractDomain(newDomain)
     if (domain && !domains.includes(domain)) {
       const updated = [...domains, domain]
       setDomains(updated)

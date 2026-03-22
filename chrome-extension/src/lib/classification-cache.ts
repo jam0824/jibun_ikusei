@@ -40,6 +40,13 @@ export class ClassificationCache {
     await this.saveStore(store)
   }
 
+  /** Remove a cached classification entry. */
+  async delete(cacheKey: string): Promise<void> {
+    const store = await this.loadStore()
+    delete store[cacheKey]
+    await this.saveStore(store)
+  }
+
   private async loadStore(): Promise<CacheStore> {
     return (await getLocal<CacheStore>(STORAGE_KEY)) ?? {}
   }

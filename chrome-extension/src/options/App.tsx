@@ -5,6 +5,7 @@ import { ApiKeySettings } from './components/ApiKeySettings'
 import { BlocklistEditor } from './components/BlocklistEditor'
 import { ClassificationManager } from './components/ClassificationManager'
 import { AuthSettings } from './components/AuthSettings'
+import { DataReset } from './components/DataReset'
 
 export function App() {
   const [settings, setSettings] = useState<ExtensionSettings | null>(null)
@@ -67,6 +68,10 @@ export function App() {
         authToken={settings.authToken}
         onSave={(serverBaseUrl, authToken) => saveSettings({ serverBaseUrl, authToken })}
       />
+
+      <hr style={{ margin: '24px 0' }} />
+
+      <DataReset />
     </div>
   )
 }

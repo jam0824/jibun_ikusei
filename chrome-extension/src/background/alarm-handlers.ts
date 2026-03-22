@@ -45,6 +45,11 @@ async function handlePeriodicSync(): Promise<void> {
     await syncQueue.replay(async (req) => {
       if (req.method === 'PUT') {
         await apiClient.putUser(req.body as Record<string, unknown>)
+      } else if (req.path === '/browsing-event') {
+        // Atomic: Quest then Completion — if either fails, both retry
+        const body = req.body as { quest: Record<string, unknown>; completion: Record<string, unknown> }
+        await apiClient.postQuest(body.quest)
+        await apiClient.postCompletion(body.completion)
       } else if (req.method === 'POST' && req.path === '/quests') {
         await apiClient.postQuest(req.body as Record<string, unknown>)
       } else if (req.method === 'POST') {
@@ -102,39 +107,36 @@ async function evaluateAndEnqueue(): Promise<void> {
       const completionId = crypto.randomUUID()
       const now = new Date().toISOString()
 
-      // Step A: Enqueue quest creation
+      // Enqueue Quest + Completion as a single atomic entry
+      // If Quest POST fails, Completion won't be attempted; both retry together
       await syncQueue.enqueue({
-        path: '/quests',
+        path: '/browsing-event',
         method: 'POST',
         body: {
-          id: questId,
-          title,
-          description: `${domain || '不明なサイト'} での閲覧（自動記録）`,
-          questType: 'one_time',
-          xpReward: event.xp,
-          category: browsingCategory || undefined,
-          source: 'browsing',
-          domain: domain || undefined,
-          browsingCategory: browsingCategory || undefined,
-          browsingType: event.type === 'good_quest' ? 'good' : 'bad',
-          skillMappingMode: 'fixed',
-          status: 'completed',
-          privacyMode: 'normal',
-          pinned: false,
-        },
-      })
-
-      // Step B: Enqueue completion creation
-      await syncQueue.enqueue({
-        path: '/completions',
-        method: 'POST',
-        body: {
-          id: completionId,
-          questId,
-          clientRequestId: completionId,
-          userXpAwarded: event.xp,
-          completedAt: now,
-          skillResolutionStatus: 'not_needed',
+          quest: {
+            id: questId,
+            title,
+            description: `${domain || '不明なサイト'} での閲覧（自動記録）`,
+            questType: 'one_time',
+            xpReward: event.xp,
+            category: browsingCategory || undefined,
+            source: 'browsing',
+            domain: domain || undefined,
+            browsingCategory: browsingCategory || undefined,
+            browsingType: event.type === 'good_quest' ? 'good' : 'bad',
+            skillMappingMode: 'fixed',
+            status: 'completed',
+            privacyMode: 'normal',
+            pinned: false,
+          },
+          completion: {
+            id: completionId,
+            questId,
+            clientRequestId: completionId,
+            userXpAwarded: event.xp,
+            completedAt: now,
+            skillResolutionStatus: 'not_needed',
+          },
         },
       })
     }

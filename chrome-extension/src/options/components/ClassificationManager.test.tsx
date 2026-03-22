@@ -173,6 +173,50 @@ describe('ClassificationManager', () => {
     })
   })
 
+  describe('リセット機能', () => {
+    it('手動分類のエントリにリセットボタンが表示される', async () => {
+      const cacheWithManual: Record<string, ClassificationCacheEntry> = {
+        'manual.com:/page': makeEntry('manual.com:/page', '学習', true, 'manual'),
+        'ai.com:/page': makeEntry('ai.com:/page', '娯楽', false, 'ai'),
+      }
+      await chrome.storage.local.set({ classificationCache: cacheWithManual })
+
+      await act(async () => {
+        render(<ClassificationManager />)
+      })
+
+      const resetButtons = screen.getAllByText('リセット')
+      expect(resetButtons.length).toBe(1)
+    })
+
+    it('リセットするとエントリがキャッシュから削除される', async () => {
+      const cacheWithManual: Record<string, ClassificationCacheEntry> = {
+        'manual.com:/page': makeEntry('manual.com:/page', '学習', true, 'manual'),
+        'ai.com:/page': makeEntry('ai.com:/page', '娯楽', false, 'ai'),
+      }
+      await chrome.storage.local.set({ classificationCache: cacheWithManual })
+
+      await act(async () => {
+        render(<ClassificationManager />)
+      })
+
+      await act(async () => {
+        fireEvent.click(screen.getByText('リセット'))
+      })
+
+      // UIから消えている
+      expect(screen.queryByText('manual.com:/page')).not.toBeInTheDocument()
+      // ai.comは残っている
+      expect(screen.getByText('ai.com:/page')).toBeInTheDocument()
+
+      // ストレージからも消えている
+      const stored = await chrome.storage.local.get('classificationCache')
+      const cache = stored.classificationCache as Record<string, ClassificationCacheEntry>
+      expect(cache['manual.com:/page']).toBeUndefined()
+      expect(cache['ai.com:/page']).toBeDefined()
+    })
+  })
+
   describe('検索フィルタ', () => {
     it('ドメイン名で絞り込みができる', async () => {
       await act(async () => {
