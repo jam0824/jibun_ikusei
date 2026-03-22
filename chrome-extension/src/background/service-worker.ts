@@ -59,6 +59,24 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
   }
 })
 
+// On service worker startup, request PAGE_INFO from active tabs
+// to rebuild the in-memory tabClassifications map
+export async function recoverClassifications(): Promise<void> {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
+    for (const tab of tabs) {
+      if (tab.id && tab.url?.startsWith('http')) {
+        chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_PAGE_INFO' }).catch(() => {
+          // Content script may not be injected (e.g. on restricted pages)
+        })
+      }
+    }
+  } catch {
+    // Ignore — tabs API may fail during startup
+  }
+}
+recoverClassifications()
+
 // Periodic flush via alarm (every 30 seconds)
 chrome.alarms.create('flush-tracker', { periodInMinutes: 0.5 })
 

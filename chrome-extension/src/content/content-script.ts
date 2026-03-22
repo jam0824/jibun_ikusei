@@ -25,10 +25,12 @@ history.replaceState = (...args: Parameters<typeof history.replaceState>) => {
 }
 window.addEventListener('popstate', () => detector.check(location.href))
 
-// Listen for toast notification messages from background
+// Listen for messages from background
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'SHOW_TOAST') {
     showToast(message.payload as { text: string; variant: 'good' | 'warning' | 'bad' | 'info' })
+  } else if (message.type === 'REQUEST_PAGE_INFO') {
+    sendPageInfo()
   }
 })
 
