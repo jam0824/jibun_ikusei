@@ -6,7 +6,11 @@ const HISTORY_KEY = 'dailyProgressHistory'
 const MAX_HISTORY_DAYS = 7
 
 function getTodayString(): string {
-  return new Date().toISOString().split('T')[0]
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 function createEmptyProgress(date: string): DailyProgress {

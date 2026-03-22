@@ -36,7 +36,7 @@ export function createMockDomainTimeEntry(overrides: Partial<DomainTimeEntry> = 
 
 export function createMockDailyProgress(overrides: Partial<DailyProgress> = {}): DailyProgress {
   return {
-    date: new Date().toISOString().split('T')[0],
+    date: todayString(),
     goodBrowsingSeconds: 0,
     badBrowsingSeconds: 0,
     otherBrowsingSeconds: 0,
@@ -52,7 +52,11 @@ export function createMockDailyProgress(overrides: Partial<DailyProgress> = {}):
   }
 }
 
-/** Get today's date string in YYYY-MM-DD format */
+/** Get today's date string in YYYY-MM-DD format (local timezone) */
 export function todayString(): string {
-  return new Date().toISOString().split('T')[0]
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
