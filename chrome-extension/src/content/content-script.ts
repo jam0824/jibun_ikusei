@@ -28,11 +28,11 @@ window.addEventListener('popstate', () => detector.check(location.href))
 // Listen for toast notification messages from background
 chrome.runtime.onMessage.addListener((message) => {
   if (message.type === 'SHOW_TOAST') {
-    showToast(message.payload as { text: string; variant: 'good' | 'warning' | 'bad' })
+    showToast(message.payload as { text: string; variant: 'good' | 'warning' | 'bad' | 'info' })
   }
 })
 
-function showToast(payload: { text: string; variant: 'good' | 'warning' | 'bad' }) {
+function showToast(payload: { text: string; variant: 'good' | 'warning' | 'bad' | 'info' }) {
   // Create shadow DOM container for style isolation
   let host = document.getElementById('jibun-ikusei-toast-host')
   if (!host) {
@@ -47,6 +47,7 @@ function showToast(payload: { text: string; variant: 'good' | 'warning' | 'bad' 
     good: { bg: '#e0f2f1', border: '#00897b', text: '#004d40' },
     warning: { bg: '#fff3e0', border: '#f57c00', text: '#e65100' },
     bad: { bg: '#ffebee', border: '#e53935', text: '#b71c1c' },
+    info: { bg: '#e8eaf6', border: '#5c6bc0', text: '#283593' },
   }
   const c = colors[payload.variant]
 

@@ -141,6 +141,155 @@ describe('message-handler', () => {
       expect(cache!['learn.com:/typescript']).toBeDefined()
       expect(cache!['learn.com:/typescript'].result.category).toBe('学習')
     })
+
+    it('AI分類完了後にカテゴリトーストを送信する', async () => {
+      await setLocal('extensionSettings', {
+        aiProvider: 'openai',
+        openaiApiKey: 'test-key',
+        blocklist: [],
+        serverBaseUrl: '',
+        syncEnabled: false,
+        notificationsEnabled: true,
+      })
+
+      const { handlePageInfo } = await import('./message-handler')
+      await handlePageInfo(1, {
+        domain: 'developer.mozilla.org',
+        url: 'https://developer.mozilla.org/docs/Web',
+        title: 'MDN Web Docs',
+      })
+
+      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(1, {
+        type: 'SHOW_TOAST',
+        payload: {
+          text: 'Lily: 「学習」ですね。記録を始めます。',
+          variant: 'info',
+        },
+      })
+    })
+
+    it('キャッシュヒット時もカテゴリトーストを送信する', async () => {
+      const cacheKey = 'cached.com:/page'
+      await setLocal('classificationCache', {
+        [cacheKey]: {
+          result: {
+            category: '仕事',
+            isGrowth: true,
+            confidence: 0.9,
+            suggestedQuestTitle: '仕事',
+            suggestedSkill: 'マネジメント',
+            cacheKey,
+          },
+          source: 'ai',
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 86400000).toISOString(),
+        },
+      })
+      await setLocal('extensionSettings', {
+        aiProvider: 'openai',
+        openaiApiKey: 'test-key',
+        blocklist: [],
+        serverBaseUrl: '',
+        syncEnabled: false,
+        notificationsEnabled: true,
+      })
+
+      const { handlePageInfo } = await import('./message-handler')
+      await handlePageInfo(7, {
+        domain: 'cached.com',
+        url: 'https://cached.com/page',
+        title: 'Cached Page',
+      })
+
+      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(7, {
+        type: 'SHOW_TOAST',
+        payload: {
+          text: 'Lily: 「仕事」ですね。記録を始めます。',
+          variant: 'info',
+        },
+      })
+    })
+
+    it('非成長カテゴリの場合は別のメッセージを表示する', async () => {
+      fetchMock.mockImplementationOnce(() =>
+        Promise.resolve({
+          ok: true,
+          json: () =>
+            Promise.resolve({
+              output_text: JSON.stringify({
+                category: '娯楽',
+                isGrowth: false,
+                confidence: 0.8,
+                suggestedQuestTitle: 'ゲームプレイ',
+                suggestedSkill: '',
+              }),
+            }),
+        } as Response),
+      )
+
+      await setLocal('extensionSettings', {
+        aiProvider: 'openai',
+        openaiApiKey: 'test-key',
+        blocklist: [],
+        serverBaseUrl: '',
+        syncEnabled: false,
+        notificationsEnabled: true,
+      })
+
+      const { handlePageInfo } = await import('./message-handler')
+      await handlePageInfo(8, {
+        domain: 'game.example.com',
+        url: 'https://game.example.com/play',
+        title: 'Fun Game',
+      })
+
+      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(8, {
+        type: 'SHOW_TOAST',
+        payload: {
+          text: 'Lily: 「娯楽」に分類しました。',
+          variant: 'info',
+        },
+      })
+    })
+
+    it('通知が無効の場合はトーストを送信しない', async () => {
+      await setLocal('extensionSettings', {
+        aiProvider: 'openai',
+        openaiApiKey: 'test-key',
+        blocklist: [],
+        serverBaseUrl: '',
+        syncEnabled: false,
+        notificationsEnabled: false,
+      })
+
+      const { handlePageInfo } = await import('./message-handler')
+      await handlePageInfo(9, {
+        domain: 'developer.mozilla.org',
+        url: 'https://developer.mozilla.org/docs/Web',
+        title: 'MDN Web Docs',
+      })
+
+      expect(chrome.tabs.sendMessage).not.toHaveBeenCalled()
+    })
+
+    it('AIキー未設定のフォールバック時はトーストを送信しない', async () => {
+      await setLocal('extensionSettings', {
+        aiProvider: 'openai',
+        blocklist: [],
+        serverBaseUrl: '',
+        syncEnabled: false,
+        notificationsEnabled: true,
+      })
+
+      const { handlePageInfo } = await import('./message-handler')
+      await handlePageInfo(10, {
+        domain: 'example.com',
+        url: 'https://example.com/page',
+        title: 'Example',
+      })
+
+      expect(chrome.tabs.sendMessage).not.toHaveBeenCalled()
+    })
   })
 
   describe('getTabClassification', () => {

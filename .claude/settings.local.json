@@ -27,7 +27,8 @@
       "Bash(node -e \":*)",
       "Bash(find /d/codes/自分育成アプリ/.claude -type f -name *.md)",
       "Bash(find /d/codes/自分育成アプリ/chrome-extension/src -type f -name *.ts -o -name *.tsx)",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(find /d/codes/自分育成アプリ -type f -name *notification* -o -name *toast*)"
     ]
   }
 }
