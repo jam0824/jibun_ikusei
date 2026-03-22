@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hydratePersistedState } from '@/domain/logic'
 import {
+  buildLilyChatSystemPrompt,
   generateLilyMessageWithProvider,
   generateTtsAudio,
   resolveSkillWithProvider,
+  sendLilyChatMessage,
   testProviderConnection,
 } from '@/lib/ai'
 
@@ -325,5 +327,112 @@ describe('ai adapter', () => {
         text: '音声チェック',
       }),
     ).rejects.toThrow('音声再生はオフラインでは利用できません。ネットワーク接続を確認してください。')
+  })
+})
+
+describe('Lilyチャット', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('システムプロンプトにユーザー情報とスキルを含む', () => {
+    const state = hydratePersistedState()
+    state.user.level = 5
+    state.user.totalXp = 120
+
+    const prompt = buildLilyChatSystemPrompt({
+      user: state.user,
+      skills: state.skills,
+      recentCompletions: [
+        { questTitle: '読書30分', completedAt: '2026-03-22T10:00:00Z' },
+      ],
+      activityLogs: [
+        { timestamp: '2026-03-22T10:00:00Z', source: 'web', action: 'quest_completed', category: 'quest', details: {} },
+        { timestamp: '2026-03-22T11:00:00Z', source: 'web', action: 'quest_completed', category: 'quest', details: {} },
+      ],
+    })
+
+    expect(prompt).toContain('リリィ')
+    expect(prompt).toContain('レベル: 5')
+    expect(prompt).toContain('総XP: 120')
+    expect(prompt).toContain('読書30分')
+    expect(prompt).toContain('quest: 2回')
+  })
+
+  it('スキルがない場合もシステムプロンプトを生成できる', () => {
+    const state = hydratePersistedState()
+
+    const prompt = buildLilyChatSystemPrompt({
+      user: state.user,
+      skills: [],
+      recentCompletions: [],
+      activityLogs: [],
+    })
+
+    expect(prompt).toContain('まだスキルがありません')
+    expect(prompt).toContain('まだ完了記録がありません')
+  })
+
+  it('Chat Completions APIを正しく呼び出す', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: 'こんにちは！今日も頑張っていますね。' } }],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const result = await sendLilyChatMessage({
+      apiKey: 'sk-test',
+      messages: [
+        { role: 'system', content: 'あなたはリリィです。' },
+        { role: 'user', content: 'こんにちは' },
+      ],
+    })
+
+    expect(result).toBe('こんにちは！今日も頑張っていますね。')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('https://api.openai.com/v1/chat/completions')
+    const body = JSON.parse(String(request.body))
+    expect(body.model).toBe('gpt-5.4')
+    expect(body.messages).toHaveLength(2)
+  })
+
+  it('Chat APIエラー時にリトライする', async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: { message: 'server error' } }), { status: 500 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({ choices: [{ message: { content: 'リトライ成功' } }] }),
+          { status: 200 },
+        ),
+      )
+
+    const result = await sendLilyChatMessage({
+      apiKey: 'sk-test',
+      messages: [{ role: 'user', content: 'テスト' }],
+    })
+
+    expect(result).toBe('リトライ成功')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('空のレスポンスでエラーを返す', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(JSON.stringify({ choices: [] }), { status: 200 }),
+    )
+
+    await expect(
+      sendLilyChatMessage({
+        apiKey: 'sk-test',
+        messages: [{ role: 'user', content: 'テスト' }],
+      }),
+    ).rejects.toThrow('OpenAI Chat response was empty.')
   })
 })

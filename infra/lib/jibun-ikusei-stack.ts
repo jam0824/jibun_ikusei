@@ -124,6 +124,12 @@ export class JibunIkuseiStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/browsingTimeHandler')),
     })
 
+    const chatFn = new lambda.Function(this, 'ChatHandler', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-chatHandler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/chatHandler')),
+    })
+
     const migrateStateFn = new lambda.Function(this, 'MigrateState', {
       ...lambdaDefaults,
       functionName: 'jibun-ikusei-migrateState',
@@ -131,7 +137,7 @@ export class JibunIkuseiStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(60),
     })
 
-    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, activityLogFn, migrateStateFn]) {
+    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, activityLogFn, chatFn, migrateStateFn]) {
       table.grantReadWriteData(fn)
     }
 
@@ -213,6 +219,15 @@ export class JibunIkuseiStack extends cdk.Stack {
     const activityLogIntegration = new integrations.HttpLambdaIntegration('ActivityLogIntegration', activityLogFn)
     api.addRoutes({ path: '/activity-logs', methods: [apigwv2.HttpMethod.GET], integration: activityLogIntegration })
     api.addRoutes({ path: '/activity-logs', methods: [apigwv2.HttpMethod.POST], integration: activityLogIntegration })
+
+    // Chat Sessions / Messages
+    const chatIntegration = new integrations.HttpLambdaIntegration('ChatIntegration', chatFn)
+    api.addRoutes({ path: '/chat-sessions', methods: [apigwv2.HttpMethod.GET], integration: chatIntegration })
+    api.addRoutes({ path: '/chat-sessions', methods: [apigwv2.HttpMethod.POST], integration: chatIntegration })
+    api.addRoutes({ path: '/chat-sessions/{id}', methods: [apigwv2.HttpMethod.PUT], integration: chatIntegration })
+    api.addRoutes({ path: '/chat-sessions/{id}', methods: [apigwv2.HttpMethod.DELETE], integration: chatIntegration })
+    api.addRoutes({ path: '/chat-sessions/{id}/messages', methods: [apigwv2.HttpMethod.GET], integration: chatIntegration })
+    api.addRoutes({ path: '/chat-sessions/{id}/messages', methods: [apigwv2.HttpMethod.POST], integration: chatIntegration })
 
     // Messages / Dictionary
     api.addRoutes({ path: '/messages', methods: [apigwv2.HttpMethod.GET], integration: messageIntegration })

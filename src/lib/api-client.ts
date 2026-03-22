@@ -2,6 +2,8 @@ import type {
   AiConfig,
   AppMeta,
   AssistantMessage,
+  ChatMessage,
+  ChatSession,
   LocalUser,
   PersonalSkillDictionary,
   Quest,
@@ -192,4 +194,54 @@ export function putDictEntry(id: string, entry: Partial<PersonalSkillDictionary>
     method: 'PUT',
     body: JSON.stringify(entry),
   })
+}
+
+// チャットセッション
+export function getChatSessions() {
+  return request<ChatSession[]>('/chat-sessions')
+}
+
+export function postChatSession(session: ChatSession) {
+  return request<ChatSession>('/chat-sessions', {
+    method: 'POST',
+    body: JSON.stringify(session),
+  })
+}
+
+export function putChatSession(id: string, updates: Partial<ChatSession>) {
+  return request<ChatSession>(`/chat-sessions/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  })
+}
+
+export function deleteChatSession(id: string) {
+  return request<{ deleted: string }>(`/chat-sessions/${id}`, {
+    method: 'DELETE',
+  })
+}
+
+// チャットメッセージ
+export function getChatMessages(sessionId: string) {
+  return request<ChatMessage[]>(`/chat-sessions/${sessionId}/messages`)
+}
+
+export function postChatMessage(sessionId: string, message: ChatMessage) {
+  return request<ChatMessage>(`/chat-sessions/${sessionId}/messages`, {
+    method: 'POST',
+    body: JSON.stringify(message),
+  })
+}
+
+// アクティビティログ取得
+export interface ActivityLogEntry {
+  timestamp: string
+  source: string
+  action: string
+  category: string
+  details: Record<string, unknown>
+}
+
+export function getActivityLogs(from: string, to: string) {
+  return request<ActivityLogEntry[]>(`/activity-logs?from=${from}&to=${to}`)
 }

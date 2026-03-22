@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { ClearEffectScreen } from '@/screens/clear-effect-screen'
 import { HomeScreen } from '@/screens/home-screen'
+import { LilyChatScreen } from '@/screens/lily-chat-screen'
 import { LoginScreen } from '@/screens/login-screen'
 import { QuestFormScreen } from '@/screens/quest-form-screen'
 import { QuestListScreen } from '@/screens/quest-list-screen'
@@ -50,6 +51,7 @@ function AppRoutes() {
       <Route path="/quests/new" element={<QuestFormScreen />} />
       <Route path="/skills" element={<SkillsScreen />} />
       <Route path="/records" element={<RecordsScreen />} />
+      <Route path="/lily" element={<LilyChatScreen />} />
       <Route path="/settings" element={<SettingsScreen />} />
       <Route path="/clear/:completionId" element={<ClearEffectScreen />} />
       <Route path="*" element={<Navigate to="/" replace />} />

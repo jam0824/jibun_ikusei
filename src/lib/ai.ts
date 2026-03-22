@@ -3,12 +3,14 @@ import { buildTemplateSkillResolution, getProviderConfig, hasUsableAi } from '@/
 import type {
   AiConfig,
   LilyMessageResult,
+  LocalUser,
   PersonalSkillDictionary,
   Quest,
   Skill,
   SkillResolutionResult,
   UserSettings,
 } from '@/domain/types'
+import type { ActivityLogEntry } from '@/lib/api-client'
 import { createOfflineError, isOffline } from '@/lib/network'
 
 const skillResolutionSchema = z.object({
@@ -633,4 +635,124 @@ export async function generateTtsAudio(params: {
   const inlineData = payload.candidates?.[0]?.content?.parts?.find((part) => part.inlineData)?.inlineData
   const blob = buildGeminiAudioBlob(inlineData ?? {})
   return URL.createObjectURL(blob)
+}
+
+// ---- Lily チャット (Chat Completions API) ----
+
+const LILY_CHAT_MODEL = 'gpt-5.4'
+const MAX_CHAT_HISTORY = 30
+
+export function buildLilyChatSystemPrompt(params: {
+  user: LocalUser
+  skills: Skill[]
+  recentCompletions: Array<{ questTitle: string; completedAt: string }>
+  activityLogs: ActivityLogEntry[]
+}): string {
+  const { user, skills, recentCompletions, activityLogs } = params
+
+  const topSkills = skills
+    .filter((s) => s.status === 'active')
+    .sort((a, b) => b.totalXp - a.totalXp)
+    .slice(0, 5)
+
+  const skillSummary = topSkills.length > 0
+    ? topSkills.map((s) => `${s.name}(Lv.${s.level}, ${s.category})`).join('、')
+    : 'まだスキルがありません'
+
+  const completionSummary = recentCompletions.length > 0
+    ? recentCompletions
+        .slice(0, 10)
+        .map((c) => `- ${c.questTitle}（${c.completedAt.slice(0, 10)}）`)
+        .join('\n')
+    : 'まだ完了記録がありません'
+
+  // Aggregate activity logs by category
+  const categoryCounts: Record<string, number> = {}
+  for (const log of activityLogs) {
+    categoryCounts[log.category] = (categoryCounts[log.category] ?? 0) + 1
+  }
+  const activitySummary = Object.entries(categoryCounts).length > 0
+    ? Object.entries(categoryCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(([cat, count]) => `${cat}: ${count}回`)
+        .join('、')
+    : 'まだアクティビティがありません'
+
+  return [
+    'あなたはリリィです。自分育成アプリの温かく励ます成長パートナーです。',
+    '日本語で会話してください。簡潔だが親しみのある口調で話してください。',
+    '応答は100〜200文字程度に収めてください。',
+    'ユーザーの成長を具体的に認め、押し付けがましくならない程度の提案をしてください。',
+    'ログにない情報を推測で語らないでください。',
+    '',
+    `【ユーザー情報】`,
+    `- レベル: ${user.level}`,
+    `- 総XP: ${user.totalXp}`,
+    `- 上位スキル: ${skillSummary}`,
+    '',
+    `【直近7日のアクティビティ（カテゴリ別）】`,
+    activitySummary,
+    '',
+    `【直近のクエスト完了】`,
+    completionSummary,
+  ].join('\n')
+}
+
+export async function sendLilyChatMessage(params: {
+  apiKey: string
+  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
+}): Promise<string> {
+  const { apiKey, messages } = params
+
+  // Limit conversation history (keep system prompt + last N messages)
+  const systemMessages = messages.filter((m) => m.role === 'system')
+  const conversationMessages = messages.filter((m) => m.role !== 'system')
+  const trimmedConversation = conversationMessages.slice(-MAX_CHAT_HISTORY)
+  const finalMessages = [...systemMessages, ...trimmedConversation]
+
+  let lastError: Error | undefined
+
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: LILY_CHAT_MODEL,
+        messages: finalMessages,
+        max_tokens: 500,
+      }),
+    })
+
+    if (!response.ok) {
+      const details = await readErrorResponse(response)
+      lastError = new Error(
+        `OpenAI Chat request failed: ${response.status}${details ? ` - ${details}` : ''}`,
+      )
+
+      if (attempt < 3 && isRetryableStatus(response.status)) {
+        await wait(300 * attempt)
+        continue
+      }
+
+      throw lastError
+    }
+
+    const payload = (await response.json()) as {
+      choices?: Array<{
+        message?: { content?: string }
+      }>
+    }
+
+    const content = payload.choices?.[0]?.message?.content
+    if (!content) {
+      throw new Error('OpenAI Chat response was empty.')
+    }
+
+    return content
+  }
+
+  throw lastError ?? new Error('OpenAI Chat request failed.')
 }

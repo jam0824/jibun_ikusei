@@ -199,6 +199,23 @@ export interface DashboardView {
   latestMessage?: AssistantMessage
 }
 
+export type ChatMessageRole = 'user' | 'assistant'
+
+export interface ChatSession {
+  id: string
+  title: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ChatMessage {
+  id: string
+  sessionId: string
+  role: ChatMessageRole
+  content: string
+  createdAt: string
+}
+
 export interface ImportPayload {
   user?: LocalUser
   settings?: UserSettings
