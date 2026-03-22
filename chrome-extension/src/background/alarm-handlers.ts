@@ -2,7 +2,7 @@ import { getLocal, setLocal } from '@ext/lib/storage'
 import type { ExtensionSettings } from '@ext/types/settings'
 import type { DailyProgress, WeeklyReport } from '@ext/types/browsing'
 import { sendToastToActiveTab } from '@ext/lib/notifications'
-import { timeAccumulator, syncQueue, apiClient } from './shared-instances'
+import { timeAccumulator, syncQueue, classificationCache, apiClient } from './shared-instances'
 import { evaluateProgress } from './quest-evaluator'
 import { generateWeeklyReport } from './weekly-report-generator'
 
@@ -45,6 +45,8 @@ async function handlePeriodicSync(): Promise<void> {
     await syncQueue.replay(async (req) => {
       if (req.method === 'PUT') {
         await apiClient.putUser(req.body as Record<string, unknown>)
+      } else if (req.method === 'POST' && req.path === '/quests') {
+        await apiClient.postQuest(req.body as Record<string, unknown>)
       } else if (req.method === 'POST') {
         await apiClient.postCompletion(req.body as Record<string, unknown>)
       }
@@ -69,16 +71,70 @@ async function evaluateAndEnqueue(): Promise<void> {
       await sendToastToActiveTab(event).catch(() => {})
     }
 
-    // Enqueue XP events as POST /completions requests
+    // Enqueue Quest + Completion pair for XP events
     if (event.type === 'good_quest' || event.type === 'bad_quest') {
+      // Look up classification cache for quest title and context
+      let title = ''
+      let domain = ''
+      let browsingCategory = ''
+
+      if (event.topCacheKey) {
+        const cached = await classificationCache.get(event.topCacheKey)
+        if (cached) {
+          title = cached.result.suggestedQuestTitle
+          browsingCategory = cached.result.category
+          domain = cached.result.cacheKey.split(':')[0]
+        } else {
+          // Fallback: extract domain from domainTimes
+          const entry = progress.domainTimes[event.topCacheKey]
+          if (entry) {
+            domain = entry.domain
+            browsingCategory = entry.category
+          }
+        }
+      }
+
+      if (!title) {
+        title = domain ? `${domain} での閲覧` : '閲覧活動'
+      }
+
+      const questId = crypto.randomUUID()
+      const completionId = crypto.randomUUID()
+      const now = new Date().toISOString()
+
+      // Step A: Enqueue quest creation
+      await syncQueue.enqueue({
+        path: '/quests',
+        method: 'POST',
+        body: {
+          id: questId,
+          title,
+          description: `${domain || '不明なサイト'} での閲覧（自動記録）`,
+          questType: 'one_time',
+          xpReward: event.xp,
+          category: browsingCategory || undefined,
+          source: 'browsing',
+          domain: domain || undefined,
+          browsingCategory: browsingCategory || undefined,
+          browsingType: event.type === 'good_quest' ? 'good' : 'bad',
+          skillMappingMode: 'fixed',
+          status: 'completed',
+          privacyMode: 'normal',
+          pinned: false,
+        },
+      })
+
+      // Step B: Enqueue completion creation
       await syncQueue.enqueue({
         path: '/completions',
         method: 'POST',
         body: {
-          type: event.type,
+          id: completionId,
+          questId,
+          clientRequestId: completionId,
           userXpAwarded: event.xp,
-          source: 'browsing',
-          completedAt: new Date().toISOString(),
+          completedAt: now,
+          skillResolutionStatus: 'not_needed',
         },
       })
     }

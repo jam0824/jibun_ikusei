@@ -50,7 +50,9 @@ export function Badge({
   className,
   tone = 'default',
   ...props
-}: HTMLAttributes<HTMLSpanElement> & { tone?: 'default' | 'soft' | 'outline' | 'success' | 'danger' }) {
+}: HTMLAttributes<HTMLSpanElement> & {
+  tone?: 'default' | 'soft' | 'outline' | 'success' | 'danger' | 'browsing' | 'warning'
+}) {
   return (
     <span
       className={cn(
@@ -60,6 +62,8 @@ export function Badge({
         tone === 'outline' && 'border border-slate-200 bg-white text-slate-600',
         tone === 'success' && 'bg-emerald-100 text-emerald-700',
         tone === 'danger' && 'bg-rose-100 text-rose-700',
+        tone === 'browsing' && 'bg-teal-100 text-teal-700',
+        tone === 'warning' && 'bg-orange-100 text-orange-700',
         className,
       )}
       {...props}

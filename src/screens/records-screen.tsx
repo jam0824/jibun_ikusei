@@ -151,9 +151,17 @@ export function RecordsScreen() {
                           <div className="text-sm font-semibold text-slate-900">
                             {quest?.title ?? '削除されたクエスト'}
                           </div>
-                          <Badge tone="soft">+{completion.userXpAwarded} User XP</Badge>
+                          <Badge tone={completion.userXpAwarded < 0 ? 'warning' : 'soft'}>
+                            {completion.userXpAwarded >= 0 ? '+' : ''}{completion.userXpAwarded} User XP
+                          </Badge>
                           {completion.skillXpAwarded ? (
                             <Badge>+{completion.skillXpAwarded} Skill XP</Badge>
+                          ) : null}
+                          {quest?.source === 'browsing' && quest.browsingType === 'good' ? (
+                            <Badge tone="browsing">閲覧</Badge>
+                          ) : null}
+                          {quest?.source === 'browsing' && quest.browsingType === 'bad' ? (
+                            <Badge tone="warning">バッド閲覧</Badge>
                           ) : null}
                         </div>
                         <div className="mt-1 text-xs text-slate-500">
@@ -161,6 +169,12 @@ export function RecordsScreen() {
                         </div>
                         <div className="mt-3 flex flex-wrap items-center gap-2">
                           <Badge tone="outline">{skill?.name ?? '未分類'}</Badge>
+                          {quest?.source === 'browsing' && quest.domain ? (
+                            <Badge tone="outline">{quest.domain}</Badge>
+                          ) : null}
+                          {quest?.source === 'browsing' && quest.browsingCategory ? (
+                            <Badge tone="outline">{quest.browsingCategory}</Badge>
+                          ) : null}
                           {message ? (
                             <Badge tone="success">Lilyコメントあり</Badge>
                           ) : (

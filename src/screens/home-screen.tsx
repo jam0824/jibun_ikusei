@@ -143,7 +143,7 @@ export function HomeScreen() {
           <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
             <div className="rounded-2xl bg-white/10 px-2 py-3">
               <div className="text-white/60">今日のXP</div>
-              <div className="mt-1 text-lg font-semibold">+{todayXp}</div>
+              <div className="mt-1 text-lg font-semibold">{todayXp >= 0 ? '+' : ''}{todayXp}</div>
             </div>
             <div className="rounded-2xl bg-white/10 px-2 py-3">
               <div className="text-white/60">クリア回数</div>

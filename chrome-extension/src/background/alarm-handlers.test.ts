@@ -15,36 +15,89 @@ describe('alarm-handlers', () => {
   })
 
   describe('handlePeriodicSync', () => {
-    it('evaluateProgressを呼んでgood_questをPOST /completionsで送信する', async () => {
+    it('good_questイベントでQuest+CompletionをPOSTする', async () => {
       const progress = createMockDailyProgress({
         goodBrowsingSeconds: 30 * 60,
         lastGoodRewardAtSeconds: 0,
+        domainTimes: {
+          'docs.example.com:/api': {
+            domain: 'docs.example.com',
+            cacheKey: 'docs.example.com:/api',
+            category: '学習',
+            isGrowth: true,
+            isBlocklisted: false,
+            totalSeconds: 30 * 60,
+            lastUpdated: '',
+          },
+        },
       })
       await setLocal('dailyProgress', progress)
       await setLocal('extensionSettings', { serverBaseUrl: 'https://test.example.com', syncEnabled: true })
+      // 分類キャッシュをセット
+      await setLocal('classificationCache', {
+        'docs.example.com:/api': {
+          result: {
+            category: '学習',
+            isGrowth: true,
+            confidence: 0.9,
+            suggestedQuestTitle: 'API設計ドキュメントの学習',
+            suggestedSkill: 'API設計',
+            cacheKey: 'docs.example.com:/api',
+          },
+          source: 'ai',
+          createdAt: new Date().toISOString(),
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+        },
+      })
 
       const { handleAlarm } = await import('./alarm-handlers')
       await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
 
-      // replayで POST /completions が呼ばれたことを確認
-      const postCalls = fetchMock.mock.calls.filter(
+      // POST /quests が呼ばれたことを確認
+      const questCalls = fetchMock.mock.calls.filter(
+        (call) => {
+          const url = call[0] as string
+          const opts = call[1] as RequestInit | undefined
+          return url.includes('/quests') && opts?.method === 'POST'
+        },
+      )
+      expect(questCalls.length).toBeGreaterThanOrEqual(1)
+      const questBody = JSON.parse(questCalls[0][1]!.body as string)
+      expect(questBody.title).toBe('API設計ドキュメントの学習')
+      expect(questBody.source).toBe('browsing')
+      expect(questBody.browsingType).toBe('good')
+      expect(questBody.xpReward).toBe(BROWSING_XP.GOOD_REWARD)
+      expect(questBody.domain).toBe('docs.example.com')
+
+      // POST /completions が呼ばれたことを確認
+      const completionCalls = fetchMock.mock.calls.filter(
         (call) => {
           const url = call[0] as string
           const opts = call[1] as RequestInit | undefined
           return url.includes('/completions') && opts?.method === 'POST'
         },
       )
-      expect(postCalls.length).toBeGreaterThanOrEqual(1)
-
-      const body = JSON.parse(postCalls[0][1]!.body as string)
-      expect(body.userXpAwarded).toBe(BROWSING_XP.GOOD_REWARD)
-      expect(body.type).toBe('good_quest')
+      expect(completionCalls.length).toBeGreaterThanOrEqual(1)
+      const compBody = JSON.parse(completionCalls[0][1]!.body as string)
+      expect(compBody.userXpAwarded).toBe(BROWSING_XP.GOOD_REWARD)
+      expect(compBody.questId).toBe(questBody.id)
     })
 
-    it('bad_questイベントでXPペナルティをPOSTする', async () => {
+    it('bad_questイベントでQuest+CompletionをPOSTする', async () => {
       const progress = createMockDailyProgress({
         badBrowsingSeconds: 60 * 60,
         lastBadPenaltyAtSeconds: 0,
+        domainTimes: {
+          'game.com:/play': {
+            domain: 'game.com',
+            cacheKey: 'game.com:/play',
+            category: '娯楽',
+            isGrowth: false,
+            isBlocklisted: true,
+            totalSeconds: 60 * 60,
+            lastUpdated: '',
+          },
+        },
       })
       await setLocal('dailyProgress', progress)
       await setLocal('extensionSettings', { serverBaseUrl: 'https://test.example.com', syncEnabled: true })
@@ -52,18 +105,32 @@ describe('alarm-handlers', () => {
       const { handleAlarm } = await import('./alarm-handlers')
       await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
 
-      const postCalls = fetchMock.mock.calls.filter(
+      // POST /quests が呼ばれたことを確認
+      const questCalls = fetchMock.mock.calls.filter(
+        (call) => {
+          const url = call[0] as string
+          const opts = call[1] as RequestInit | undefined
+          return url.includes('/quests') && opts?.method === 'POST'
+        },
+      )
+      expect(questCalls.length).toBeGreaterThanOrEqual(1)
+      const questBody = JSON.parse(questCalls[0][1]!.body as string)
+      expect(questBody.source).toBe('browsing')
+      expect(questBody.browsingType).toBe('bad')
+      expect(questBody.xpReward).toBe(-BROWSING_XP.BAD_PENALTY)
+
+      // POST /completions が呼ばれたことを確認
+      const completionCalls = fetchMock.mock.calls.filter(
         (call) => {
           const url = call[0] as string
           const opts = call[1] as RequestInit | undefined
           return url.includes('/completions') && opts?.method === 'POST'
         },
       )
-      expect(postCalls.length).toBeGreaterThanOrEqual(1)
-
-      const body = JSON.parse(postCalls[0][1]!.body as string)
-      expect(body.userXpAwarded).toBe(-BROWSING_XP.BAD_PENALTY)
-      expect(body.type).toBe('bad_quest')
+      expect(completionCalls.length).toBeGreaterThanOrEqual(1)
+      const compBody = JSON.parse(completionCalls[0][1]!.body as string)
+      expect(compBody.userXpAwarded).toBe(-BROWSING_XP.BAD_PENALTY)
+      expect(compBody.questId).toBe(questBody.id)
     })
 
     it('イベントがない場合はPOSTしない', async () => {

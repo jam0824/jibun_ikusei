@@ -34,6 +34,12 @@ export function createApiClient() {
     getCompletions() {
       return request<unknown[]>('/completions')
     },
+    postQuest(data: Record<string, unknown>) {
+      return request<Record<string, unknown>>('/quests', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      })
+    },
     postCompletion(data: Record<string, unknown>) {
       return request<Record<string, unknown>>('/completions', {
         method: 'POST',

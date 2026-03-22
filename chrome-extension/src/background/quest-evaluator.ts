@@ -1,4 +1,4 @@
-import type { DailyProgress } from '@ext/types/browsing'
+import type { DailyProgress, DomainTimeEntry } from '@ext/types/browsing'
 import { BROWSING_XP } from '@ext/types/browsing'
 
 export interface QuestEvent {
@@ -7,6 +7,7 @@ export interface QuestEvent {
   domain?: string
   message?: string
   isFirstReward?: boolean
+  topCacheKey?: string
 }
 
 interface EvaluateOptions {
@@ -41,6 +42,21 @@ export function evaluateProgress(
   return events
 }
 
+function findTopCacheKey(
+  domainTimes: Record<string, DomainTimeEntry>,
+  filter: (entry: DomainTimeEntry) => boolean,
+): string | undefined {
+  let topKey: string | undefined
+  let topSeconds = 0
+  for (const [key, entry] of Object.entries(domainTimes)) {
+    if (filter(entry) && entry.totalSeconds > topSeconds) {
+      topSeconds = entry.totalSeconds
+      topKey = key
+    }
+  }
+  return topKey
+}
+
 function evaluateGoodQuests(progress: DailyProgress, events: QuestEvent[]): void {
   const { goodBrowsingSeconds, lastGoodRewardAtSeconds } = progress
   const { FIRST_GOOD_THRESHOLD_SECONDS, GOOD_INTERVAL_SECONDS, GOOD_REWARD } = BROWSING_XP
@@ -58,6 +74,7 @@ function evaluateGoodQuests(progress: DailyProgress, events: QuestEvent[]): void
       type: 'good_quest',
       xp: GOOD_REWARD,
       isFirstReward: lastGoodRewardAtSeconds === 0,
+      topCacheKey: findTopCacheKey(progress.domainTimes, (e) => e.isGrowth),
     })
   }
 }
@@ -105,6 +122,7 @@ function evaluateBadQuests(progress: DailyProgress, events: QuestEvent[], curren
     events.push({
       type: 'bad_quest',
       xp: penalty === 0 ? 0 : -penalty,
+      topCacheKey: findTopCacheKey(progress.domainTimes, (e) => e.isBlocklisted && !e.isGrowth),
     })
   }
 }
