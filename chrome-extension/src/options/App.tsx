@@ -66,7 +66,8 @@ export function App() {
       <AuthSettings
         serverBaseUrl={settings.serverBaseUrl}
         authToken={settings.authToken}
-        onSave={(serverBaseUrl, authToken) => saveSettings({ serverBaseUrl, authToken })}
+        syncEnabled={settings.syncEnabled}
+        onSave={(serverBaseUrl, authToken) => saveSettings({ serverBaseUrl, authToken, syncEnabled: serverBaseUrl.trim().length > 0 })}
       />
 
       <hr style={{ margin: '24px 0' }} />
