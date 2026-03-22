@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-and-build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (web)
+        run: npm install --legacy-peer-deps
+
+      - name: Type check (web)
+        run: npx tsc --noEmit
+
+      - name: Test (web)
+        run: npx vitest run
+
+      - name: Build (web)
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: https://dummy.example.com
+          VITE_COGNITO_USER_POOL_ID: dummy
+          VITE_COGNITO_CLIENT_ID: dummy
+          VITE_COGNITO_REGION: ap-northeast-1
+
+  test-chrome-extension:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: chrome-extension/package-lock.json
+
+      - name: Install dependencies
+        run: npm install --legacy-peer-deps
+        working-directory: chrome-extension
+
+      - name: Test
+        run: npx vitest run
+        working-directory: chrome-extension
+
+  test-infra:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: infra/package-lock.json
+
+      - name: Install dependencies
+        run: npm install
+        working-directory: infra
+
+      - name: Test
+        run: npx vitest run
+        working-directory: infra
