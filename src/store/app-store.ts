@@ -38,6 +38,7 @@ import * as api from '@/lib/api-client'
 import { getCachedAudio, playAudioUrl } from '@/lib/tts'
 import { createId, downloadJson } from '@/lib/utils'
 import { SKILL_XP_CAP } from '@/domain/constants'
+import { logActivity } from '@/lib/activity-logger'
 
 type ImportMode = 'merge' | 'replace'
 
@@ -310,8 +311,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set(nextState)
     if (existing) {
       void api.putQuest(quest.id, updatedQuest).catch(() => undefined)
+      logActivity('quest.update', 'quest', { questId: quest.id, title: quest.title })
     } else {
       void api.postQuest(updatedQuest).catch(() => undefined)
+      logActivity('quest.create', 'quest', { questId: quest.id, title: quest.title })
     }
   },
 
@@ -367,6 +370,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           : state.currentEffectCompletionId,
     })
     void api.deleteQuest(questId).catch(() => undefined)
+    logActivity('quest.delete', 'quest', { questId, title: quest.title })
 
     return { ok: true }
   },
@@ -664,6 +668,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }
 
     scheduleNotification(fallbackMessage, nextState.settings)
+    logActivity('quest.complete', 'quest', { questId, completionId, xp: quest.xpReward, title: quest.title })
     return { completionId }
   },
 
@@ -837,6 +842,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set(nextState)
     const updatedComp = nextState.completions.find((e) => e.id === completionId)
     if (updatedComp) void api.putCompletion(completionId, updatedComp).catch(() => undefined)
+    logActivity('skill.confirm', 'skill', { completionId, skillId, skillName: skill.name })
   },
 
   undoCompletion: (completionId) => {
@@ -877,6 +883,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     if (quest?.questType === 'one_time') {
       void api.putQuest(quest.id, { status: 'active', updatedAt: nowIso() }).catch(() => undefined)
     }
+    logActivity('completion.undo', 'quest', { completionId, questId: completion.questId })
     return { ok: true }
   },
 
@@ -944,6 +951,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         }
       }
     })()
+    logActivity('skill.merge', 'skill', { sourceId: sourceSkillId, targetId: targetSkillId, sourceName: source.name, targetName: target.name })
     return { ok: true }
   },
 
@@ -960,6 +968,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     persistState(nextState)
     set(nextState)
     void api.putSettings(nextState.settings).catch(() => undefined)
+    logActivity('settings.update', 'settings', { changedKeys: Object.keys(partial) })
 
     if (partial.notificationsEnabled && typeof Notification !== 'undefined' && Notification.permission === 'default') {
       void Notification.requestPermission().then((permission) => {
@@ -993,6 +1002,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     persistState(nextState)
     set(nextState)
     void api.putAiConfig(nextState.aiConfig).catch(() => undefined)
+    logActivity('ai-config.update', 'settings', { provider })
   },
 
   setActiveProvider: (provider) => {
