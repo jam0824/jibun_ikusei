@@ -722,7 +722,7 @@ export async function sendLilyChatMessage(params: {
       body: JSON.stringify({
         model: LILY_CHAT_MODEL,
         messages: finalMessages,
-        max_tokens: 500,
+        max_completion_tokens: 500,
       }),
     })
 
