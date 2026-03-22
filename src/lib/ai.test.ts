@@ -335,7 +335,7 @@ describe('Lilyチャット', () => {
     vi.restoreAllMocks()
   })
 
-  it('システムプロンプトにユーザー情報とスキルを含む', () => {
+  it('システムプロンプトにユーザー情報とスキルとクエストを含む', () => {
     const state = hydratePersistedState()
     state.user.level = 5
     state.user.totalXp = 120
@@ -343,6 +343,9 @@ describe('Lilyチャット', () => {
     const prompt = buildLilyChatSystemPrompt({
       user: state.user,
       skills: state.skills,
+      quests: [
+        { id: 'q1', title: '読書30分', questType: 'repeatable', xpReward: 5, category: '学習', skillMappingMode: 'ai_auto', status: 'active', privacyMode: 'normal', pinned: false, createdAt: '', updatedAt: '' },
+      ],
       recentCompletions: [
         { questTitle: '読書30分', completedAt: '2026-03-22T10:00:00Z' },
       ],
@@ -357,19 +360,23 @@ describe('Lilyチャット', () => {
     expect(prompt).toContain('総XP: 120')
     expect(prompt).toContain('読書30分')
     expect(prompt).toContain('quest: 2回')
+    expect(prompt).toContain('登録中のクエスト')
+    expect(prompt).toContain('学習')
   })
 
-  it('スキルがない場合もシステムプロンプトを生成できる', () => {
+  it('スキルやクエストがない場合もシステムプロンプトを生成できる', () => {
     const state = hydratePersistedState()
 
     const prompt = buildLilyChatSystemPrompt({
       user: state.user,
       skills: [],
+      quests: [],
       recentCompletions: [],
       activityLogs: [],
     })
 
     expect(prompt).toContain('まだスキルがありません')
+    expect(prompt).toContain('まだクエストがありません')
     expect(prompt).toContain('まだ完了記録がありません')
   })
 

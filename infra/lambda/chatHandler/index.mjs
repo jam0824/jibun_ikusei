@@ -80,7 +80,9 @@ export const handler = async (event) => {
         ExpressionAttributeValues: { ":pk": pk, ":sk": `CHAT_MSG#${id}#` },
         ScanIndexForward: true,
       }));
-      const items = (result.Items ?? []).map(({ PK, SK, ...rest }) => rest);
+      const items = (result.Items ?? [])
+        .map(({ PK, SK, ...rest }) => rest)
+        .sort((a, b) => (a.createdAt ?? "").localeCompare(b.createdAt ?? ""));
       return response(200, items);
     }
 

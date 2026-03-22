@@ -645,23 +645,32 @@ const MAX_CHAT_HISTORY = 30
 export function buildLilyChatSystemPrompt(params: {
   user: LocalUser
   skills: Skill[]
+  quests: Quest[]
   recentCompletions: Array<{ questTitle: string; completedAt: string }>
   activityLogs: ActivityLogEntry[]
 }): string {
-  const { user, skills, recentCompletions, activityLogs } = params
+  const { user, skills, quests, recentCompletions, activityLogs } = params
 
-  const topSkills = skills
-    .filter((s) => s.status === 'active')
-    .sort((a, b) => b.totalXp - a.totalXp)
-    .slice(0, 5)
+  const activeSkills = skills.filter((s) => s.status === 'active').sort((a, b) => b.totalXp - a.totalXp)
 
-  const skillSummary = topSkills.length > 0
-    ? topSkills.map((s) => `${s.name}(Lv.${s.level}, ${s.category})`).join('、')
+  const skillDetails = activeSkills.length > 0
+    ? activeSkills.map((s) => `- ${s.name}（Lv.${s.level}, XP: ${s.totalXp}, カテゴリ: ${s.category}）`).join('\n')
     : 'まだスキルがありません'
+
+  const activeQuests = quests.filter((q) => q.status === 'active' && q.source !== 'browsing')
+  const questList = activeQuests.length > 0
+    ? activeQuests.map((q) => {
+        const parts = [`- ${q.title}`]
+        if (q.category) parts.push(`カテゴリ: ${q.category}`)
+        parts.push(`XP: ${q.xpReward}`)
+        parts.push(q.questType === 'repeatable' ? '繰り返し' : '一回限り')
+        return parts.join('、')
+      }).join('\n')
+    : 'まだクエストがありません'
 
   const completionSummary = recentCompletions.length > 0
     ? recentCompletions
-        .slice(0, 10)
+        .slice(0, 15)
         .map((c) => `- ${c.questTitle}（${c.completedAt.slice(0, 10)}）`)
         .join('\n')
     : 'まだ完了記録がありません'
@@ -688,7 +697,12 @@ export function buildLilyChatSystemPrompt(params: {
     `【ユーザー情報】`,
     `- レベル: ${user.level}`,
     `- 総XP: ${user.totalXp}`,
-    `- 上位スキル: ${skillSummary}`,
+    '',
+    `【スキル一覧】`,
+    skillDetails,
+    '',
+    `【登録中のクエスト】`,
+    questList,
     '',
     `【直近7日のアクティビティ（カテゴリ別）】`,
     activitySummary,
