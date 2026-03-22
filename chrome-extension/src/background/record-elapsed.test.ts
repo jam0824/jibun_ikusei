@@ -34,6 +34,7 @@ describe('recordElapsed', () => {
       30,
       false,  // isGrowth
       false,  // isBlocklisted — 未分類なのでfalse
+      'その他', // category — 未分類
     )
   })
 
@@ -69,6 +70,7 @@ describe('recordElapsed', () => {
       60,
       false,  // isGrowth
       true,   // isBlocklisted — 分類済みかつブロックリスト
+      '娯楽', // category
     )
   })
 
@@ -104,6 +106,7 @@ describe('recordElapsed', () => {
       120,
       true,   // isGrowth
       false,  // isBlocklisted
+      '学習', // category
     )
   })
 
@@ -139,6 +142,7 @@ describe('recordElapsed', () => {
       45,
       false,  // isGrowth
       true,   // isBlocklisted — www.youtube.com は youtube.com にマッチすべき
+      '娯楽', // category
     )
   })
 
@@ -174,6 +178,7 @@ describe('recordElapsed', () => {
       30,
       false,
       true,   // isBlocklisted — m.example.com は example.com にマッチすべき
+      '娯楽', // category
     )
   })
 
@@ -209,6 +214,7 @@ describe('recordElapsed', () => {
       30,
       false,
       true,   // isBlocklisted — www.youtube.com 登録で youtube.com もマッチすべき
+      '娯楽', // category
     )
   })
 
@@ -244,6 +250,7 @@ describe('recordElapsed', () => {
       60,
       false,
       true,   // isBlocklisted — フルURL登録でもドメインマッチすべき
+      '娯楽', // category
     )
   })
 
