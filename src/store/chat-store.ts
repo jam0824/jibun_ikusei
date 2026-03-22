@@ -19,8 +19,12 @@ function saveSessions(sessions: ChatSession[]) {
   localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions))
 }
 
+function sortByCreatedAt(messages: ChatMessage[]): ChatMessage[] {
+  return [...messages].sort((a, b) => (a.createdAt ?? '').localeCompare(b.createdAt ?? ''))
+}
+
 function loadMessages(sessionId: string): ChatMessage[] {
-  return safeJsonParse<ChatMessage[]>(localStorage.getItem(messagesKey(sessionId)), [])
+  return sortByCreatedAt(safeJsonParse<ChatMessage[]>(localStorage.getItem(messagesKey(sessionId)), []))
 }
 
 function saveMessages(sessionId: string, messages: ChatMessage[]) {
@@ -97,7 +101,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
     // Then sync from cloud
     try {
-      const cloudMessages = await api.getChatMessages(sessionId)
+      const cloudMessages = sortByCreatedAt(await api.getChatMessages(sessionId))
       saveMessages(sessionId, cloudMessages)
       set({ currentMessages: cloudMessages, isLoading: false })
     } catch {
@@ -175,6 +179,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       const systemPrompt = buildLilyChatSystemPrompt({
         user: appState.user,
         skills: appState.skills,
+        quests: appState.quests,
         recentCompletions,
         activityLogs,
       })
