@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import {
   ChevronRight,
+  MessageCircle,
   Play,
   Plus,
   Settings2,
@@ -228,6 +229,17 @@ export function HomeScreen() {
                 {audioError}
               </div>
             ) : null}
+            <div className="mt-3 flex justify-end">
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-violet-600"
+                onClick={() => navigate('/lily')}
+              >
+                <MessageCircle className="mr-1 h-4 w-4" />
+                リリィと話す
+              </Button>
+            </div>
           </CardContent>
         </Card>
       </section>
