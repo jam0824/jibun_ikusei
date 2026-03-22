@@ -199,7 +199,7 @@ export function HomeScreen() {
         <Card className="border-violet-100 bg-white">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <img src={`${import.meta.env.BASE_URL}lily/face.png`} alt="リリィ" className="h-11 w-11 shrink-0 rounded-2xl object-cover" />
+              <img src={`${import.meta.env.BASE_URL}lily/face.png`} alt="リリィ" className="h-13 w-13 shrink-0 rounded-2xl object-cover" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <div className="text-sm font-semibold text-slate-900">最新コメント</div>

@@ -167,7 +167,7 @@ export function LilyChatScreen() {
                 </div>
               ) : (
                 <div key={msg.id} className="flex items-start gap-3">
-                  <img src={`${import.meta.env.BASE_URL}lily/face.png`} alt="リリィ" className="h-8 w-8 shrink-0 rounded-full object-cover" />
+                  <img src={`${import.meta.env.BASE_URL}lily/face.png`} alt="リリィ" className="h-13 w-13 shrink-0 rounded-full object-cover" />
                   <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tl-md bg-white px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm">
                     {msg.content}
                   </div>
