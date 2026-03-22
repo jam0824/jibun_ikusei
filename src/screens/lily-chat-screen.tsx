@@ -161,7 +161,7 @@ export function LilyChatScreen() {
             {currentMessages.map((msg) =>
               msg.role === 'user' ? (
                 <div key={msg.id} className="flex justify-end">
-                  <div className="max-w-[80%] rounded-2xl rounded-tr-md bg-violet-600 px-4 py-3 text-sm leading-6 text-white shadow-sm">
+                  <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tr-md bg-violet-600 px-4 py-3 text-sm leading-6 text-white shadow-sm">
                     {msg.content}
                   </div>
                 </div>
@@ -170,7 +170,7 @@ export function LilyChatScreen() {
                   <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-100 text-violet-700">
                     <Sparkles className="h-4 w-4" />
                   </div>
-                  <div className="max-w-[80%] rounded-2xl rounded-tl-md bg-white px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm">
+                  <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tl-md bg-white px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm">
                     {msg.content}
                   </div>
                 </div>
