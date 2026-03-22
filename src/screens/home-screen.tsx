@@ -5,7 +5,6 @@ import {
   Play,
   Plus,
   Settings2,
-  Sparkles,
   Target,
   Trophy,
 } from 'lucide-react'
@@ -200,9 +199,7 @@ export function HomeScreen() {
         <Card className="border-violet-100 bg-white">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
-                <Sparkles className="h-5 w-5" />
-              </div>
+              <img src={`${import.meta.env.BASE_URL}lily/face.png`} alt="リリィ" className="h-11 w-11 shrink-0 rounded-2xl object-cover" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <div className="text-sm font-semibold text-slate-900">最新コメント</div>
