@@ -1,5 +1,6 @@
 import { timeAccumulator } from './shared-instances'
 import { getLocal } from '@ext/lib/storage'
+import { buildCacheKey } from '@ext/lib/cache-key'
 import type { ExtensionSettings } from '@ext/types/settings'
 import type { ClassificationResult } from '@ext/types/browsing'
 
@@ -26,7 +27,7 @@ export async function recordElapsed(
 
   await timeAccumulator.addTime(
     info.domain,
-    classification?.cacheKey ?? `${info.domain}:${new URL(info.url).pathname}`,
+    classification?.cacheKey ?? buildCacheKey({ domain: info.domain, url: info.url, title: '' }),
     info.elapsedSeconds,
     isGrowth,
     isBlocklisted,

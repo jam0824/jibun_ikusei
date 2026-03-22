@@ -1,5 +1,6 @@
 import { ClassificationCache } from '@ext/lib/classification-cache'
 import { classifyPage } from '@ext/lib/ai-classifier'
+import { buildCacheKey } from '@ext/lib/cache-key'
 import { getLocal } from '@ext/lib/storage'
 import { createDefaultSettings } from '@ext/types/settings'
 import type { ExtensionSettings } from '@ext/types/settings'
@@ -67,11 +68,3 @@ export function setupMessageListener(): void {
   })
 }
 
-function buildCacheKey(pageInfo: PageInfo): string {
-  try {
-    const pathname = new URL(pageInfo.url).pathname
-    return `${pageInfo.domain}:${pathname}`
-  } catch {
-    return `${pageInfo.domain}:/`
-  }
-}

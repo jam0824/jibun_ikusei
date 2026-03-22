@@ -1,6 +1,7 @@
 import type { BrowsingCategory, ClassificationResult, PageInfo } from '@ext/types/browsing'
 import { isGrowthCategory } from '@ext/types/browsing'
 import type { ExtensionSettings } from '@ext/types/settings'
+import { buildCacheKey } from '@ext/lib/cache-key'
 import CLASSIFICATION_SYSTEM_PROMPT from '@ext/lib/classification-prompt.txt?raw'
 
 const OPENAI_MODEL = 'gpt-5.4'
@@ -29,15 +30,6 @@ interface AiClassificationResult {
   confidence: number
   suggestedQuestTitle: string
   suggestedSkill: string
-}
-
-function buildCacheKey(pageInfo: PageInfo): string {
-  try {
-    const pathname = new URL(pageInfo.url).pathname
-    return `${pageInfo.domain}:${pathname}`
-  } catch {
-    return `${pageInfo.domain}:/`
-  }
 }
 
 function createFallbackResult(pageInfo: PageInfo): ClassificationResult {
