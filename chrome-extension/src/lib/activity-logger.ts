@@ -45,6 +45,10 @@ export async function flushActivityLogs(
   const buffer = (await getLocal<ActivityLogEntry[]>(STORAGE_KEY)) ?? []
   if (buffer.length === 0) return
 
-  await apiClient.postActivityLogs({ entries: buffer })
-  await setLocal(STORAGE_KEY, [])
+  try {
+    await apiClient.postActivityLogs({ entries: buffer })
+    await setLocal(STORAGE_KEY, [])
+  } catch (err) {
+    console.error('[activity-logger] flush failed:', err)
+  }
 }

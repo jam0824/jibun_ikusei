@@ -4,10 +4,11 @@ import { login, logout, getStoredToken, isLoggedIn } from '@ext/lib/auth'
 interface Props {
   serverBaseUrl: string
   authToken?: string
+  syncEnabled: boolean
   onSave: (serverBaseUrl: string, authToken: string) => void
 }
 
-export function AuthSettings({ serverBaseUrl, onSave }: Props) {
+export function AuthSettings({ serverBaseUrl, syncEnabled, onSave }: Props) {
   const [url, setUrl] = useState(serverBaseUrl)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -83,6 +84,19 @@ export function AuthSettings({ serverBaseUrl, onSave }: Props) {
   return (
     <div>
       <h3>サーバー接続設定</h3>
+
+      <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{
+          display: 'inline-block',
+          width: 10,
+          height: 10,
+          borderRadius: '50%',
+          background: syncEnabled ? '#4caf50' : '#9e9e9e',
+        }} />
+        <span style={{ fontSize: 13, color: syncEnabled ? '#2e7d32' : '#757575' }}>
+          同期: {syncEnabled ? 'ON' : 'OFF'}
+        </span>
+      </div>
 
       <div style={{ marginBottom: 12 }}>
         <label>サーバーURL:</label>
