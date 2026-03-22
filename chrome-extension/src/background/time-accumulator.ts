@@ -58,6 +58,7 @@ export class TimeAccumulator {
     seconds: number,
     isGrowth: boolean,
     isBlocklisted: boolean,
+    category = 'その他',
   ): Promise<DailyProgress> {
     const progress = await this.getDailyProgress()
 
@@ -71,13 +72,16 @@ export class TimeAccumulator {
         existing.isBlocklisted = isBlocklisted
         adjustAggregate(progress, isGrowth, isBlocklisted, existing.totalSeconds)
       }
+      if (category !== 'その他') {
+        existing.category = category
+      }
       existing.totalSeconds += seconds
       existing.lastUpdated = new Date().toISOString()
     } else {
       const entry: DomainTimeEntry = {
         domain,
         cacheKey,
-        category: 'その他',
+        category,
         isGrowth,
         isBlocklisted,
         totalSeconds: seconds,

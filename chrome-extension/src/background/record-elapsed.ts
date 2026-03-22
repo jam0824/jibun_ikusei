@@ -46,5 +46,6 @@ export async function recordElapsed(
     info.elapsedSeconds,
     isGrowth,
     isBlocklisted,
+    classification?.category ?? 'その他',
   )
 }
