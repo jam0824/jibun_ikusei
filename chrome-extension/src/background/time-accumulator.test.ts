@@ -7,12 +7,13 @@ describe('TimeAccumulator', () => {
   const TODAY = '2026-03-21'
 
   beforeEach(() => {
-    vi.spyOn(Date.prototype, 'toISOString').mockReturnValue(`${TODAY}T12:00:00.000Z`)
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 2, 21, 12, 0, 0)) // 2026-03-21 12:00 local time
     accumulator = new TimeAccumulator()
   })
 
   afterEach(() => {
-    vi.restoreAllMocks()
+    vi.useRealTimers()
   })
 
   it('accumulates time for a domain', async () => {
@@ -68,7 +69,7 @@ describe('TimeAccumulator', () => {
     await accumulator.addTime('example.com', 'example.com:/', 100, true, false)
 
     // Simulate date change
-    vi.spyOn(Date.prototype, 'toISOString').mockReturnValue('2026-03-22T01:00:00.000Z')
+    vi.setSystemTime(new Date(2026, 2, 22, 1, 0, 0)) // 2026-03-22 01:00 local time
 
     const progress = await accumulator.getDailyProgress()
     expect(progress.date).toBe('2026-03-22')
@@ -141,7 +142,7 @@ describe('TimeAccumulator', () => {
     await accumulator.addTime('example.com', 'example.com:/', 60, true, false)
 
     // 日付変更をシミュレート
-    vi.spyOn(Date.prototype, 'toISOString').mockReturnValue('2026-03-22T01:00:00.000Z')
+    vi.setSystemTime(new Date(2026, 2, 22, 1, 0, 0))
 
     await accumulator.getDailyProgress()
 
@@ -175,7 +176,7 @@ describe('TimeAccumulator', () => {
     await accumulator.addTime('example.com', 'example.com:/', 60, true, false)
 
     // 日付変更
-    vi.spyOn(Date.prototype, 'toISOString').mockReturnValue('2026-03-22T01:00:00.000Z')
+    vi.setSystemTime(new Date(2026, 2, 22, 1, 0, 0))
     await accumulator.getDailyProgress()
 
     const stored = await chrome.storage.local.get('dailyProgressHistory')
