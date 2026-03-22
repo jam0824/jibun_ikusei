@@ -76,6 +76,13 @@ export interface WeeklyReport {
   generatedAt: string
 }
 
+/** Entry for syncing browsing time to backend */
+export interface BrowsingTimeSyncEntry {
+  date: string
+  domains: Record<string, { totalSeconds: number; category: BrowsingCategory; isGrowth: boolean }>
+  totalSeconds: number
+}
+
 /** Browsing quest XP constants */
 export const BROWSING_XP = {
   GOOD_REWARD: 2,

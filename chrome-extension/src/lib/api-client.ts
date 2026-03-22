@@ -1,6 +1,7 @@
 import { getLocal } from '@ext/lib/storage'
 import { getStoredToken } from '@ext/lib/auth'
 import type { ExtensionSettings } from '@ext/types/settings'
+import type { BrowsingTimeSyncEntry } from '@ext/types/browsing'
 
 async function getBaseUrl(): Promise<string> {
   const settings = await getLocal<ExtensionSettings>('extensionSettings')
@@ -42,6 +43,12 @@ export function createApiClient() {
     },
     postCompletion(data: Record<string, unknown>) {
       return request<Record<string, unknown>>('/completions', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      })
+    },
+    postBrowsingTimes(data: { entries: BrowsingTimeSyncEntry[] }) {
+      return request<{ synced: number }>('/browsing-times', {
         method: 'POST',
         body: JSON.stringify(data),
       })

@@ -1,6 +1,6 @@
 import { getLocal, setLocal } from '@ext/lib/storage'
 import type { ExtensionSettings } from '@ext/types/settings'
-import type { DailyProgress, WeeklyReport } from '@ext/types/browsing'
+import type { BrowsingTimeSyncEntry, DailyProgress, WeeklyReport } from '@ext/types/browsing'
 import { sendToastToActiveTab } from '@ext/lib/notifications'
 import { timeAccumulator, syncQueue, classificationCache, apiClient } from './shared-instances'
 import { evaluateProgress } from './quest-evaluator'
@@ -41,7 +41,10 @@ async function handlePeriodicSync(): Promise<void> {
     const settings = await getLocal<ExtensionSettings>('extensionSettings')
     if (!settings?.syncEnabled || !settings?.serverBaseUrl) return
 
-    // 3. Replay queued requests (including newly enqueued ones)
+    // 3. Sync browsing time data to backend
+    await syncBrowsingTimes().catch(() => {})
+
+    // 4. Replay queued requests (including newly enqueued ones)
     await syncQueue.replay(async (req) => {
       if (req.method === 'PUT') {
         await apiClient.putUser(req.body as Record<string, unknown>)
@@ -160,6 +163,59 @@ async function evaluateAndEnqueue(): Promise<void> {
       }
     }
   })
+}
+
+function progressToSyncEntry(progress: DailyProgress): BrowsingTimeSyncEntry {
+  const domains: BrowsingTimeSyncEntry['domains'] = {}
+  let totalSeconds = 0
+
+  for (const entry of Object.values(progress.domainTimes)) {
+    if (entry.isBlocklisted) continue
+    const existing = domains[entry.domain]
+    if (existing) {
+      existing.totalSeconds += entry.totalSeconds
+    } else {
+      domains[entry.domain] = {
+        totalSeconds: entry.totalSeconds,
+        category: entry.category,
+        isGrowth: entry.isGrowth,
+      }
+    }
+    totalSeconds += entry.totalSeconds
+  }
+
+  return { date: progress.date, domains, totalSeconds }
+}
+
+export async function syncBrowsingTimes(): Promise<void> {
+  const settings = await getLocal<ExtensionSettings>('extensionSettings')
+  if (!settings?.syncEnabled || !settings?.serverBaseUrl) return
+
+  const today = await timeAccumulator.getDailyProgress()
+  const history = (await getLocal<DailyProgress[]>('dailyProgressHistory')) ?? []
+  const syncedDates = (await getLocal<string[]>('browsingTimeSyncedDates')) ?? []
+
+  const entries: BrowsingTimeSyncEntry[] = []
+
+  // Always send today's data (overwrite is fine)
+  entries.push(progressToSyncEntry(today))
+
+  // Send unsynced historical days
+  for (const day of history) {
+    if (!syncedDates.includes(day.date)) {
+      entries.push(progressToSyncEntry(day))
+    }
+  }
+
+  if (entries.length === 0) return
+
+  await apiClient.postBrowsingTimes({ entries })
+
+  // Mark historical days as synced (not today — always re-send)
+  const newSyncedDates = [
+    ...new Set([...syncedDates, ...history.map((d) => d.date)]),
+  ].slice(-14) // Keep last 14 dates
+  await setLocal('browsingTimeSyncedDates', newSyncedDates)
 }
 
 function getWeekKey(): string {
