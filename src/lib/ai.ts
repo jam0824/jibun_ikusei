@@ -737,7 +737,12 @@ export function buildLilyChatSystemPrompt(params: {
     completionSummary,
     '',
     `【利用可能なツール】`,
-    `あなたはツールを使ってユーザーの情報を取得できます。ブラウジング時間やWeb閲覧に関する質問を受けたら get_browsing_times ツールを使ってください。`,
+    `あなたはツールを使ってユーザーの詳細情報を取得できます。上記の要約で不足する場合や、具体的な質問を受けた場合に積極的に使ってください。`,
+    `- get_browsing_times: Web閲覧時間データ（カテゴリ別・サイト別）`,
+    `- get_user_info: プロフィール(type=profile)、設定(type=settings)、メタ情報(type=meta)`,
+    `- get_quest_data: クエスト一覧(type=quests)、完了記録(type=completions)。フィルタ: status, questType, category, period, questId`,
+    `- get_skill_data: スキル一覧(type=skills)、個人スキル辞書(type=dictionary)。フィルタ: status, category`,
+    `- get_messages_and_logs: 過去のメッセージ(type=assistant_messages)、AI設定(type=ai_config)、操作ログ(type=activity_logs)、チャット履歴(type=chat_sessions/chat_messages)`,
   ].join('\n')
 }
 
