@@ -15,7 +15,13 @@ vi.mock('@/lib/api-client', () => ({
 // Mock ai
 vi.mock('@/lib/ai', () => ({
   buildLilyChatSystemPrompt: vi.fn().mockReturnValue('system prompt'),
-  sendLilyChatMessage: vi.fn().mockResolvedValue('リリィの応答です'),
+  sendLilyChatMessage: vi.fn().mockResolvedValue({ type: 'text', content: 'リリィの応答です' }),
+}))
+
+// Mock chat-tools
+vi.mock('@/lib/chat-tools', () => ({
+  CHAT_TOOLS: [],
+  executeTool: vi.fn().mockResolvedValue('ツール結果'),
 }))
 
 // Mock app-store
