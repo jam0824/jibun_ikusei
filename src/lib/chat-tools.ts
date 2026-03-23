@@ -184,15 +184,6 @@ const PERIOD_LABELS: Record<string, string> = {
   month: '直近30日間',
 }
 
-function filterByPeriod<T extends { createdAt: string }>(
-  items: T[],
-  period: string | undefined,
-): T[] {
-  if (!period) return items
-  const { from } = getDateRange(period)
-  return items.filter((item) => item.createdAt >= from)
-}
-
 // ── get_browsing_times（既存） ──
 
 async function executeGetBrowsingTimes(args: Record<string, unknown>): Promise<string> {
