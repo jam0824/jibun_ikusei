@@ -30,7 +30,8 @@
       "Bash(xargs grep:*)",
       "Bash(find /d/codes/自分育成アプリ -type f -name *notification* -o -name *toast*)",
       "Bash(git:*)",
-      "WebFetch(domain:qiita.com)"
+      "WebFetch(domain:qiita.com)",
+      "Bash(find /d/codes/自分育成アプリ/chrome-extension/src -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.js \\\\\\))"
     ]
   }
 }

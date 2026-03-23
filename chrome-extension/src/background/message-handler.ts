@@ -52,7 +52,7 @@ export async function handlePageInfo(tabId: number, pageInfo: PageInfo): Promise
 }
 
 export function setupMessageListener(): void {
-  chrome.runtime.onMessage.addListener((message, sender) => {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'PAGE_INFO' && sender.tab?.id != null) {
       handlePageInfo(sender.tab.id, message.payload as PageInfo).catch(() => {
         // Classification failure is non-fatal — tab will use default (その他)
@@ -60,6 +60,12 @@ export function setupMessageListener(): void {
     } else if (message.type === 'OPEN_POPUP') {
       const popupUrl = chrome.runtime.getURL('popup.html')
       chrome.tabs.create({ url: popupUrl }).catch(() => {})
+    } else if (message.type === 'ENSURE_TODAY_PROGRESS') {
+      // Popup requests today's progress — create if not yet initialized
+      import('./shared-instances').then(({ timeAccumulator }) =>
+        timeAccumulator.getDailyProgress().then(() => sendResponse({ ok: true })),
+      ).catch(() => sendResponse({ ok: false }))
+      return true // keep message channel open for async sendResponse
     }
   })
 
