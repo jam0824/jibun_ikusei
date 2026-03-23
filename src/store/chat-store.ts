@@ -5,6 +5,8 @@ import { nowIso, getDayKey } from '@/lib/date'
 import { subDays } from 'date-fns'
 import { isOffline } from '@/lib/network'
 import { buildLilyChatSystemPrompt, sendLilyChatMessage } from '@/lib/ai'
+import type { ChatMessageParam } from '@/lib/ai'
+import { CHAT_TOOLS, executeTool } from '@/lib/chat-tools'
 import { logActivity } from '@/lib/activity-logger'
 import { useAppStore } from '@/store/app-store'
 import * as api from '@/lib/api-client'
@@ -186,7 +188,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       })
 
       // Build messages array for API
-      const apiMessages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      const apiMessages: ChatMessageParam[] = [
         { role: 'system', content: systemPrompt },
         ...updatedMessages.map((m) => ({
           role: m.role as 'user' | 'assistant',
@@ -194,10 +196,38 @@ export const useChatStore = create<ChatStore>((set, get) => ({
         })),
       ]
 
-      const responseText = await sendLilyChatMessage({
+      let result = await sendLilyChatMessage({
         apiKey: openaiKey,
         messages: apiMessages,
+        tools: CHAT_TOOLS,
       })
+
+      // Handle tool calls (max 1 round)
+      if (result.type === 'tool_calls') {
+        apiMessages.push(result.assistantMessage)
+
+        for (const toolCall of result.toolCalls) {
+          let toolResult: string
+          try {
+            const args = JSON.parse(toolCall.function.arguments) as Record<string, unknown>
+            toolResult = await executeTool(toolCall.function.name, args)
+          } catch {
+            toolResult = 'ツールの実行に失敗しました。'
+          }
+          apiMessages.push({
+            role: 'tool',
+            content: toolResult,
+            tool_call_id: toolCall.id,
+          })
+        }
+
+        result = await sendLilyChatMessage({
+          apiKey: openaiKey,
+          messages: apiMessages,
+        })
+      }
+
+      const responseText = result.type === 'text' ? result.content : 'リリィからの応答を取得できませんでした。'
 
       // Add assistant response
       const assistantMessage: ChatMessage = {

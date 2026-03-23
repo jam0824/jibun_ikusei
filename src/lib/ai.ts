@@ -642,6 +642,30 @@ export async function generateTtsAudio(params: {
 const LILY_CHAT_MODEL = 'gpt-5.4'
 const MAX_CHAT_HISTORY = 30
 
+export type ToolCall = {
+  id: string
+  type: 'function'
+  function: { name: string; arguments: string }
+}
+
+export type ChatCompletionResult =
+  | { type: 'text'; content: string }
+  | { type: 'tool_calls'; toolCalls: ToolCall[]; assistantMessage: { role: 'assistant'; content: string | null; tool_calls: ToolCall[] } }
+
+export type ChatToolDefinition = {
+  type: 'function'
+  function: {
+    name: string
+    description: string
+    parameters: Record<string, unknown>
+  }
+}
+
+export type ChatMessageParam =
+  | { role: 'system' | 'user' | 'assistant'; content: string }
+  | { role: 'assistant'; content: string | null; tool_calls: ToolCall[] }
+  | { role: 'tool'; content: string; tool_call_id: string }
+
 export function buildLilyChatSystemPrompt(params: {
   user: LocalUser
   skills: Skill[]
@@ -710,20 +734,33 @@ export function buildLilyChatSystemPrompt(params: {
     '',
     `【直近のクエスト完了】`,
     completionSummary,
+    '',
+    `【利用可能なツール】`,
+    `あなたはツールを使ってユーザーの情報を取得できます。ブラウジング時間やWeb閲覧に関する質問を受けたら get_browsing_times ツールを使ってください。`,
   ].join('\n')
 }
 
 export async function sendLilyChatMessage(params: {
   apiKey: string
-  messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>
-}): Promise<string> {
-  const { apiKey, messages } = params
+  messages: ChatMessageParam[]
+  tools?: ChatToolDefinition[]
+}): Promise<ChatCompletionResult> {
+  const { apiKey, messages, tools } = params
 
   // Limit conversation history (keep system prompt + last N messages)
   const systemMessages = messages.filter((m) => m.role === 'system')
   const conversationMessages = messages.filter((m) => m.role !== 'system')
   const trimmedConversation = conversationMessages.slice(-MAX_CHAT_HISTORY)
   const finalMessages = [...systemMessages, ...trimmedConversation]
+
+  const body: Record<string, unknown> = {
+    model: LILY_CHAT_MODEL,
+    messages: finalMessages,
+    max_completion_tokens: 500,
+  }
+  if (tools && tools.length > 0) {
+    body.tools = tools
+  }
 
   let lastError: Error | undefined
 
@@ -734,11 +771,7 @@ export async function sendLilyChatMessage(params: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        model: LILY_CHAT_MODEL,
-        messages: finalMessages,
-        max_completion_tokens: 500,
-      }),
+      body: JSON.stringify(body),
     })
 
     if (!response.ok) {
@@ -757,16 +790,32 @@ export async function sendLilyChatMessage(params: {
 
     const payload = (await response.json()) as {
       choices?: Array<{
-        message?: { content?: string }
+        message?: { content?: string | null; tool_calls?: ToolCall[] }
+        finish_reason?: string
       }>
     }
 
-    const content = payload.choices?.[0]?.message?.content
+    const message = payload.choices?.[0]?.message
+    const finishReason = payload.choices?.[0]?.finish_reason
+
+    if (finishReason === 'tool_calls' && message?.tool_calls && message.tool_calls.length > 0) {
+      return {
+        type: 'tool_calls',
+        toolCalls: message.tool_calls,
+        assistantMessage: {
+          role: 'assistant',
+          content: message.content ?? null,
+          tool_calls: message.tool_calls,
+        },
+      }
+    }
+
+    const content = message?.content
     if (!content) {
       throw new Error('OpenAI Chat response was empty.')
     }
 
-    return content
+    return { type: 'text', content }
   }
 
   throw lastError ?? new Error('OpenAI Chat request failed.')

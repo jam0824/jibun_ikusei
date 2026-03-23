@@ -398,7 +398,7 @@ describe('Lilyチャット', () => {
       ],
     })
 
-    expect(result).toBe('こんにちは！今日も頑張っていますね。')
+    expect(result).toEqual({ type: 'text', content: 'こんにちは！今日も頑張っていますね。' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
 
     const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit]
@@ -406,6 +406,68 @@ describe('Lilyチャット', () => {
     const body = JSON.parse(String(request.body))
     expect(body.model).toBe('gpt-5.4')
     expect(body.messages).toHaveLength(2)
+  })
+
+  it('toolsを渡すとリクエストボディにtoolsが含まれる', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: 'テスト応答' } }],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    await sendLilyChatMessage({
+      apiKey: 'sk-test',
+      messages: [{ role: 'user', content: 'テスト' }],
+      tools: [{
+        type: 'function',
+        function: {
+          name: 'test_tool',
+          description: 'テストツール',
+          parameters: { type: 'object', properties: {} },
+        },
+      }],
+    })
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    expect(body.tools).toHaveLength(1)
+    expect(body.tools[0].function.name).toBe('test_tool')
+  })
+
+  it('tool_callsレスポンスでツールコール結果を返す', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [{
+            message: {
+              content: null,
+              tool_calls: [{
+                id: 'call_123',
+                type: 'function',
+                function: { name: 'get_browsing_times', arguments: '{"period":"today"}' },
+              }],
+            },
+            finish_reason: 'tool_calls',
+          }],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const result = await sendLilyChatMessage({
+      apiKey: 'sk-test',
+      messages: [{ role: 'user', content: '今日のブラウジング時間は？' }],
+    })
+
+    expect(result.type).toBe('tool_calls')
+    if (result.type === 'tool_calls') {
+      expect(result.toolCalls).toHaveLength(1)
+      expect(result.toolCalls[0].function.name).toBe('get_browsing_times')
+      expect(result.assistantMessage.role).toBe('assistant')
+      expect(result.assistantMessage.tool_calls).toEqual(result.toolCalls)
+    }
   })
 
   it('Chat APIエラー時にリトライする', async () => {
@@ -426,7 +488,7 @@ describe('Lilyチャット', () => {
       messages: [{ role: 'user', content: 'テスト' }],
     })
 
-    expect(result).toBe('リトライ成功')
+    expect(result).toEqual({ type: 'text', content: 'リトライ成功' })
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
