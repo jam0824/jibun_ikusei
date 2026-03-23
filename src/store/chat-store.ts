@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import type { ChatMessage, ChatSession } from '@/domain/types'
 import { createId, safeJsonParse } from '@/lib/utils'
 import { nowIso, getDayKey } from '@/lib/date'
-import { subDays } from 'date-fns'
+import { subDays, startOfDay } from 'date-fns'
 import { isOffline } from '@/lib/network'
 import { buildLilyChatSystemPrompt, sendLilyChatMessage } from '@/lib/ai'
 import type { ChatMessageParam } from '@/lib/ai'
@@ -171,8 +171,9 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       }
 
       // Build recent completions with quest titles
+      const fromIso = startOfDay(subDays(now, 7)).toISOString()
       const recentCompletions = appState.completions
-        .filter((c) => !c.undoneAt && c.completedAt >= from)
+        .filter((c) => !c.undoneAt && c.completedAt >= fromIso)
         .slice(0, 10)
         .map((c) => ({
           questTitle: appState.quests.find((q) => q.id === c.questId)?.title ?? '不明なクエスト',

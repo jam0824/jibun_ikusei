@@ -1,5 +1,5 @@
 import { getDayKey } from '@/lib/date'
-import { subDays } from 'date-fns'
+import { subDays, startOfDay } from 'date-fns'
 import { getBrowsingTimes, getActivityLogs } from '@/lib/api-client'
 import type { ActivityLogEntry } from '@/lib/api-client'
 import { aggregateDomains, aggregateByCategory } from '@/lib/browsing-aggregator'
@@ -184,6 +184,15 @@ const PERIOD_LABELS: Record<string, string> = {
   month: '直近30日間',
 }
 
+/** ISO文字列同士の比較に使う開始日時を返す（ローカル日の00:00:00をISO形式で） */
+function getPeriodStartIso(period: string): string {
+  const now = new Date()
+  if (period === 'month') return startOfDay(subDays(now, 30)).toISOString()
+  if (period === 'week') return startOfDay(subDays(now, 6)).toISOString()
+  // today
+  return startOfDay(now).toISOString()
+}
+
 // ── get_browsing_times（既存） ──
 
 async function executeGetBrowsingTimes(args: Record<string, unknown>): Promise<string> {
@@ -309,8 +318,8 @@ function executeGetQuestData(args: Record<string, unknown>, context: ToolContext
     if (args.questId) filtered = filtered.filter((c) => c.questId === args.questId)
 
     if (args.period) {
-      const { from } = getDateRange(args.period as string)
-      filtered = filtered.filter((c) => c.completedAt >= from)
+      const fromIso = getPeriodStartIso(args.period as string)
+      filtered = filtered.filter((c) => c.completedAt >= fromIso)
     }
 
     // Sort newest first
@@ -399,8 +408,8 @@ async function executeGetMessagesAndLogs(args: Record<string, unknown>, context:
     if (args.triggerType) messages = messages.filter((m) => m.triggerType === args.triggerType)
 
     if (args.period) {
-      const { from } = getDateRange(args.period as string)
-      messages = messages.filter((m) => m.createdAt >= from)
+      const fromIso = getPeriodStartIso(args.period as string)
+      messages = messages.filter((m) => m.createdAt >= fromIso)
     }
 
     // Sort newest first
