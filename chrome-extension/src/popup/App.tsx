@@ -5,7 +5,11 @@ import { QuestList } from './components/QuestList'
 import { WeeklyReport } from './components/WeeklyReport'
 
 function getTodayString(): string {
-  return new Date().toISOString().split('T')[0]
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 export function App() {
@@ -13,17 +17,20 @@ export function App() {
   const [weeklyReport, setWeeklyReport] = useState<WeeklyReportType | null>(null)
 
   useEffect(() => {
-    // Initial load with date check
-    chrome.storage.local.get(['dailyProgress', 'weeklyReport']).then((result) => {
-      const data = result.dailyProgress as DailyProgressType | undefined
-      if (data && data.date === getTodayString()) {
-        setProgress(data)
-      }
-      const report = result.weeklyReport as WeeklyReportType | undefined
-      if (report && Date.now() - new Date(report.generatedAt).getTime() < 14 * 24 * 60 * 60 * 1000) {
-        setWeeklyReport(report)
-      }
-    })
+    // Ensure service worker has initialised today's progress, then load
+    chrome.runtime.sendMessage({ type: 'ENSURE_TODAY_PROGRESS' }).catch(() => {})
+      .finally(() => {
+        chrome.storage.local.get(['dailyProgress', 'weeklyReport']).then((result) => {
+          const data = result.dailyProgress as DailyProgressType | undefined
+          if (data && data.date === getTodayString()) {
+            setProgress(data)
+          }
+          const report = result.weeklyReport as WeeklyReportType | undefined
+          if (report && Date.now() - new Date(report.generatedAt).getTime() < 14 * 24 * 60 * 60 * 1000) {
+            setWeeklyReport(report)
+          }
+        })
+      })
 
     // Listen for storage changes
     const listener = (changes: Record<string, chrome.storage.StorageChange>) => {
