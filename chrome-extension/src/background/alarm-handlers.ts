@@ -5,7 +5,7 @@ import { sendToastToActiveTab } from '@ext/lib/notifications'
 import { timeAccumulator, syncQueue, classificationCache, apiClient } from './shared-instances'
 import { evaluateProgress } from './quest-evaluator'
 import { generateWeeklyReport } from './weekly-report-generator'
-import { logActivity, flushActivityLogs } from '@ext/lib/activity-logger'
+import { logActivity, flushActivityLogs, logError } from '@ext/lib/activity-logger'
 
 export function setupAlarms(): void {
   // Periodic sync every 5 minutes
@@ -43,7 +43,7 @@ async function handlePeriodicSync(): Promise<void> {
     if (!settings?.syncEnabled || !settings?.serverBaseUrl) return
 
     // 3. Sync browsing time data to backend
-    await syncBrowsingTimes().catch(() => {})
+    await syncBrowsingTimes().catch((err) => logError(err, 'alarm:sync-browsing-times').catch(() => {}))
 
     // 4. Flush activity logs to backend
     await flushActivityLogs(apiClient).catch(() => {})
@@ -63,8 +63,8 @@ async function handlePeriodicSync(): Promise<void> {
         await apiClient.postCompletion(req.body as Record<string, unknown>)
       }
     })
-  } catch {
-    // Will retry on next alarm
+  } catch (err) {
+    logError(err, 'alarm:periodic-sync').catch(() => {})
   }
 }
 

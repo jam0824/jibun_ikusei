@@ -39,6 +39,19 @@ export async function logActivity(
   await setLocal(STORAGE_KEY, buffer)
 }
 
+export async function logError(
+  err: unknown,
+  context: string = 'unknown',
+): Promise<void> {
+  const error = err instanceof Error ? err : new Error(String(err))
+  await logActivity('system.error', 'error', {
+    name: error.name,
+    message: error.message,
+    stack: error.stack ?? null,
+    context,
+  })
+}
+
 export async function flushActivityLogs(
   apiClient: ReturnType<typeof createApiClient>,
 ): Promise<void> {
