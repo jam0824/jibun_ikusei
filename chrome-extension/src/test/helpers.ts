@@ -52,6 +52,14 @@ export function createMockDailyProgress(overrides: Partial<DailyProgress> = {}):
   }
 }
 
+/** Create a mock authState with a valid (not-expired) JWT token */
+export function createMockAuthState(expiresInSeconds = 3600) {
+  const exp = Math.floor(Date.now() / 1000) + expiresInSeconds
+  const payload = btoa(JSON.stringify({ exp }))
+  const idToken = `header.${payload}.signature`
+  return { idToken, email: 'test@example.com', loggedInAt: new Date().toISOString() }
+}
+
 /** Get today's date string in YYYY-MM-DD format (local timezone) */
 export function todayString(): string {
   const now = new Date()

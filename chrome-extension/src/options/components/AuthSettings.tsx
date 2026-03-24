@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { login, logout, getStoredToken, isLoggedIn } from '@ext/lib/auth'
+import { login, logout, getStoredToken } from '@ext/lib/auth'
 
 interface Props {
   serverBaseUrl: string
