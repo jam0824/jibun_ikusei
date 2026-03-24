@@ -6,6 +6,7 @@ import { timeAccumulator, syncQueue, classificationCache, apiClient } from './sh
 import { evaluateProgress } from './quest-evaluator'
 import { generateWeeklyReport } from './weekly-report-generator'
 import { logActivity, flushActivityLogs, logError } from '@ext/lib/activity-logger'
+import { isLoggedIn } from '@ext/lib/auth'
 
 export function setupAlarms(): void {
   // Periodic sync every 5 minutes
@@ -38,9 +39,10 @@ async function handlePeriodicSync(): Promise<void> {
     // 1. Evaluate progress and generate quest events
     await evaluateAndEnqueue()
 
-    // 2. Only replay if sync is enabled and server URL is configured
+    // 2. Only replay if sync is enabled, server URL is configured, and user is logged in
     const settings = await getLocal<ExtensionSettings>('extensionSettings')
     if (!settings?.syncEnabled || !settings?.serverBaseUrl) return
+    if (!await isLoggedIn()) return
 
     // 3. Sync browsing time data to backend
     await syncBrowsingTimes().catch((err) => logError(err, 'alarm:sync-browsing-times').catch(() => {}))

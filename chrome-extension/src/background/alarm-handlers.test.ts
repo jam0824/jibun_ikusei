@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { setLocal } from '@ext/lib/storage'
-import { createMockDailyProgress } from '@ext/test/helpers'
+import { createMockDailyProgress, createMockAuthState } from '@ext/test/helpers'
 import { BROWSING_XP } from '@ext/types/browsing'
 
 // Mock fetch for API calls — track request bodies
@@ -33,6 +33,7 @@ describe('alarm-handlers', () => {
       })
       await setLocal('dailyProgress', progress)
       await setLocal('extensionSettings', { serverBaseUrl: 'https://test.example.com', syncEnabled: true })
+      await setLocal('authState', createMockAuthState())
       // 分類キャッシュをセット
       await setLocal('classificationCache', {
         'docs.example.com:/api': {
@@ -101,6 +102,7 @@ describe('alarm-handlers', () => {
       })
       await setLocal('dailyProgress', progress)
       await setLocal('extensionSettings', { serverBaseUrl: 'https://test.example.com', syncEnabled: true })
+      await setLocal('authState', createMockAuthState())
 
       const { handleAlarm } = await import('./alarm-handlers')
       await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
@@ -220,6 +222,7 @@ describe('alarm-handlers', () => {
         serverBaseUrl: 'https://test.example.com',
         syncEnabled: true,
       })
+      await setLocal('authState', createMockAuthState())
 
       const { handleAlarm } = await import('./alarm-handlers')
       await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
@@ -238,6 +241,23 @@ describe('alarm-handlers', () => {
         serverBaseUrl: 'https://test.example.com',
         syncEnabled: false,
       })
+
+      const { handleAlarm } = await import('./alarm-handlers')
+      await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
+
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it('ログインしていない場合はAPIを呼び出さない', async () => {
+      await setLocal('syncQueue', [
+        { path: '/completions', method: 'POST', body: { userXpAwarded: 5 }, enqueuedAt: '2026-01-01' },
+      ])
+      await setLocal('dailyProgress', createMockDailyProgress())
+      await setLocal('extensionSettings', {
+        serverBaseUrl: 'https://test.example.com',
+        syncEnabled: true,
+      })
+      // authStateを設定しない → 未ログイン状態
 
       const { handleAlarm } = await import('./alarm-handlers')
       await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
@@ -270,6 +290,7 @@ describe('alarm-handlers', () => {
         serverBaseUrl: 'https://test.example.com',
         syncEnabled: true,
       })
+      await setLocal('authState', createMockAuthState())
 
       const { handleAlarm } = await import('./alarm-handlers')
       await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
