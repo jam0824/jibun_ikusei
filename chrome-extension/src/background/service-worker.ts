@@ -3,6 +3,15 @@ import type { TabElapsedResult } from './tab-tracker'
 import { setupAlarms, handleAlarm } from './alarm-handlers'
 import { getTabClassification, setupMessageListener } from './message-handler'
 import { recordElapsed } from './record-elapsed'
+import { logError } from '@ext/lib/activity-logger'
+
+self.addEventListener('error', (event) => {
+  logError(event.error ?? event.message, 'service-worker:error').catch(() => {})
+})
+
+self.addEventListener('unhandledrejection', (event) => {
+  logError(event.reason, 'service-worker:unhandledrejection').catch(() => {})
+})
 
 const tabTracker = new TabTracker()
 

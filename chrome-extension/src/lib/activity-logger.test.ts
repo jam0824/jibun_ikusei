@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { logActivity, flushActivityLogs } from './activity-logger'
+import { logActivity, flushActivityLogs, logError } from './activity-logger'
 import { getLocal, setLocal } from '@ext/lib/storage'
 
 describe('activity-logger', () => {
@@ -38,6 +38,43 @@ describe('activity-logger', () => {
       await logActivity('test', 'test')
       const buffer = await getLocal<Array<{ details: unknown }>>('activityLogBuffer')
       expect(buffer![0].details).toEqual({})
+    })
+  })
+
+  describe('logError', () => {
+    it('Errorオブジェクトをerrorカテゴリとしてバッファに追加する', async () => {
+      await logError(new Error('something went wrong'), 'test-context')
+      const buffer = await getLocal<unknown[]>('activityLogBuffer')
+      expect(buffer).toHaveLength(1)
+      expect(buffer![0]).toEqual(expect.objectContaining({
+        action: 'system.error',
+        category: 'error',
+        source: 'chrome-extension',
+      }))
+    })
+
+    it('detailsにname・message・stack・contextが含まれる', async () => {
+      const err = new Error('test error')
+      await logError(err, 'alarm:sync')
+      const buffer = await getLocal<Array<{ details: Record<string, unknown> }>>('activityLogBuffer')
+      expect(buffer![0].details).toMatchObject({
+        name: 'Error',
+        message: 'test error',
+        context: 'alarm:sync',
+      })
+      expect(buffer![0].details.stack).toBeTypeOf('string')
+    })
+
+    it('文字列エラーをErrorに変換してバッファに追加する', async () => {
+      await logError('string error', 'test-context')
+      const buffer = await getLocal<Array<{ details: Record<string, unknown> }>>('activityLogBuffer')
+      expect(buffer![0].details.message).toBe('string error')
+    })
+
+    it('contextが省略された場合unknownを使う', async () => {
+      await logError(new Error('oops'))
+      const buffer = await getLocal<Array<{ details: Record<string, unknown> }>>('activityLogBuffer')
+      expect(buffer![0].details.context).toBe('unknown')
     })
   })
 
