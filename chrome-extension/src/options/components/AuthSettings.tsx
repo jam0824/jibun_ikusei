@@ -1,11 +1,35 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { login, logout, getStoredToken } from '@ext/lib/auth'
+
+type ConnectionStatus =
+  | { type: 'ok' }
+  | { type: 'unauthorized' }
+  | { type: 'error'; message: string }
+  | { type: 'no_url' }
 
 interface Props {
   serverBaseUrl: string
   authToken?: string
   syncEnabled: boolean
   onSave: (serverBaseUrl: string, authToken: string) => void
+}
+
+function connectionStatusMessage(status: ConnectionStatus): string {
+  switch (status.type) {
+    case 'ok': return '接続OK: サーバーと正常に通信できています'
+    case 'unauthorized': return 'サーバーには接続できていますが、ログインが必要です'
+    case 'error': return `サーバーに接続できません (${status.message})`
+    case 'no_url': return 'サーバーURLを入力してください'
+  }
+}
+
+function connectionStatusStyle(status: ConnectionStatus): React.CSSProperties {
+  switch (status.type) {
+    case 'ok': return { color: '#2e7d32' }
+    case 'unauthorized': return { color: '#e65100' }
+    case 'error':
+    case 'no_url': return { color: '#c62828' }
+  }
 }
 
 export function AuthSettings({ serverBaseUrl, syncEnabled, onSave }: Props) {
@@ -16,6 +40,8 @@ export function AuthSettings({ serverBaseUrl, syncEnabled, onSave }: Props) {
   const [loggedInEmail, setLoggedInEmail] = useState('')
   const [loggingIn, setLoggingIn] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [checking, setChecking] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus | null>(null)
 
   useEffect(() => {
     checkLoginState()
@@ -81,6 +107,32 @@ export function AuthSettings({ serverBaseUrl, syncEnabled, onSave }: Props) {
     onSave(url.trim(), '')
   }
 
+  const handleCheckConnection = async () => {
+    if (!url.trim()) {
+      setConnectionStatus({ type: 'no_url' })
+      return
+    }
+    setChecking(true)
+    setConnectionStatus(null)
+    try {
+      const token = await getStoredToken()
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+      if (token) headers['Authorization'] = `Bearer ${token}`
+      const res = await fetch(`${url.trim()}/user`, { headers })
+      if (res.ok) {
+        setConnectionStatus({ type: 'ok' })
+      } else if (res.status === 401) {
+        setConnectionStatus({ type: 'unauthorized' })
+      } else {
+        setConnectionStatus({ type: 'error', message: `HTTP ${res.status}` })
+      }
+    } catch {
+      setConnectionStatus({ type: 'error', message: 'ネットワークエラー' })
+    } finally {
+      setChecking(false)
+    }
+  }
+
   return (
     <div>
       <h3>サーバー接続設定</h3>
@@ -107,9 +159,19 @@ export function AuthSettings({ serverBaseUrl, syncEnabled, onSave }: Props) {
           style={{ width: '100%', padding: 6, marginTop: 4 }}
           placeholder="https://api.example.com"
         />
-        <button onClick={handleSaveUrl} style={{ marginTop: 4, padding: '4px 12px' }}>
-          URL保存
-        </button>
+        <div style={{ marginTop: 4, display: 'flex', gap: 8 }}>
+          <button onClick={handleSaveUrl} style={{ padding: '4px 12px' }}>
+            URL保存
+          </button>
+          <button onClick={handleCheckConnection} disabled={checking} style={{ padding: '4px 12px' }}>
+            {checking ? '確認中...' : '疎通確認'}
+          </button>
+        </div>
+        {connectionStatus && (
+          <div style={{ marginTop: 6, fontSize: 13, ...connectionStatusStyle(connectionStatus) }}>
+            {connectionStatusMessage(connectionStatus)}
+          </div>
+        )}
       </div>
 
       <h3>ログイン</h3>
