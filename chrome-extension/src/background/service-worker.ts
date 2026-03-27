@@ -86,6 +86,34 @@ export async function recoverClassifications(): Promise<void> {
 }
 recoverClassifications()
 
+// On service worker startup, resume tracking for the currently active tab.
+// When Chrome terminates and restarts the SW, tabTracker loses its state.
+// Without this, browsing time is not recorded until the next tab/URL event.
+export async function recoverTabTracking(): Promise<void> {
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (tab?.id && tab.url?.startsWith('http')) {
+      tabTracker.onWindowFocus(tab.id, tab.url)
+    }
+  } catch {
+    // Ignore — tabs API may fail during startup
+  }
+}
+recoverTabTracking()
+
+// Popup requests a flush before reading progress, so displayed time is up-to-date
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message.type !== 'FLUSH_AND_GET_PROGRESS') return
+  ;(async () => {
+    const result = tabTracker.flush()
+    await handleElapsed(result)
+    const { timeAccumulator } = await import('./shared-instances')
+    await timeAccumulator.getDailyProgress()
+    sendResponse({ ok: true })
+  })().catch(() => sendResponse({ ok: false }))
+  return true
+})
+
 // Periodic flush via alarm (every 30 seconds)
 chrome.alarms.create('flush-tracker', { periodInMinutes: 0.5 })
 

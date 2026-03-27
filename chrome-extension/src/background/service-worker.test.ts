@@ -48,3 +48,41 @@ describe('recoverClassifications', () => {
     await expect(recoverClassifications()).resolves.toBeUndefined()
   })
 })
+
+describe('recoverTabTracking', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  it('HTTPタブが存在する場合エラーなく完了する', async () => {
+    vi.mocked(chrome.tabs.query).mockResolvedValue([
+      { id: 1, url: 'https://www.youtube.com/' } as chrome.tabs.Tab,
+    ])
+
+    const { recoverTabTracking } = await import('./service-worker')
+    await expect(recoverTabTracking()).resolves.toBeUndefined()
+  })
+
+  it('chrome://タブは無視してエラーにならない', async () => {
+    vi.mocked(chrome.tabs.query).mockResolvedValue([
+      { id: 2, url: 'chrome://extensions/' } as chrome.tabs.Tab,
+    ])
+
+    const { recoverTabTracking } = await import('./service-worker')
+    await expect(recoverTabTracking()).resolves.toBeUndefined()
+  })
+
+  it('アクティブタブが存在しない場合はスキップする', async () => {
+    vi.mocked(chrome.tabs.query).mockResolvedValue([])
+
+    const { recoverTabTracking } = await import('./service-worker')
+    await expect(recoverTabTracking()).resolves.toBeUndefined()
+  })
+
+  it('tabs.queryが失敗してもエラーにならない', async () => {
+    vi.mocked(chrome.tabs.query).mockRejectedValue(new Error('tabs API error'))
+
+    const { recoverTabTracking } = await import('./service-worker')
+    await expect(recoverTabTracking()).resolves.toBeUndefined()
+  })
+})

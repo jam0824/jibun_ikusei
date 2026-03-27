@@ -9,6 +9,16 @@ describe('Popup App', () => {
     vi.clearAllMocks()
   })
 
+  it('ポップアップ表示時にFLUSH_AND_GET_PROGRESSメッセージを送信する', async () => {
+    await setLocal('dailyProgress', createMockDailyProgress({ date: todayString() }))
+
+    await act(async () => {
+      render(<App />)
+    })
+
+    expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'FLUSH_AND_GET_PROGRESS' })
+  })
+
   it('今日のDailyProgressがある場合に進捗を表示する', async () => {
     const progress = createMockDailyProgress({
       date: todayString(),
