@@ -17,8 +17,8 @@ export function App() {
   const [weeklyReport, setWeeklyReport] = useState<WeeklyReportType | null>(null)
 
   useEffect(() => {
-    // Ensure service worker has initialised today's progress, then load
-    chrome.runtime.sendMessage({ type: 'ENSURE_TODAY_PROGRESS' }).catch(() => {})
+    // Flush current tab's elapsed time before reading, so displayed time is up-to-date
+    chrome.runtime.sendMessage({ type: 'FLUSH_AND_GET_PROGRESS' }).catch(() => {})
       .finally(() => {
         chrome.storage.local.get(['dailyProgress', 'weeklyReport']).then((result) => {
           const data = result.dailyProgress as DailyProgressType | undefined
