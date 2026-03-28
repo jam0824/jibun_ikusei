@@ -113,6 +113,15 @@ def build_lily_system_prompt(
             "- get_messages_and_logs: 過去のメッセージ(type=assistant_messages)、"
             "AI設定(type=ai_config)、操作ログ(type=activity_logs)、"
             "チャット履歴(type=chat_sessions/chat_messages)",
+            "",
+            "【レスポンス形式】",
+            "必ず以下のJSON形式で回答してください。他の文章は不要です。",
+            '{"text": "セリフ", "pose_category": "カテゴリ名"}',
+            "",
+            "pose_categoryには以下のいずれかを指定してください:",
+            "default(通常), joy(喜び), anger(怒り), sad(哀しみ), fun(楽しい),",
+            "shy(照れ), worried(悩み), surprised(驚き),",
+            "proud(得意), caring(気遣い), serious(真剣), sleepy(眠い), playful(いたずら)",
         ]
     )
 

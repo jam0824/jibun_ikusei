@@ -118,14 +118,35 @@
 
 ---
 
-## Phase 6: ポーズ生成 — 未実装
+## Phase 6: ポーズ生成システム — 完了
 
 > 仕様: セクション8
 
-- [ ] `pose/pose_generator.py` gpt-image-1.5での新規ポーズ生成
-- [ ] キャラクターシート参照での生成
-- [ ] 生成画像の透過背景処理
-- [ ] 対応関係ファイルへの自動追記
+### 6-1. AIレスポンスのJSON形式統一
+- [x] 通常会話（`chat_engine.py`）のレスポンスをJSON形式に変更: `{"text": "...", "pose_category": "joy"}`
+- [x] 自動雑談（`auto_conversation.py`）のpose_hintをpose_categoryに変更
+- [x] リリィ用システムプロンプトにカテゴリ一覧（13種）を記載
+- [x] 葉留佳用システムプロンプトにカテゴリ一覧（共通8種）を記載
+
+### 6-2. ポーズマップ更新
+- [x] `pose/lily_pose_map.json` をカテゴリベースに書き換え（カテゴリ→ファイル名リスト）
+- [x] `pose/haruka_pose_map.json` を共通8カテゴリにリマッピング
+- [x] `pose/pose_manager.py` をカテゴリベースの選択ロジックに書き換え
+- [x] カテゴリ内の複数枚からランダム or 順番に選択
+
+### 6-3. ポーズ生成（リリィのみ）
+- [x] `pose/pose_generator.py` gpt-image-1.5でのポーズ画像生成
+- [x] キャラクターシート（`lily_character_sheet.png`）参照での生成
+- [x] 腰から上の構図で生成
+- [x] 生成画像の透過背景処理（API側で`background: transparent`指定）
+- [x] 生成画像を`lily_images/`に保存 + `lily_pose_map.json`に自動追記
+- [x] 各カテゴリ5種まで生成（合計65枚）、揃ったら生成しない
+- [x] AI応答時にバックグラウンドで不足ポーズを自動生成（`main.py`で`ensure_pose()`呼び出し）
+
+### 6-4. ポーズカテゴリ定義
+- 共通（8種）: default, joy, anger, sad, fun, shy, worried, surprised
+- リリィ専用（5種）: proud, caring, serious, sleepy, playful
+- 葉留佳はリリィ専用カテゴリ指定時、近い共通カテゴリにフォールバック
 
 ---
 
@@ -172,7 +193,7 @@
 | 5. デスクトップ状況システム | 画面判定、スクリーンショット解析、状況要約 | **実装済み** (Phase 4) |
 | 6. 雑談システム | Wikimedia / Annict / 画面状況の種管理 | **実装済み** (Phase 4) |
 | 7. データ管理 | DB保存、Web連携、雑談種履歴管理 | **一部実装** (Phase 3, Phase 4未着手) |
-| 8. ポーズ生成 | gpt-image-1.5生成、対応表管理 | 未実装 (Phase 6) |
+| 8. ポーズ生成 | gpt-image-1.5生成、対応表管理 | **実装済み** (Phase 6) |
 | 9. 相方システム | 葉留佳の立ち絵・設定管理 | **実装済み** (Phase 1, 5) |
 | 10. カメラ | 定期撮影、AI分析、話しかけ | 未実装 (Phase 9) |
 | 11. 音声合成 | VOICEVOX TTS | 未実装 (Phase 8) |

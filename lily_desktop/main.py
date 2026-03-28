@@ -17,6 +17,7 @@ from core.config import load_config
 from core.desktop_context import DesktopContext, fetch_desktop_context, format_context_log
 from core.event_bus import bus
 from data.session_manager import SessionManager
+from pose.pose_generator import ensure_pose
 from pose.pose_manager import PoseManager
 from ui.main_window import MainWindow
 from ui.tray_icon import TrayIcon
@@ -114,15 +115,29 @@ class App:
             logger.exception("デスクトップ状況取得に失敗")
             bus.balloon_show.emit("リリィ", "[デバッグ] 状況取得に失敗しちゃった…")
 
-    def _on_ai_response(self, speaker: str, text: str, pose_hint: str) -> None:
+    def _on_ai_response(self, speaker: str, text: str, pose_category: str) -> None:
         bus.balloon_show.emit(speaker, text)
         # ポーズ変更
         if speaker == "リリィ":
-            path = self.pose_mgr.select_lily_pose(pose_hint)
+            path = self.pose_mgr.select_lily_pose(pose_category)
             bus.pose_change.emit("lily", str(path))
+            # 不足ポーズの自動生成をバックグラウンドで実行
+            asyncio.ensure_future(self._ensure_lily_pose(pose_category))
         elif speaker in ("葉留佳", "はるちん", "はるか"):
-            path = self.pose_mgr.select_haruka_pose(pose_hint)
+            path = self.pose_mgr.select_haruka_pose(pose_category)
             bus.pose_change.emit("haruka", str(path))
+
+    async def _ensure_lily_pose(self, category: str) -> None:
+        """リリィのポーズが不足していれば1枚生成する"""
+        try:
+            await ensure_pose(
+                api_key=self.config.openai.api_key,
+                model=self.config.openai.image_model,
+                category=category,
+                pose_mgr=self.pose_mgr,
+            )
+        except Exception:
+            logger.warning("ポーズ自動生成に失敗: category=%s", category)
 
 
 async def async_init(app_instance: App) -> None:

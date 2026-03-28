@@ -44,7 +44,12 @@ _LILY_SYSTEM = """\
 - 毎回相手の名前を呼ばないこと。実際の会話のように、名前は時々だけ使うこと
 
 以下のJSON形式で回答してください。他の文章は不要です。
-{{"text": "リリィのセリフ", "pose_hint": "happy"}}
+{{"text": "リリィのセリフ", "pose_category": "カテゴリ名"}}
+
+pose_categoryには以下のいずれかを指定してください:
+default(通常), joy(喜び), anger(怒り), sad(哀しみ), fun(楽しい),
+shy(照れ), worried(悩み), surprised(驚き),
+proud(得意), caring(気遣い), serious(真剣), sleepy(眠い), playful(いたずら)
 """
 
 _HARUKA_SYSTEM = """\
@@ -60,7 +65,11 @@ _HARUKA_SYSTEM = """\
 毎回相手の名前を呼ばないこと。実際の会話のように、名前は時々だけ使うこと。
 
 以下のJSON形式で回答してください。他の文章は不要です。
-{{"text": "葉留佳のセリフ", "pose_hint": "excited"}}
+{{"text": "葉留佳のセリフ", "pose_category": "カテゴリ名"}}
+
+pose_categoryには以下のいずれかを指定してください:
+default(通常), joy(喜び), anger(怒り), sad(哀しみ), fun(楽しい),
+shy(照れ), worried(悩み), surprised(驚き)
 """
 
 
@@ -274,7 +283,7 @@ class AutoConversation:
 
 
 def _parse_talk_response(raw: str) -> tuple[str, str]:
-    """AIの雑談レスポンスをパースして (text, pose_hint) を返す"""
+    """AIの雑談レスポンスをパースして (text, pose_category) を返す"""
     cleaned = raw.strip()
     if cleaned.startswith("```"):
         lines = cleaned.split("\n")
@@ -284,8 +293,8 @@ def _parse_talk_response(raw: str) -> tuple[str, str]:
     try:
         data = json.loads(cleaned)
         text = data.get("text", "")
-        pose_hint = data.get("pose_hint", "default")
-        return text, pose_hint
+        pose_category = data.get("pose_category", "default")
+        return text, pose_category
     except json.JSONDecodeError:
         logger.warning("雑談レスポンスのJSONパース失敗: %s", raw[:100])
         return raw.strip()[:200], "default"
