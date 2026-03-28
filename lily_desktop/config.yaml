@@ -6,6 +6,9 @@ openai:
   image_model: "gpt-image-1.5"
   screen_analysis_model: "gpt-5.4"  # スクリーンショット解析AIモデル
 
+chat:
+  auto_talk_interval_minutes: 15  # 自動雑談の間隔（分）
+
 display:
   lily_scale: 0.3      # リリィ画像の縮小率 (1024x1536 -> 約307x461)
-  haruka_scale: 0.7    # 葉留佳画像の縮小率 (396x600 -> 約277x420)
+  haruka_scale: 0.65    # 葉留佳画像の縮小率 (396x600 -> 約277x420)

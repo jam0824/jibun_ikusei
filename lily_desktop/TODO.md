@@ -75,7 +75,7 @@
 
 ---
 
-## Phase 4: デスクトップ状況 + 雑談システム — 未実装
+## Phase 4: デスクトップ状況 + 雑談システム — 完了
 
 > 仕様: セクション5, 6
 
@@ -95,12 +95,13 @@
 - [x] 状況要約をログ出力 + 吹き出しにデバッグ表示
 
 ### 4-3. 雑談の種管理
-- [ ] `ai/talk_seed_manager.py` 雑談の種カード生成・優先度判定
-- [ ] `ai/wikimedia_client.py` Wikimedia Feed API 連携
-- [ ] `ai/annict_client.py` Annict API 連携
-- [ ] デスクトップ状況 / Wikimedia / Annict の優先順位制御
-- [ ] 雑談の種のクールダウン・使用履歴管理
-- [ ] デスクトップ状況と外部話題の橋渡しロジック
+- [x] `ai/talk_seed.py` 雑談の種カード生成・優先度判定
+- [x] `ai/wikimedia_client.py` Wikimedia Feed API 連携
+- [x] `ai/annict_client.py` Annict API 連携
+- [x] デスクトップ状況 / Wikimedia / Annict の優先順位制御
+- [x] 雑談の種のクールダウン・使用履歴管理（30分、直近10件）
+- [x] `ai/auto_conversation.py` タイマー駆動の自動雑談（リリィ→葉留佳の掛け合い）
+- [x] 右クリック「デバッグ」→「雑談を発火」で手動実行可能
 
 ---
 
@@ -166,8 +167,8 @@
 | 2. 表示・UI | 透過ウィンドウ、吹き出し、入力UI | **実装済み** (Phase 1-2) |
 | 3. 会話 | テキスト会話、Tool Search | **実装済み** (Phase 3) |
 | 4. 音声入力 | VAD + Google STT | 未実装 (Phase 7) |
-| 5. デスクトップ状況システム | 画面判定、スクリーンショット解析、状況要約 | 未実装 (Phase 4) |
-| 6. 雑談システム | Wikimedia / Annict / 画面状況の種管理 | 未実装 (Phase 4) |
+| 5. デスクトップ状況システム | 画面判定、スクリーンショット解析、状況要約 | **実装済み** (Phase 4) |
+| 6. 雑談システム | Wikimedia / Annict / 画面状況の種管理 | **実装済み** (Phase 4) |
 | 7. データ管理 | DB保存、Web連携、雑談種履歴管理 | **一部実装** (Phase 3, Phase 4未着手) |
 | 8. ポーズ生成 | gpt-image-1.5生成、対応表管理 | 未実装 (Phase 6) |
 | 9. 相方システム | 葉留佳の立ち絵・設定管理 | **一部実装** (Phase 1, Phase 5未着手) |

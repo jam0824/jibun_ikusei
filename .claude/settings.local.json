@@ -41,7 +41,9 @@
       "Bash(find D:codes自分育成アプリ -maxdepth 3 -name *.py -type f)",
       "Bash(uv add:*)",
       "Bash(mkdir -p core ui ai pose api data)",
-      "Bash(touch core/__init__.py ui/__init__.py ai/__init__.py pose/__init__.py api/__init__.py data/__init__.py)"
+      "Bash(touch core/__init__.py ui/__init__.py ai/__init__.py pose/__init__.py api/__init__.py data/__init__.py)",
+      "WebFetch(domain:api.wikimedia.org)",
+      "WebFetch(domain:docs.annict.com)"
     ]
   }
 }

@@ -34,3 +34,6 @@ __pycache__/
 aikata_images/
 lily_images/
 sys_images/
+
+# experiment
+experiment/flame_qt

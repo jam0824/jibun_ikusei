@@ -7,6 +7,7 @@ import sys
 import qasync
 from PySide6.QtWidgets import QApplication
 
+from ai.auto_conversation import AutoConversation
 from ai.chat_engine import ChatEngine
 from ai.tool_definitions import CHAT_TOOLS
 from ai.tool_executor import ToolExecutor
@@ -43,6 +44,7 @@ class App:
             self.config, self.api_client, self.session_mgr
         )
         self.chat_engine.set_tools(CHAT_TOOLS, self.tool_executor.execute)
+        self.auto_conversation = AutoConversation(self.config, self.session_mgr)
 
     def connect_signals(self, window: MainWindow) -> None:
         """イベントバスとUIの配線"""
@@ -56,8 +58,9 @@ class App:
         # AI応答 → 吹き出し表示 + ポーズ変更
         bus.ai_response_ready.connect(self._on_ai_response)
 
-        # デスクトップ状況（デバッグ用）
+        # デバッグ
         bus.desktop_context_requested.connect(self._on_desktop_context_requested)
+        bus.auto_talk_requested.connect(self._on_auto_talk_requested)
 
     def _on_user_message(self, text: str) -> None:
         asyncio.ensure_future(self.chat_engine.handle_user_message(text))
@@ -69,6 +72,9 @@ class App:
         await self.session_mgr.create_new_session()
         self.chat_engine._history.clear()
         bus.balloon_show.emit("リリィ", "新しい会話を始めるね！")
+
+    def _on_auto_talk_requested(self) -> None:
+        self.auto_conversation.trigger_now()
 
     def _on_desktop_context_requested(self) -> None:
         asyncio.ensure_future(self._fetch_and_show_desktop_context())
@@ -128,6 +134,9 @@ async def async_init(app_instance: App) -> None:
             logger.exception("初期化中にエラー（認証またはセッション読み込み失敗）")
     else:
         logger.warning("Cognito認証情報が未設定です。config.yamlを確認してください。")
+
+    # 自動雑談タイマーを開始
+    app_instance.auto_conversation.start()
 
 
 def main() -> None:
