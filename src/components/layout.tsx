@@ -38,7 +38,7 @@ export function AppHeader({
         </div>
         <div className="flex items-center gap-2">
           <NavLink to="/lily" aria-label="リリィと話す">
-            <img src="/lily/face.png" alt="リリィ" className="h-10 w-10 rounded-full object-cover" />
+            <img src={`${import.meta.env.BASE_URL}lily/face.png`} alt="リリィ" className="h-10 w-10 rounded-full object-cover" />
           </NavLink>
           {action}
         </div>
