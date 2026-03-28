@@ -10,6 +10,7 @@ from core.event_bus import bus
 from ui.balloon_widget import BalloonWidget
 from ui.character_widget import CharacterWidget
 from ui.input_widget import InputWidget
+from ui.mic_button import MicButton
 from ui.user_balloon_widget import UserBalloonWidget
 
 # ドラッグ判定の閾値（ピクセル）— これ以上動いたらドラッグとみなす
@@ -80,6 +81,8 @@ class MainWindow(QWidget):
         self.input_widget = InputWidget(self)
         # ユーザー発言の吹き出し（入力ボックスの上に表示）
         self.user_balloon = UserBalloonWidget(self)
+        # マイクON/OFFボタン（キャラクター付近に常時表示）
+        self.mic_button = MicButton(self)
 
     def _connect_signals(self) -> None:
         bus.balloon_show.connect(self._on_balloon_show)
@@ -184,12 +187,22 @@ class MainWindow(QWidget):
             if self.y() != new_y:
                 self.move(self.x(), new_y)
         self._position_input_widget()
+        self._position_mic_button()
+
+    def _position_mic_button(self) -> None:
+        """マイクボタンをウィンドウ右下（キャラクターの足元付近）に配置"""
+        btn = self.mic_button
+        x = self.width() - btn.width() - 4
+        y = self.height() - btn.height() - 4
+        btn.move(x, y)
+        btn.raise_()
 
     def _position_input_widget(self) -> None:
-        """入力ウィジェットをウィンドウ右下にオーバーレイ配置"""
+        """入力ウィジェットをマイクボタンの上にオーバーレイ配置"""
         iw = self.input_widget
+        btn = self.mic_button
         x = self.width() - iw.width()
-        y = self.height() - iw.sizeHint().height() - 8
+        y = self.height() - iw.sizeHint().height() - btn.height() - 12
         iw.move(x, y)
         self._position_user_balloon()
 

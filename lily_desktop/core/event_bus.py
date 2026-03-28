@@ -20,6 +20,7 @@ class EventBus(QObject):
 
     # 音声入力
     voice_toggle_requested = Signal()       # ON/OFFトグル要求
+    voice_state_changed = Signal(bool)      # マイク状態変更通知 (is_running)
     voice_device_selected = Signal(int, str)  # マイク選択 (device_index, device_name)
 
     # 音声合成
