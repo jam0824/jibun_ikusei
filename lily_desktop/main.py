@@ -51,8 +51,7 @@ class App:
 
     def connect_signals(self, window: MainWindow) -> None:
         """イベントバスとUIの配線"""
-        # ユーザーメッセージ → AI会話（Phase 2のエコー表示を上書き）
-        bus.user_message_received.disconnect(window._on_user_message)
+        # ユーザーメッセージ → AI会話（window側の吹き出し表示も残す）
         bus.user_message_received.connect(self._on_user_message)
 
         # 新しい会話

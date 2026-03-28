@@ -1,23 +1,30 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QMenu, QVBoxLayout, QWidget
 
-from core.config import AppConfig
+from core.config import AppConfig, save_window_position
 from core.constants import HARUKA_DEFAULT_IMAGE, LILY_DEFAULT_IMAGE
 from core.event_bus import bus
 from ui.balloon_widget import BalloonWidget
 from ui.character_widget import CharacterWidget
 from ui.input_widget import InputWidget
+from ui.user_balloon_widget import UserBalloonWidget
+
+# ドラッグ判定の閾値（ピクセル）— これ以上動いたらドラッグとみなす
+_DRAG_THRESHOLD = 5
 
 
 class MainWindow(QWidget):
-    """透過フレームレスウィンドウ — デスクトップ右下にキャラクターを表示"""
+    """透過フレームレスウィンドウ — デスクトップにキャラクターを表示"""
 
     def __init__(self, config: AppConfig):
         super().__init__()
         self._config = config
+        self._drag_start: QPoint | None = None
+        self._drag_offset: QPoint | None = None
+        self._is_dragging = False
 
         # ウィンドウ設定: フレームレス、最前面、透過、タスクバー非表示
         self.setWindowFlags(
@@ -29,7 +36,7 @@ class MainWindow(QWidget):
 
         self._init_ui()
         self._connect_signals()
-        self._position_bottom_right()
+        self._restore_position()
         self.input_widget.raise_()
 
     def _init_ui(self) -> None:
@@ -70,11 +77,12 @@ class MainWindow(QWidget):
 
         # テキスト入力（レイアウト外でキャラクターに重ねて表示）
         self.input_widget = InputWidget(self)
+        # ユーザー発言の吹き出し（入力ボックスの上に表示）
+        self.user_balloon = UserBalloonWidget(self)
 
     def _connect_signals(self) -> None:
         bus.balloon_show.connect(self._on_balloon_show)
         bus.balloon_hide.connect(self.balloon.hide)
-        # ユーザーメッセージ送信時のエコー表示（Phase 3でAI応答に置き換え）
         bus.user_message_received.connect(self._on_user_message)
 
     def _on_balloon_show(self, speaker: str, text: str) -> None:
@@ -88,13 +96,25 @@ class MainWindow(QWidget):
                 self.balloon, Qt.AlignmentFlag.AlignRight
             )
         self.balloon.show_message(speaker, text)
-        self._position_bottom_right()
 
     def _on_user_message(self, text: str) -> None:
-        # フォールバック: AI未接続時のみ使われる（main.pyのAppで上書きされる）
-        pass
+        # ユーザー発言を吹き出しに表示
+        self.user_balloon.show_message(text)
+        self._position_user_balloon()
 
-    def _position_bottom_right(self) -> None:
+    # --- ウィンドウ位置の保存・復元 ---
+
+    def _restore_position(self) -> None:
+        """保存済み位置があればそこに、なければ画面右下に配置する。"""
+        self.adjustSize()
+        dc = self._config.display
+        if dc.window_x is not None and dc.window_y is not None:
+            self.move(dc.window_x, dc.window_y)
+        else:
+            self._position_default()
+
+    def _position_default(self) -> None:
+        """デフォルト位置: プライマリスクリーンの右下。"""
         screen = QApplication.primaryScreen()
         if screen is None:
             return
@@ -103,6 +123,47 @@ class MainWindow(QWidget):
         x = geo.right() - self.width()
         y = geo.bottom() - self.height()
         self.move(x, y)
+
+    def _save_position(self) -> None:
+        """現在のウィンドウ位置を config.yaml に保存する。"""
+        pos = self.pos()
+        self._config.display.window_x = pos.x()
+        self._config.display.window_y = pos.y()
+        save_window_position(pos.x(), pos.y())
+
+    # --- ドラッグ移動 ---
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._drag_start = event.globalPosition().toPoint()
+            self._drag_offset = self._drag_start - self.pos()
+            self._is_dragging = False
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._drag_start is not None and event.buttons() & Qt.MouseButton.LeftButton:
+            current = event.globalPosition().toPoint()
+            delta = current - self._drag_start
+            if not self._is_dragging and (abs(delta.x()) > _DRAG_THRESHOLD or abs(delta.y()) > _DRAG_THRESHOLD):
+                self._is_dragging = True
+            if self._is_dragging and self._drag_offset is not None:
+                self.move(current - self._drag_offset)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            if self._is_dragging:
+                # ドラッグ終了 → 位置を保存
+                self._save_position()
+            else:
+                # クリック → 入力バートグル
+                self.input_widget.toggle()
+            self._drag_start = None
+            self._drag_offset = None
+            self._is_dragging = False
+        super().mouseReleaseEvent(event)
+
+    # --- レイアウト ---
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -114,11 +175,15 @@ class MainWindow(QWidget):
         x = self.width() - iw.width()
         y = self.height() - iw.sizeHint().height() - 8
         iw.move(x, y)
+        self._position_user_balloon()
 
-    def mousePressEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton:
-            self.input_widget.toggle()
-        super().mousePressEvent(event)
+    def _position_user_balloon(self) -> None:
+        """ユーザー吹き出しを入力ウィジェットの上に配置"""
+        ub = self.user_balloon
+        iw = self.input_widget
+        x = self.width() - ub.width()
+        y = iw.y() - ub.height() - 4
+        ub.move(x, y)
 
     def contextMenuEvent(self, event) -> None:
         menu = QMenu(self)
