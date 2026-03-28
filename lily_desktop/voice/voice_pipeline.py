@@ -1,4 +1,4 @@
-"""音声入力パイプライン — マイク → VAD → STT → イベント発火"""
+"""音声入力パイプライン — マイク → VAD → (話者照合) → STT → イベント発火"""
 
 from __future__ import annotations
 
@@ -9,7 +9,6 @@ import threading
 from core.config import VoiceConfig
 from core.event_bus import bus
 from voice.audio_capture import AudioCapture, find_device_index
-from voice.vad import _compute_rms
 from voice.speech_recognizer import SpeechRecognizer
 from voice.vad import VadGate
 
@@ -17,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class VoicePipeline:
-    """マイク入力 → VAD → Google STT → bus.user_message_received の統合パイプライン"""
+    """マイク入力 → VAD → (話者照合) → Google STT → bus.user_message_received の統合パイプライン"""
 
     def __init__(self, config: VoiceConfig, loop: asyncio.AbstractEventLoop):
         self._config = config
@@ -44,6 +43,20 @@ class VoicePipeline:
         )
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+
+        # 話者照合プロファイルの読み込み（有効時のみ）
+        self._speaker_profile = None
+        if config.speaker_verification_enabled:
+            from voice.speaker_verifier import load_profile
+            self._speaker_profile = load_profile(
+                config.speaker_profile_path,
+                threshold=config.speaker_verification_threshold,
+            )
+            if self._speaker_profile is None:
+                logger.warning(
+                    "話者プロファイルの読み込みに失敗。話者照合を無効化します。"
+                    " enroll_speaker.py を実行してプロファイルを作成してください。"
+                )
 
     @property
     def is_running(self) -> bool:
@@ -101,19 +114,15 @@ class VoicePipeline:
             # 最初のフレーム受信をログ出力（マイクからデータが来ているか確認）
             if frame_count == 1:
                 logger.info("マイクからフレーム受信開始 (%d bytes)", len(frame))
-            # 1秒ごとに音量をログ出力（閾値調整用）
-            if frame_count % 33 == 0:
-                rms = _compute_rms(frame)
-                logger.info("RMS: %d (閾値: %d)", rms, self._config.volume_threshold)
 
             audio_data = self._vad.process_frame(frame)
             if audio_data is not None:
                 duration_s = len(audio_data) / (16000 * 2)
-                logger.info("発話検出 → STT送信 (%.1f秒, %d bytes)", duration_s, len(audio_data))
-                # 発話検出 — asyncio 側で STT を実行
+                logger.info("発話検出 → 処理開始 (%.1f秒, %d bytes)", duration_s, len(audio_data))
+                # 発話検出 — asyncio 側で処理を実行
                 self._loop.call_soon_threadsafe(
                     asyncio.ensure_future,
-                    self._recognize_and_emit(audio_data),
+                    self._process_audio(audio_data),
                 )
 
     def set_device(self, device_index: int | None, device_name: str) -> None:
@@ -128,6 +137,37 @@ class VoicePipeline:
 
         if was_running:
             self.start()
+
+    async def _process_audio(self, audio_data: bytes) -> None:
+        """発話音声を処理する: (話者照合 →) STT → イベント発火"""
+        # 話者照合（有効かつプロファイルが読み込まれている場合）
+        if self._config.speaker_verification_enabled and self._speaker_profile is not None:
+            accepted = await asyncio.get_event_loop().run_in_executor(
+                None, self._verify_speaker, audio_data
+            )
+            if not accepted:
+                return
+
+        await self._recognize_and_emit(audio_data)
+
+    def _verify_speaker(self, audio_data: bytes) -> bool:
+        """話者照合を実行する（ブロッキング、executor から呼ぶ）。"""
+        from voice.speaker_verifier import make_embedding_from_bytes, verify_embedding
+
+        profile = self._speaker_profile
+        try:
+            test_emb = make_embedding_from_bytes(profile.classifier, audio_data)
+            score, accepted = verify_embedding(profile.ref_embedding, test_emb, profile.threshold)
+            logger.info(
+                "話者照合: score=%.3f (閾値=%.2f) → %s",
+                score,
+                profile.threshold,
+                "OK" if accepted else "NG (スキップ)",
+            )
+            return accepted
+        except Exception:
+            logger.exception("話者照合中にエラーが発生しました。照合をスキップします。")
+            return True  # エラー時は通過させる
 
     async def _recognize_and_emit(self, audio_data: bytes) -> None:
         """STT を実行し、ウェイクワードが含まれていればイベントバスに流す"""

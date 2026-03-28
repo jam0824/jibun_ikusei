@@ -14,15 +14,57 @@
       {
         "filename": "lily_joy_01.png",
         "description": "満面の笑み、嬉しそうに両手を合わせている、幸せな表情（バリエーション1）"
+      },
+      {
+        "filename": "lily_joy_02.png",
+        "description": "満面の笑み、嬉しそうに両手を合わせている、幸せな表情（バリエーション2）"
+      },
+      {
+        "filename": "lily_joy_03.png",
+        "description": "満面の笑み、嬉しそうに両手を合わせている、幸せな表情（バリエーション3）"
+      },
+      {
+        "filename": "lily_joy_04.png",
+        "description": "満面の笑み、嬉しそうに両手を合わせている、幸せな表情（バリエーション4）"
+      },
+      {
+        "filename": "lily_joy_05.png",
+        "description": "満面の笑み、嬉しそうに両手を合わせている、幸せな表情（バリエーション5）"
       }
     ],
     "anger": [],
     "sad": [],
-    "fun": [],
+    "fun": [
+      {
+        "filename": "lily_fun_01.png",
+        "description": "楽しそうに笑っている、口を大きく開けて笑顔、ウキウキしている（バリエーション1）"
+      },
+      {
+        "filename": "lily_fun_02.png",
+        "description": "楽しそうに笑っている、口を大きく開けて笑顔、ウキウキしている（バリエーション2）"
+      },
+      {
+        "filename": "lily_fun_03.png",
+        "description": "楽しそうに笑っている、口を大きく開けて笑顔、ウキウキしている（バリエーション3）"
+      }
+    ],
     "shy": [],
     "worried": [],
     "surprised": [],
-    "proud": [],
+    "proud": [
+      {
+        "filename": "lily_proud_01.png",
+        "description": "自信満々の表情、胸を張っている、ドヤ顔、得意げ（バリエーション1）"
+      },
+      {
+        "filename": "lily_proud_02.png",
+        "description": "自信満々の表情、胸を張っている、ドヤ顔、得意げ（バリエーション2）"
+      },
+      {
+        "filename": "lily_proud_03.png",
+        "description": "自信満々の表情、胸を張っている、ドヤ顔、得意げ（バリエーション3）"
+      }
+    ],
     "caring": [
       {
         "filename": "lily_caring_01.png",
@@ -31,9 +73,18 @@
       {
         "filename": "lily_caring_02.png",
         "description": "優しく微笑んでいる、手を差し伸べている、気遣いの表情（バリエーション2）"
+      },
+      {
+        "filename": "lily_caring_03.png",
+        "description": "優しく微笑んでいる、手を差し伸べている、気遣いの表情（バリエーション3）"
       }
     ],
-    "serious": [],
+    "serious": [
+      {
+        "filename": "lily_serious_01.png",
+        "description": "真剣な目つき、集中した表情、決意を込めた顔（バリエーション1）"
+      }
+    ],
     "sleepy": [],
     "playful": []
   },

@@ -43,7 +43,12 @@
       "Bash(mkdir -p core ui ai pose api data)",
       "Bash(touch core/__init__.py ui/__init__.py ai/__init__.py pose/__init__.py api/__init__.py data/__init__.py)",
       "WebFetch(domain:api.wikimedia.org)",
-      "WebFetch(domain:docs.annict.com)"
+      "WebFetch(domain:docs.annict.com)",
+      "Bash(find D:/codes/自分育成アプリ/lily_desktop -name *.py -type f)",
+      "Bash(uv sync:*)",
+      "Bash(uv pip:*)",
+      "Bash(pip index:*)",
+      "Bash(uv run:*)"
     ]
   }
 }
