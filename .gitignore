@@ -27,3 +27,10 @@ dist-ssr
 
 # CDK
 infra/cdk.out
+
+# desktop
+__pycache__/
+.venv/
+aikata_images/
+lily_images/
+sys_images/

@@ -1,0 +1,10 @@
+# リリィデスクトップ設定
+# 秘密情報（APIキー、パスワード）はプロジェクトルートの .env に記載してください
+
+openai:
+  chat_model: "gpt-5.4"
+  image_model: "gpt-image-1.5"
+
+display:
+  lily_scale: 0.3      # リリィ画像の縮小率 (1024x1536 -> 約307x461)
+  haruka_scale: 0.7    # 葉留佳画像の縮小率 (396x600 -> 約277x420)

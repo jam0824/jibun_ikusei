@@ -1,0 +1,14 @@
+{
+  "poses": [
+    {
+      "filename": "lily_default.png",
+      "emotions": ["default", "neutral", "greeting", "happy", "cheerful", "welcome"],
+      "description": "デフォルト立ちポーズ。右手を挙げて挨拶。笑顔。"
+    },
+    {
+      "filename": "lily_stand02.png",
+      "emotions": ["calm", "gentle", "thinking", "shy", "soft", "listening"],
+      "description": "落ち着いたポーズ。穏やかな表情。"
+    }
+  ]
+}
