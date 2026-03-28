@@ -18,15 +18,9 @@ from data.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
 
-# 掛け合いの設定
-_MIN_TURNS = 3          # 最小ターン数（リリィ+葉留佳で1ターン）
-_MAX_TURNS = 5          # 最大ターン数
+# UI体験に関わる固定値（config化しない）
 _TURN_DELAY = 4.0       # ターン間の待ち秒数
-
-# ユーザー応答後フォローアップ掛け合いの設定
-_FOLLOW_UP_DELAY = 3.0       # リリィ応答後、はるかが反応するまでの秒数
-_FOLLOW_UP_MIN_EXTRA = 1     # はるかの初回反応後に続ける最小追加ターン数
-_FOLLOW_UP_MAX_EXTRA = 3     # はるかの初回反応後に続ける最大追加ターン数
+_FOLLOW_UP_DELAY = 3.0  # リリィ応答後、はるかが反応するまでの秒数
 
 _LILY_SYSTEM = """\
 あなたの名前はリリィです。デスクトップマスコットとして峰生のパソコンの画面に立っています。
@@ -210,7 +204,8 @@ class AutoConversation:
             conv_history: list[dict[str, str]] = []
 
             # ターン数を決定
-            num_turns = random.randint(_MIN_TURNS, _MAX_TURNS)
+            cfg = self._config.chat
+            num_turns = random.randint(cfg.auto_talk_min_turns, cfg.auto_talk_max_turns)
             logger.info("掛け合いターン数: %d", num_turns)
 
             for turn in range(num_turns):
@@ -373,7 +368,8 @@ class AutoConversation:
             conv_history.append({"speaker": "葉留佳", "text": haruka_text})
 
             # --- 追加ターン（リリィ → はるか を繰り返す）---
-            extra_turns = random.randint(_FOLLOW_UP_MIN_EXTRA, _FOLLOW_UP_MAX_EXTRA)
+            cfg = self._config.chat
+            extra_turns = random.randint(cfg.follow_up_min_extra, cfg.follow_up_max_extra)
             logger.info("フォローアップ追加ターン数: %d", extra_turns)
 
             for turn in range(extra_turns):

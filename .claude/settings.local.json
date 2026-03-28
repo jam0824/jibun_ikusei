@@ -49,7 +49,10 @@
       "Bash(uv pip:*)",
       "Bash(pip index:*)",
       "Bash(uv run:*)",
-      "Bash(find . -path \"./.venv\" -prune -o -name \"*.py\" -type f -print -exec grep -l \"sounddevice\\\\|OutputStream\\\\|play\\\\|pydub\" {})"
+      "Bash(find . -path \"./.venv\" -prune -o -name \"*.py\" -type f -print -exec grep -l \"sounddevice\\\\|OutputStream\\\\|play\\\\|pydub\" {})",
+      "Bash(find /d/codes/自分育成アプリ/src -name *quest* -o -name *tool*)",
+      "Bash(find /d/codes/自分育成アプリ/lily_desktop -name *quest* -o -name *tool*)",
+      "Bash(python -c \"from ai.tool_definitions import CHAT_TOOLS; from ai.tool_executor import ToolExecutor; print\\(f''Tools: {len\\(CHAT_TOOLS\\)}, ToolExecutor OK''\\)\")"
     ]
   }
 }

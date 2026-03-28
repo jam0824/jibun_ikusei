@@ -199,6 +199,27 @@ export const CHAT_TOOLS = [
   {
     type: 'function' as const,
     function: {
+      name: 'complete_quest',
+      description: 'クエストをクリア（完了）する。「〇〇をクリアした」「トマトジュース飲んだ」など、タイトルが完全一致でなくても推定してクリアする。',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'クエストを特定するための検索クエリ。タイトルの一部やキーワードでOK（例:「トマトジュース」「ランニング」）',
+          },
+          note: {
+            type: 'string',
+            description: '完了時のメモ（任意）',
+          },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
       name: 'delete_quest',
       description: 'クエストを削除またはアーカイブする。「〇〇のクエスト消して」「クエストをアーカイブして」などに対応。完了履歴があるクエストはアーカイブのみ可能。',
       parameters: {
@@ -582,6 +603,74 @@ async function executeGetMessagesAndLogs(args: Record<string, unknown>, context:
   return `不明なtype: ${type}`
 }
 
+// ── あいまいクエスト検索 ──
+
+/**
+ * クエリとタイトルのあいまいスコアを計算する (0〜1)。
+ * - 完全一致 → 1
+ * - タイトルがクエリを含む / クエリがタイトルを含む → 0.8
+ * - クエリの全単語がタイトルに含まれる → 0.6
+ * - 一部の単語が一致 → 単語一致率 * 0.5
+ */
+function fuzzyMatchScore(query: string, title: string): number {
+  const q = query.toLowerCase().trim()
+  const t = title.toLowerCase().trim()
+
+  if (q === t) return 1
+  if (t.includes(q) || q.includes(t)) return 0.8
+
+  // 単語分割（日本語はそのまま文字単位、英語はスペース区切り）
+  const qTokens = q.split(/[\s　、,・]+/).filter(Boolean)
+  if (qTokens.length === 0) return 0
+
+  const matchCount = qTokens.filter((token) => t.includes(token)).length
+  if (matchCount === qTokens.length) return 0.6
+  return (matchCount / qTokens.length) * 0.5
+}
+
+function findBestMatchQuest(query: string, quests: Quest[]): { quest: Quest; score: number } | null {
+  const activeQuests = quests.filter((q) => q.status === 'active')
+  if (activeQuests.length === 0) return null
+
+  let best: { quest: Quest; score: number } | null = null
+  for (const quest of activeQuests) {
+    const score = fuzzyMatchScore(query, quest.title)
+    if (score > 0 && (!best || score > best.score)) {
+      best = { quest, score }
+    }
+  }
+  return best
+}
+
+// ── complete_quest ──
+
+async function executeCompleteQuest(args: Record<string, unknown>, context: ToolContext): Promise<string> {
+  const query = args.query as string | undefined
+  if (!query) return 'クエストを特定するための検索クエリを指定してください。'
+
+  const match = findBestMatchQuest(query, context.appState.quests)
+  if (!match || match.score < 0.2) {
+    const activeQuests = context.appState.quests
+      .filter((q) => q.status === 'active')
+      .slice(0, 10)
+      .map((q) => `「${q.title}」`)
+      .join('、')
+    return `「${query}」に該当するアクティブなクエストが見つかりません。\n現在のアクティブクエスト: ${activeQuests || 'なし'}`
+  }
+
+  const { quest } = match
+  const note = (args.note as string) ?? undefined
+  const now = new Date()
+  const completedAt = now.toISOString()
+
+  const result = await useAppStore.getState().completeQuest(quest.id, { completedAt, note })
+  if (result.error) {
+    return `クエスト「${quest.title}」のクリアに失敗しました: ${result.error}`
+  }
+
+  return `クエスト「${quest.title}」をクリアしました！ +${quest.xpReward} XP`
+}
+
 // ── create_quest ──
 
 function executeCreateQuest(args: Record<string, unknown>): string {
@@ -680,6 +769,10 @@ export async function executeTool(
 
   if (name === 'get_messages_and_logs') {
     return executeGetMessagesAndLogs(args, context)
+  }
+
+  if (name === 'complete_quest') {
+    return executeCompleteQuest(args, context)
   }
 
   if (name === 'create_quest') {

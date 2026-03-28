@@ -188,6 +188,27 @@ CHAT_TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
+            "name": "complete_quest",
+            "description": "クエストをクリア（完了）する。「〇〇をクリアした」「トマトジュース飲んだ」など、タイトルが完全一致でなくても推定してクリアする。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "クエストを特定するための検索クエリ。タイトルの一部やキーワードでOK（例:「トマトジュース」「ランニング」）",
+                    },
+                    "note": {
+                        "type": "string",
+                        "description": "完了時のメモ（任意）",
+                    },
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "delete_quest",
             "description": "クエストを削除またはアーカイブする。「〇〇のクエスト消して」「クエストをアーカイブして」などに対応。完了履歴があるクエストはアーカイブのみ可能。",
             "parameters": {

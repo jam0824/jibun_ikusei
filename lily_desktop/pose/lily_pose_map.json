@@ -119,6 +119,10 @@
       {
         "filename": "lily_playful_01.png",
         "description": "いたずらっぽい表情、ウィンクしている、舌を出している（バリエーション1）"
+      },
+      {
+        "filename": "lily_playful_02.png",
+        "description": "いたずらっぽい表情、ウィンクしている、舌を出している（バリエーション2）"
       }
     ]
   },
