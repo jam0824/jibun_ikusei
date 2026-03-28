@@ -49,7 +49,12 @@
       }
     ],
     "shy": [],
-    "worried": [],
+    "worried": [
+      {
+        "filename": "lily_worried_01.png",
+        "description": "心配そうな表情、眉をひそめている、手を胸に当てている（バリエーション1）"
+      }
+    ],
     "surprised": [],
     "proud": [
       {
