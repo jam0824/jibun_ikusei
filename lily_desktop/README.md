@@ -103,6 +103,51 @@ uv run python main.py
 
 ---
 
+## 話者照合（声の登録）
+
+音声入力時に本人以外の声を無視する機能。以下の手順で設定する。
+
+### 1. 声を録音する
+
+```bash
+cd lily_desktop
+uv run python record_voice.py
+```
+
+対話モードが起動する。Enterで録音開始、4秒間の録音を繰り返し、`q` で終了。
+3〜5ファイル程度録音するのがおすすめ。
+
+```bash
+# オプション指定も可能
+uv run python record_voice.py --out me01.wav          # ファイル名を指定
+uv run python record_voice.py --out me01.wav --sec 5   # 録音秒数を指定
+```
+
+> config.yaml の `voice.device_name` に設定されたマイクが自動的に使われる。
+
+### 2. 話者プロファイルを作成する
+
+録音した WAV ファイルから声の特徴を抽出し、プロファイルを作成する。
+
+```bash
+uv run python enroll_speaker.py --refs voice_01.wav voice_02.wav voice_03.wav --out speaker_profile.pt
+```
+
+初回実行時に SpeechBrain モデル（約300MB）が自動ダウンロードされる。
+
+### 3. config.yaml で有効化する
+
+```yaml
+voice:
+  speaker_verification_enabled: true
+  speaker_profile_path: speaker_profile.pt
+  speaker_verification_threshold: 0.40
+```
+
+- `speaker_verification_threshold`: コサイン類似度の閾値（0〜1）。低いほど緩い判定。認識されにくい場合は値を下げる。
+
+---
+
 ## ファイル構成
 
 ```
