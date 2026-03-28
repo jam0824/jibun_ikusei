@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
-import { Bell, Home, ListTodo, MessageCircle, Plus, ScrollText, Sparkles } from 'lucide-react'
+import { Bell, Home, ListTodo, Plus, ScrollText, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui'
 
@@ -37,11 +37,8 @@ export function AppHeader({
           <div className="mt-1 text-sm text-slate-500">{subtitle}</div>
         </div>
         <div className="flex items-center gap-2">
-          <NavLink to="/lily">
-            <Button variant="outline" size="sm" className="gap-1.5 rounded-2xl">
-              <MessageCircle className="h-4 w-4" />
-              リリィと話す
-            </Button>
+          <NavLink to="/lily" aria-label="リリィと話す">
+            <img src="/lily/face.png" alt="リリィ" className="h-10 w-10 rounded-full object-cover" />
           </NavLink>
           {action}
         </div>
