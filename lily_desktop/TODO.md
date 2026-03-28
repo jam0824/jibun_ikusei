@@ -161,17 +161,26 @@
 - [x] `core/config.py` VoiceConfig（enabled, vad_aggressiveness, language, google_api_key）
 - [x] トレイアイコンから音声入力ON/OFF切り替え
 - [x] 60秒超の発話は強制分割（STT制限対応）
+- [x] マイク選択サブメニュー（トレイアイコンからデバイス切り替え + config.yaml保存）
+- [x] `voice/speaker_verifier.py` 話者照合（SpeechBrain ECAPA-TDNN）
+- [x] `enroll_speaker.py` 話者プロファイル作成スクリプト
+- [x] `record_voice.py` 音声録音スクリプト（config.yamlのマイク使用）
 - [x] テスト: `tests/test_vad.py`, `tests/test_speech_recognizer.py`
 
 ---
 
-## Phase 8: 音声合成 — 未実装
+## Phase 8: 音声合成 — 完了
 
 > 仕様: セクション11
 
-- [ ] `voice/voicevox_tts.py` VOICEVOX HTTPクライアント
-- [ ] 音声再生（リリィ・葉留佳で別スピーカーID）
-- [ ] 吹き出し表示と音声の同期
+- [x] `voice/tts.py` TTSEngine（VOICEVOX HTTPクライアント + asyncio.Queueによるキュー順再生）
+- [x] 音声再生（リリィ・葉留佳で別スピーカーID、sounddevice + soundfile）
+- [x] 吹き出し表示と音声の同期（AI応答時にenqueue、掛け合い時はTTS完了待ち）
+- [x] TTS再生中のマイク一時停止/再開（フィードバック防止）
+- [x] ユーザー割り込み時のキュークリア + 再生停止
+- [x] トレイメニューから読み上げON/OFF切り替え
+- [x] VOICEVOX未起動時のgraceful degradation（警告ログのみ）
+- [x] `start.bat` VOICEVOX起動→アプリ起動の一括スクリプト
 
 ---
 
@@ -201,5 +210,5 @@
 | 8. ポーズ生成 | gpt-image-1.5生成、対応表管理 | **実装済み** (Phase 6) |
 | 9. 相方システム | 葉留佳の立ち絵・設定管理 | **実装済み** (Phase 1, 5) |
 | 10. カメラ | 定期撮影、AI分析、話しかけ | 未実装 (Phase 9) |
-| 11. 音声合成 | VOICEVOX TTS | 未実装 (Phase 8) |
+| 11. 音声合成 | VOICEVOX TTS | **実装済み** (Phase 8) |
 | 12. 技術 | PySide6, gpt-5.4 | **実装済み** (Phase 1-3) |
