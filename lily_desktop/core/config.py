@@ -75,6 +75,8 @@ class VoiceConfig:
 class DisplayConfig:
     lily_scale: float = 0.3
     haruka_scale: float = 0.7
+    window_x: int | None = None  # ウィンドウ位置X（Noneならデフォルト位置）
+    window_y: int | None = None  # ウィンドウ位置Y
 
 
 @dataclass
@@ -161,5 +163,58 @@ def save_voice_device(device_name: str, path: Path = _CONFIG_PATH) -> None:
     # ファイル末尾まで voice セクションだった場合
     if in_voice and not device_written:
         new_lines.append(f"  device_name: {device_name}\n")
+
+    path.write_text("".join(new_lines), encoding="utf-8")
+
+
+def save_window_position(x: int, y: int, path: Path = _CONFIG_PATH) -> None:
+    """ウィンドウ位置を config.yaml の display セクションに保存する（コメント保持）"""
+    if not path.exists():
+        path.write_text(
+            f"display:\n  window_x: {x}\n  window_y: {y}\n", encoding="utf-8"
+        )
+        return
+
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    new_lines: list[str] = []
+    in_display = False
+    x_written = False
+    y_written = False
+
+    for line in lines:
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+
+        if stripped.startswith("display:") and indent == 0:
+            in_display = True
+            new_lines.append(line)
+            continue
+
+        if in_display and indent > 0:
+            if stripped.startswith("window_x:"):
+                new_lines.append(f"  window_x: {x}\n")
+                x_written = True
+            elif stripped.startswith("window_y:"):
+                new_lines.append(f"  window_y: {y}\n")
+                y_written = True
+            else:
+                new_lines.append(line)
+            continue
+
+        if in_display and indent == 0 and not stripped.startswith("#"):
+            if not x_written:
+                new_lines.append(f"  window_x: {x}\n")
+            if not y_written:
+                new_lines.append(f"  window_y: {y}\n")
+            x_written = y_written = True
+            in_display = False
+
+        new_lines.append(line)
+
+    if in_display and not (x_written and y_written):
+        if not x_written:
+            new_lines.append(f"  window_x: {x}\n")
+        if not y_written:
+            new_lines.append(f"  window_y: {y}\n")
 
     path.write_text("".join(new_lines), encoding="utf-8")
