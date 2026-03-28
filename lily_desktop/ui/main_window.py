@@ -148,7 +148,7 @@ class MainWindow(QWidget):
         )
         debug_menu.addAction(desktop_ctx_action)
 
-        auto_talk_action = QAction("雑談を発火", self)
+        auto_talk_action = QAction("掛け合い雑談を開始", self)
         auto_talk_action.triggered.connect(
             lambda: bus.auto_talk_requested.emit()
         )

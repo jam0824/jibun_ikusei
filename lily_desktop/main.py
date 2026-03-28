@@ -63,6 +63,9 @@ class App:
         bus.auto_talk_requested.connect(self._on_auto_talk_requested)
 
     def _on_user_message(self, text: str) -> None:
+        # 掛け合い中ならユーザー割り込みで中断
+        if self.auto_conversation.is_talking:
+            self.auto_conversation.interrupt()
         asyncio.ensure_future(self.chat_engine.handle_user_message(text))
 
     def _on_new_chat(self) -> None:
