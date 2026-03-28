@@ -1,7 +1,7 @@
 openai:
   chat_model: gpt-5.4
   image_model: gpt-image-1.5
-  screen_analysis_model: gpt-5.4
+  screen_analysis_model: gpt-5
 chat:
   auto_talk_interval_minutes: 15
   auto_talk_min_turns: 3        # 掛け合いの最小ターン数

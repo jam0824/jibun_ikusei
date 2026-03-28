@@ -108,10 +108,12 @@ class App:
 
         if self.voice_pipeline.is_running:
             self.voice_pipeline.stop()
+            bus.voice_state_changed.emit(False)
             bus.balloon_show.emit("リリィ", "音声入力をオフにしたよ")
         else:
             self.voice_pipeline.start()
             if self.voice_pipeline.is_running:
+                bus.voice_state_changed.emit(True)
                 bus.balloon_show.emit("リリィ", "音声入力をオンにしたよ！話しかけてね")
 
     def _on_voice_device_selected(self, device_index: int, device_name: str) -> None:
@@ -254,6 +256,8 @@ async def async_init(app_instance: App) -> None:
             loop=asyncio.get_event_loop(),
         )
         app_instance.voice_pipeline.start()
+        if app_instance.voice_pipeline.is_running:
+            bus.voice_state_changed.emit(True)
 
     # TTS の自動開始
     if app_instance.config.tts.enabled:
