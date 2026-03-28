@@ -4,6 +4,7 @@
 openai:
   chat_model: "gpt-5.4"
   image_model: "gpt-image-1.5"
+  screen_analysis_model: "gpt-5.4"  # スクリーンショット解析AIモデル
 
 display:
   lily_scale: 0.3      # リリィ画像の縮小率 (1024x1536 -> 約307x461)

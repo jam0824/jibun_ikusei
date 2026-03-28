@@ -18,6 +18,9 @@ class EventBus(QObject):
     # セッション操作
     new_chat_requested = Signal()
 
+    # デスクトップ状況（デバッグ用）
+    desktop_context_requested = Signal()  # 手動で状況取得を要求
+
 
 # アプリ全体で共有するシングルトン
 bus = EventBus()

@@ -13,6 +13,7 @@ from ai.tool_executor import ToolExecutor
 from api.api_client import ApiClient
 from api.auth import CognitoAuth
 from core.config import load_config
+from core.desktop_context import DesktopContext, fetch_desktop_context, format_context_log
 from core.event_bus import bus
 from data.session_manager import SessionManager
 from pose.pose_manager import PoseManager
@@ -55,6 +56,9 @@ class App:
         # AI応答 → 吹き出し表示 + ポーズ変更
         bus.ai_response_ready.connect(self._on_ai_response)
 
+        # デスクトップ状況（デバッグ用）
+        bus.desktop_context_requested.connect(self._on_desktop_context_requested)
+
     def _on_user_message(self, text: str) -> None:
         asyncio.ensure_future(self.chat_engine.handle_user_message(text))
 
@@ -65,6 +69,41 @@ class App:
         await self.session_mgr.create_new_session()
         self.chat_engine._history.clear()
         bus.balloon_show.emit("リリィ", "新しい会話を始めるね！")
+
+    def _on_desktop_context_requested(self) -> None:
+        asyncio.ensure_future(self._fetch_and_show_desktop_context())
+
+    async def _fetch_and_show_desktop_context(self) -> None:
+        """デスクトップ状況を取得してログ出力 + 吹き出しに表示（デバッグ用）"""
+        bus.balloon_show.emit("リリィ", "画面の状況を確認中…")
+        try:
+            ctx = await fetch_desktop_context(
+                api_key=self.config.openai.api_key,
+                model=self.config.openai.screen_analysis_model,
+            )
+            self._last_desktop_context = ctx
+            log_text = format_context_log(ctx)
+            logger.info("\n%s", log_text)
+
+            # 吹き出しにデバッグ結果を表示
+            if ctx.skipped:
+                bus.balloon_show.emit(
+                    "リリィ",
+                    f"[デバッグ] 解析対象外だよ\n{ctx.window_info.exclude_reason}",
+                )
+            elif ctx.error:
+                bus.balloon_show.emit("リリィ", f"[デバッグ] エラー: {ctx.error}")
+            elif ctx.analysis:
+                bus.balloon_show.emit(
+                    "リリィ",
+                    f"[デバッグ] {ctx.analysis.summary}\n"
+                    f"タグ: {', '.join(ctx.analysis.tags)}\n"
+                    f"種別: {ctx.analysis.activity_type}\n"
+                    f"詳細: {ctx.analysis.detail}",
+                )
+        except Exception:
+            logger.exception("デスクトップ状況取得に失敗")
+            bus.balloon_show.emit("リリィ", "[デバッグ] 状況取得に失敗しちゃった…")
 
     def _on_ai_response(self, speaker: str, text: str, pose_hint: str) -> None:
         bus.balloon_show.emit(speaker, text)

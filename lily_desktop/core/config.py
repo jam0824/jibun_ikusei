@@ -33,6 +33,7 @@ class OpenAIConfig:
     api_key: str = ""
     chat_model: str = "gpt-5.4"
     image_model: str = "gpt-image-1.5"
+    screen_analysis_model: str = "gpt-5.4"
 
 
 @dataclass

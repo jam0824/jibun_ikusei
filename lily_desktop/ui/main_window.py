@@ -128,6 +128,18 @@ class MainWindow(QWidget):
 
         menu.addSeparator()
 
+        # デバッグメニュー
+        debug_menu = menu.addMenu("デバッグ")
+        debug_menu.setStyleSheet(menu.styleSheet())
+
+        desktop_ctx_action = QAction("デスクトップ状況を取得", self)
+        desktop_ctx_action.triggered.connect(
+            lambda: bus.desktop_context_requested.emit()
+        )
+        debug_menu.addAction(desktop_ctx_action)
+
+        menu.addSeparator()
+
         hide_action = QAction("非表示", self)
         hide_action.triggered.connect(self.hide)
         menu.addAction(hide_action)
