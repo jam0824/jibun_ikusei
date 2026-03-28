@@ -57,12 +57,10 @@ class BalloonWidget(QWidget):
         self.show()
         self.update()
 
-        # キューに後続メッセージがあれば一定時間後に切り替える
-        if self._queue:
-            char_count = len(text)
-            duration = max(BALLOON_DISPLAY_SECONDS, char_count * 80) * 1000
-            self._hide_timer.start(int(duration))
-        # キューが空なら出しっぱなし（次のメッセージが来るまで表示し続ける）
+        # 文字数に応じた表示時間後に次のメッセージへ切り替え or 非表示
+        char_count = len(text)
+        duration = max(BALLOON_DISPLAY_SECONDS, char_count * 80) * 1000
+        self._hide_timer.start(int(duration))
 
     def _advance_queue(self) -> None:
         if self._queue:
@@ -72,7 +70,8 @@ class BalloonWidget(QWidget):
     def _on_timer(self) -> None:
         if self._queue:
             self._advance_queue()
-        # キューが空ならそのまま表示し続ける
+        else:
+            self.hide()
 
     def _update_size(self) -> None:
         fm = QFontMetrics(self._font)
