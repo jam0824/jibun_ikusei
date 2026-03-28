@@ -86,6 +86,13 @@ class BalloonWidget(QWidget):
         content_h = name_height + 4 + text_rect.height() + self._PADDING_Y * 2
         self.setFixedSize(content_w, content_h)
 
+    def hideEvent(self, event) -> None:
+        """非表示時に親ウィンドウのサイズを再調整する"""
+        super().hideEvent(event)
+        parent = self.parentWidget()
+        if parent is not None:
+            parent.adjustSize()
+
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)

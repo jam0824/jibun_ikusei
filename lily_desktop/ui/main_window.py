@@ -25,6 +25,7 @@ class MainWindow(QWidget):
         self._drag_start: QPoint | None = None
         self._drag_offset: QPoint | None = None
         self._is_dragging = False
+        self._anchor_bottom: int | None = None  # ウィンドウ下端のY座標（基準点）
 
         # ウィンドウ設定: フレームレス、最前面、透過、タスクバー非表示
         self.setWindowFlags(
@@ -82,7 +83,7 @@ class MainWindow(QWidget):
 
     def _connect_signals(self) -> None:
         bus.balloon_show.connect(self._on_balloon_show)
-        bus.balloon_hide.connect(self.balloon.hide)
+        bus.balloon_hide.connect(self._on_balloon_hide)
         bus.user_message_received.connect(self._on_user_message)
 
     def _on_balloon_show(self, speaker: str, text: str) -> None:
@@ -96,6 +97,11 @@ class MainWindow(QWidget):
                 self.balloon, Qt.AlignmentFlag.AlignRight
             )
         self.balloon.show_message(speaker, text)
+        self.adjustSize()
+
+    def _on_balloon_hide(self) -> None:
+        self.balloon.hide()
+        self.adjustSize()
 
     def _on_user_message(self, text: str) -> None:
         # ユーザー発言を吹き出しに表示
@@ -105,11 +111,15 @@ class MainWindow(QWidget):
     # --- ウィンドウ位置の保存・復元 ---
 
     def _restore_position(self) -> None:
-        """保存済み位置があればそこに、なければ画面右下に配置する。"""
+        """保存済み位置があればそこに、なければ画面右下に配置する。
+
+        window_y はウィンドウ下端のY座標として保存されている。
+        """
         self.adjustSize()
         dc = self._config.display
         if dc.window_x is not None and dc.window_y is not None:
-            self.move(dc.window_x, dc.window_y)
+            self._anchor_bottom = dc.window_y
+            self.move(dc.window_x, self._anchor_bottom - self.height())
         else:
             self._position_default()
 
@@ -121,15 +131,16 @@ class MainWindow(QWidget):
         geo = screen.availableGeometry()
         self.adjustSize()
         x = geo.right() - self.width()
-        y = geo.bottom() - self.height()
-        self.move(x, y)
+        self._anchor_bottom = geo.bottom()
+        self.move(x, self._anchor_bottom - self.height())
 
     def _save_position(self) -> None:
-        """現在のウィンドウ位置を config.yaml に保存する。"""
-        pos = self.pos()
-        self._config.display.window_x = pos.x()
-        self._config.display.window_y = pos.y()
-        save_window_position(pos.x(), pos.y())
+        """現在のウィンドウ位置を config.yaml に保存する。
+
+        window_y にはウィンドウ下端のY座標を保存する。
+        """
+        self._anchor_bottom = self.y() + self.height()
+        save_window_position(self.x(), self._anchor_bottom)
 
     # --- ドラッグ移動 ---
 
@@ -167,6 +178,11 @@ class MainWindow(QWidget):
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
+        # ボトム基準: 高さが変わったらY位置を調整して下端を固定
+        if self._anchor_bottom is not None and not self._is_dragging:
+            new_y = self._anchor_bottom - self.height()
+            if self.y() != new_y:
+                self.move(self.x(), new_y)
         self._position_input_widget()
 
     def _position_input_widget(self) -> None:
