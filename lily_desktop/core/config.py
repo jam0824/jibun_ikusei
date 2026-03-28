@@ -79,8 +79,14 @@ class VoiceConfig:
 class TTSConfig:
     enabled: bool = False
     voicevox_url: str = "http://localhost:50021"
-    lily_speaker_id: int = 20
-    haruka_speaker_id: int = 8
+    lily_engine: str = "voicevox"          # "voicevox" or "gemini"
+    lily_speaker_id: int = 20              # VOICEVOX speaker ID
+    lily_gemini_voice: str = "Zephyr"      # Gemini TTS voice name
+    haruka_engine: str = "voicevox"        # "voicevox" or "gemini"
+    haruka_speaker_id: int = 8             # VOICEVOX speaker ID
+    haruka_gemini_voice: str = "Kore"      # Gemini TTS voice name
+    gemini_model: str = "gemini-2.5-flash-preview-tts"
+    gemini_api_key: str = ""
 
 
 @dataclass
@@ -115,7 +121,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         annict=AnnictConfig(**raw.get("annict", {})),
         chat=ChatConfig(**raw.get("chat", {})),
         voice=VoiceConfig(**{k: v for k, v in raw.get("voice", {}).items() if k != "google_api_key"}),
-        tts=TTSConfig(**raw.get("tts", {})),
+        tts=TTSConfig(**{k: v for k, v in raw.get("tts", {}).items() if k != "gemini_api_key"}),
         display=DisplayConfig(**raw.get("display", {})),
     )
 
@@ -131,6 +137,8 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         config.annict.access_token = env["ANNICT_ACCESS_TOKEN"]
     if env.get("GOOGLE_CLOUD_API_KEY"):
         config.voice.google_api_key = env["GOOGLE_CLOUD_API_KEY"]
+    if env.get("GEMINI_API_KEY"):
+        config.tts.gemini_api_key = env["GEMINI_API_KEY"]
 
     return config
 

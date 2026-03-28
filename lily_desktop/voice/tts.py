@@ -1,13 +1,15 @@
-"""音声合成エンジン — VOICEVOX で TTS を実行し、キュー順に再生する"""
+"""音声合成エンジン — VOICEVOX / Gemini TTS で音声合成し、キュー順に再生する"""
 
 from __future__ import annotations
 
 import asyncio
+import base64
 import io
 import logging
 from dataclasses import dataclass
 
 import httpx
+import numpy as np
 import sounddevice as sd
 import soundfile as sf
 
@@ -21,11 +23,13 @@ logger = logging.getLogger(__name__)
 class _TTSJob:
     speaker: str
     text: str
-    speaker_id: int
+    engine: str           # "voicevox" or "gemini"
+    speaker_id: int       # VOICEVOX用
+    gemini_voice: str     # Gemini TTS用
 
 
 class TTSEngine:
-    """VOICEVOX による TTS + キュー順再生エンジン"""
+    """VOICEVOX / Gemini TTS によるキュー順再生エンジン"""
 
     def __init__(self, config: TTSConfig):
         self._config = config
@@ -33,25 +37,48 @@ class TTSEngine:
         self._idle_event = asyncio.Event()
         self._idle_event.set()
         self._running = False
-        self._http: httpx.AsyncClient | None = None
+        self._http: httpx.AsyncClient | None = None        # VOICEVOX用
+        self._gemini_http: httpx.AsyncClient | None = None  # Gemini TTS用
         self._worker_task: asyncio.Task | None = None
 
     async def start(self) -> None:
         """バックグラウンドワーカーを起動する。"""
-        self._http = httpx.AsyncClient(
-            base_url=self._config.voicevox_url, timeout=30.0
-        )
         self._running = True
 
-        # VOICEVOX の接続確認
-        try:
-            r = await self._http.get("/version")
-            logger.info("VOICEVOX 接続OK: version=%s", r.text.strip('"'))
-        except Exception:
-            logger.warning(
-                "VOICEVOX に接続できません (%s)。読み上げは無効です。",
-                self._config.voicevox_url,
+        uses_voicevox = (
+            self._config.lily_engine == "voicevox"
+            or self._config.haruka_engine == "voicevox"
+        )
+        uses_gemini = (
+            self._config.lily_engine == "gemini"
+            or self._config.haruka_engine == "gemini"
+        )
+
+        # VOICEVOX クライアント（必要な場合のみ）
+        if uses_voicevox:
+            self._http = httpx.AsyncClient(
+                base_url=self._config.voicevox_url, timeout=30.0
             )
+            try:
+                r = await self._http.get("/version")
+                logger.info("VOICEVOX 接続OK: version=%s", r.text.strip('"'))
+            except Exception:
+                logger.warning(
+                    "VOICEVOX に接続できません (%s)。読み上げは無効です。",
+                    self._config.voicevox_url,
+                )
+
+        # Gemini TTS クライアント（必要な場合のみ）
+        if uses_gemini:
+            if self._config.gemini_api_key:
+                self._gemini_http = httpx.AsyncClient(timeout=30.0)
+                logger.info(
+                    "Gemini TTS を有効化 (model=%s)", self._config.gemini_model
+                )
+            else:
+                logger.warning(
+                    "Gemini TTS が設定されていますが GEMINI_API_KEY がありません"
+                )
 
         self._worker_task = asyncio.ensure_future(self._worker())
         logger.info("TTSEngine を開始")
@@ -65,15 +92,21 @@ class TTSEngine:
         if self._http is not None:
             await self._http.aclose()
             self._http = None
+        if self._gemini_http is not None:
+            await self._gemini_http.aclose()
+            self._gemini_http = None
         logger.info("TTSEngine を停止")
 
     def enqueue(self, speaker: str, text: str) -> None:
         """TTS ジョブをキューに追加する（ノンブロッキング）。"""
         if not self._running:
             return
-        speaker_id = self._resolve_speaker_id(speaker)
+        engine, speaker_id, gemini_voice = self._resolve_speaker_config(speaker)
         self._idle_event.clear()
-        self._queue.put_nowait(_TTSJob(speaker=speaker, text=text, speaker_id=speaker_id))
+        self._queue.put_nowait(_TTSJob(
+            speaker=speaker, text=text,
+            engine=engine, speaker_id=speaker_id, gemini_voice=gemini_voice,
+        ))
 
     async def wait_until_idle(self) -> None:
         """全キューの再生が完了するまで待つ（auto_conversation 用）。"""
@@ -89,11 +122,19 @@ class TTSEngine:
         sd.stop()
         self._idle_event.set()
 
-    def _resolve_speaker_id(self, speaker: str) -> int:
-        """話者名から speaker_id を解決する。"""
+    def _resolve_speaker_config(self, speaker: str) -> tuple[str, int, str]:
+        """話者名から (engine, voicevox_speaker_id, gemini_voice) を返す。"""
         if speaker in ("葉留佳", "はるちん", "はるか"):
-            return self._config.haruka_speaker_id
-        return self._config.lily_speaker_id
+            return (
+                self._config.haruka_engine,
+                self._config.haruka_speaker_id,
+                self._config.haruka_gemini_voice,
+            )
+        return (
+            self._config.lily_engine,
+            self._config.lily_speaker_id,
+            self._config.lily_gemini_voice,
+        )
 
     async def _worker(self) -> None:
         """キューからジョブを取り出して順番に再生する。"""
@@ -106,18 +147,31 @@ class TTSEngine:
                 break
 
             try:
-                wav_bytes = await self._synthesize(job.text, job.speaker_id)
-                if wav_bytes:
-                    bus.tts_playback_started.emit()
-                    await self._play_audio(wav_bytes)
-                    bus.tts_playback_finished.emit()
+                if job.engine == "gemini":
+                    pcm_bytes = await self._synthesize_gemini(
+                        job.text, job.gemini_voice
+                    )
+                    if pcm_bytes:
+                        bus.tts_playback_started.emit()
+                        await self._play_pcm_audio(pcm_bytes)
+                        bus.tts_playback_finished.emit()
+                else:
+                    wav_bytes = await self._synthesize_voicevox(
+                        job.text, job.speaker_id
+                    )
+                    if wav_bytes:
+                        bus.tts_playback_started.emit()
+                        await self._play_audio(wav_bytes)
+                        bus.tts_playback_finished.emit()
             except Exception:
                 logger.exception("TTS 再生エラー: %s", job.text[:30])
             finally:
                 if self._queue.empty():
                     self._idle_event.set()
 
-    async def _synthesize(self, text: str, speaker_id: int) -> bytes | None:
+    # ---- VOICEVOX 合成 ----
+
+    async def _synthesize_voicevox(self, text: str, speaker_id: int) -> bytes | None:
         """VOICEVOX の 2 ステップ API で音声合成する。"""
         if self._http is None:
             return None
@@ -146,14 +200,72 @@ class TTSEngine:
             logger.exception("VOICEVOX 音声合成エラー")
             return None
 
+    # ---- Gemini TTS 合成 ----
+
+    async def _synthesize_gemini(self, text: str, voice_name: str) -> bytes | None:
+        """Gemini TTS API で音声合成し、PCM-16 バイト列を返す。"""
+        if self._gemini_http is None:
+            return None
+        url = (
+            f"https://generativelanguage.googleapis.com/v1beta/models/"
+            f"{self._config.gemini_model}:generateContent"
+        )
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": text}]}],
+            "generationConfig": {
+                "responseModalities": ["AUDIO"],
+                "speechConfig": {
+                    "voiceConfig": {
+                        "prebuiltVoiceConfig": {"voiceName": voice_name},
+                    },
+                },
+            },
+        }
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": self._config.gemini_api_key,
+        }
+        try:
+            r = await self._gemini_http.post(url, json=payload, headers=headers)
+            if not r.is_success:
+                logger.error(
+                    "Gemini TTS API エラー %d: %s", r.status_code, r.text[:500]
+                )
+                return None
+            data = r.json()
+            inline = (
+                data["candidates"][0]["content"]["parts"][0]["inlineData"]
+            )
+            return base64.b64decode(inline["data"])
+        except httpx.ConnectError:
+            logger.warning("Gemini TTS API に接続できません")
+            return None
+        except Exception:
+            logger.exception("Gemini TTS 音声合成エラー")
+            return None
+
+    # ---- 再生 ----
+
     async def _play_audio(self, wav_bytes: bytes) -> None:
         """WAV バイト列を再生する（ブロッキング部分は executor で実行）。"""
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, self._play_blocking, wav_bytes)
+        await loop.run_in_executor(None, self._play_wav_blocking, wav_bytes)
+
+    async def _play_pcm_audio(self, pcm_bytes: bytes) -> None:
+        """PCM-16 バイト列を再生する（ブロッキング部分は executor で実行）。"""
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, self._play_pcm_blocking, pcm_bytes)
 
     @staticmethod
-    def _play_blocking(wav_bytes: bytes) -> None:
+    def _play_wav_blocking(wav_bytes: bytes) -> None:
         """sounddevice + soundfile で WAV を同期再生する。"""
         data, samplerate = sf.read(io.BytesIO(wav_bytes), dtype="float32")
         sd.play(data, samplerate)
+        sd.wait()
+
+    @staticmethod
+    def _play_pcm_blocking(pcm_bytes: bytes, samplerate: int = 24000) -> None:
+        """Raw PCM-16 (mono, little-endian) を同期再生する。"""
+        samples = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        sd.play(samples, samplerate)
         sd.wait()
