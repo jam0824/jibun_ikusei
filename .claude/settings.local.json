@@ -48,7 +48,8 @@
       "Bash(uv sync:*)",
       "Bash(uv pip:*)",
       "Bash(pip index:*)",
-      "Bash(uv run:*)"
+      "Bash(uv run:*)",
+      "Bash(find . -path \"./.venv\" -prune -o -name \"*.py\" -type f -print -exec grep -l \"sounddevice\\\\|OutputStream\\\\|play\\\\|pydub\" {})"
     ]
   }
 }

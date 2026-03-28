@@ -30,6 +30,10 @@ class TrayIcon(QSystemTrayIcon):
         menu.addMenu(self._mic_menu)
         self._mic_menu.aboutToShow.connect(self._populate_mic_menu)
 
+        self._tts_action = QAction("読み上げ: OFF", menu)
+        self._tts_action.triggered.connect(self._toggle_tts)
+        menu.addAction(self._tts_action)
+
         menu.addSeparator()
 
         quit_action = QAction("終了", menu)
@@ -80,6 +84,13 @@ class TrayIcon(QSystemTrayIcon):
     def _select_mic(self, device_index: int, device_name: str) -> None:
         """マイクを選択してシグナルを発火する"""
         bus.voice_device_selected.emit(device_index, device_name)
+
+    def _toggle_tts(self) -> None:
+        bus.tts_toggle_requested.emit()
+        if self._tts_action.text() == "読み上げ: OFF":
+            self._tts_action.setText("読み上げ: ON")
+        else:
+            self._tts_action.setText("読み上げ: OFF")
 
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
         if reason == QSystemTrayIcon.ActivationReason.Trigger:

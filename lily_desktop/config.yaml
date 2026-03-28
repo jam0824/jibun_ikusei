@@ -26,4 +26,9 @@ voice:
     - ギリー
   speaker_verification_enabled: true  # 話者照合を使うか（enroll_speaker.py でプロファイルを作成してから有効化）
   speaker_profile_path: speaker_profile.pt  # 話者プロファイルのパス
-  speaker_verification_threshold: 0.38  # 照合閾値（コサイン類似度、0〜1）
+  speaker_verification_threshold: 0.40  # 照合閾値（コサイン類似度、0〜1）
+tts:
+  enabled: true
+  voicevox_url: http://localhost:50021
+  lily_speaker_id: 20
+  haruka_speaker_id: 8
