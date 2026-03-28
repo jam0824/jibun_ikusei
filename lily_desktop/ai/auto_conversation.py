@@ -19,9 +19,14 @@ from data.session_manager import SessionManager
 logger = logging.getLogger(__name__)
 
 # 掛け合いの設定
-_MIN_TURNS = 3     # 最小ターン数（リリィ+葉留佳で1ターン）
-_MAX_TURNS = 5     # 最大ターン数
-_TURN_DELAY = 4.0  # ターン間の待ち秒数
+_MIN_TURNS = 3          # 最小ターン数（リリィ+葉留佳で1ターン）
+_MAX_TURNS = 5          # 最大ターン数
+_TURN_DELAY = 4.0       # ターン間の待ち秒数
+
+# ユーザー応答後フォローアップ掛け合いの設定
+_FOLLOW_UP_DELAY = 3.0       # リリィ応答後、はるかが反応するまでの秒数
+_FOLLOW_UP_MIN_EXTRA = 1     # はるかの初回反応後に続ける最小追加ターン数
+_FOLLOW_UP_MAX_EXTRA = 3     # はるかの初回反応後に続ける最大追加ターン数
 
 _LILY_SYSTEM = """\
 あなたの名前はリリィです。デスクトップマスコットとして峰生のパソコンの画面に立っています。
@@ -72,6 +77,48 @@ default(通常), joy(喜び), anger(怒り), sad(哀しみ), fun(楽しい),
 shy(照れ), worried(悩み), surprised(驚き)
 """
 
+# フォローアップ用プロンプト（ユーザー応答後の掛け合い）
+_FOLLOW_UP_HARUKA_FIRST = """\
+{haruka_base}
+
+リリィが峰生から話しかけられ、こう返答しました。
+峰生の発言:「{user_text}」
+リリィの返答:「{lily_text}」
+
+はるかとして、この会話を横で見ていて思わず口を挟んでください。
+リリィに話しかける形で、ツッコミや感想、脱線などを自然に返してください。
+応答は80〜120文字程度。
+毎回相手の名前を呼ばないこと。
+
+以下のJSON形式で回答してください。他の文章は不要です。
+{{"text": "葉留佳のセリフ", "pose_category": "カテゴリ名"}}
+
+pose_categoryには以下のいずれかを指定してください:
+default(通常), joy(喜び), anger(怒り), sad(哀しみ), fun(楽しい),
+shy(照れ), worried(悩み), surprised(驚き)
+"""
+
+_FOLLOW_UP_LILY = """\
+あなたの名前はリリィです。デスクトップマスコットとして峰生のパソコンの画面に立っています。
+相方の三枝葉留佳（はるちん）が隣にいます。
+日本語で会話してください。
+アニメのヒロインのようなフレンドリーなタメ口で話してください。
+
+峰生から話しかけられて返答した直後、はるかに話しかけられました。
+はるかに話しかける形で会話を続けてください。峰生はそばで聞いています。
+応答は80〜150文字程度。毎回相手の名前を呼ばないこと。
+
+{conv_context}
+
+以下のJSON形式で回答してください。他の文章は不要です。
+{{"text": "リリィのセリフ", "pose_category": "カテゴリ名"}}
+
+pose_categoryには以下のいずれかを指定してください:
+default(通常), joy(喜び), anger(怒り), sad(哀しみ), fun(楽しい),
+shy(照れ), worried(悩み), surprised(驚き),
+proud(得意), caring(気遣い), serious(真剣), sleepy(眠い), playful(いたずら)
+"""
+
 
 class AutoConversation:
     """タイマー駆動の自動雑談（〜10ターン掛け合い + ユーザー割り込み対応）"""
@@ -115,6 +162,13 @@ class AutoConversation:
         if self._is_talking:
             self._interrupted = True
             logger.info("ユーザー割り込みにより掛け合い中断")
+
+    def trigger_follow_up(self, user_text: str, lily_text: str) -> None:
+        """リリィがユーザーに返答した後、はるかを交えた掛け合いを開始する"""
+        if self._is_talking:
+            logger.info("掛け合い中のためフォローアップをスキップ")
+            return
+        asyncio.ensure_future(self._run_follow_up(user_text, lily_text))
 
     @property
     def is_talking(self) -> bool:
@@ -280,6 +334,138 @@ class AutoConversation:
             logger.exception("葉留佳の雑談生成に失敗")
 
         return "", "default"
+
+
+    async def _run_follow_up(self, user_text: str, lily_text: str) -> None:
+        """ユーザー応答後のはるか割り込み → 掛け合い継続を実行する"""
+        self._is_talking = True
+        self._interrupted = False
+        try:
+            await asyncio.sleep(_FOLLOW_UP_DELAY)
+            if self._interrupted:
+                return
+
+            conv_history: list[dict[str, str]] = [
+                {"speaker": "峰生", "text": user_text},
+                {"speaker": "リリィ", "text": lily_text},
+            ]
+
+            # --- はるかの初回反応 ---
+            haruka_text, haruka_pose = await self._generate_haruka_follow_up_first(
+                user_text, lily_text
+            )
+            if not haruka_text or self._interrupted:
+                return
+
+            bus.ai_response_ready.emit("葉留佳", haruka_text, haruka_pose)
+            await self._session_mgr.save_message("assistant", f"[掛け合い:葉留佳] {haruka_text}")
+            conv_history.append({"speaker": "葉留佳", "text": haruka_text})
+
+            # --- 追加ターン（リリィ → はるか を繰り返す）---
+            extra_turns = random.randint(_FOLLOW_UP_MIN_EXTRA, _FOLLOW_UP_MAX_EXTRA)
+            logger.info("フォローアップ追加ターン数: %d", extra_turns)
+
+            for turn in range(extra_turns):
+                if self._interrupted:
+                    break
+
+                await asyncio.sleep(_TURN_DELAY)
+                if self._interrupted:
+                    break
+
+                # リリィの返し
+                lily_follow, lily_pose = await self._generate_lily_follow_up(conv_history)
+                if not lily_follow or self._interrupted:
+                    break
+
+                bus.ai_response_ready.emit("リリィ", lily_follow, lily_pose)
+                await self._session_mgr.save_message("assistant", f"[掛け合い:リリィ] {lily_follow}")
+                conv_history.append({"speaker": "リリィ", "text": lily_follow})
+
+                await asyncio.sleep(_TURN_DELAY)
+                if self._interrupted:
+                    break
+
+                # はるかの返し
+                haruka_follow, haruka_pose2 = await self._generate_haruka(
+                    _make_dummy_seed(conv_history), conv_history
+                )
+                if not haruka_follow or self._interrupted:
+                    break
+
+                bus.ai_response_ready.emit("葉留佳", haruka_follow, haruka_pose2)
+                await self._session_mgr.save_message("assistant", f"[掛け合い:葉留佳] {haruka_follow}")
+                conv_history.append({"speaker": "葉留佳", "text": haruka_follow})
+
+        except Exception:
+            logger.exception("フォローアップ掛け合いの実行に失敗")
+        finally:
+            self._is_talking = False
+            self._interrupted = False
+
+    async def _generate_haruka_follow_up_first(
+        self, user_text: str, lily_text: str
+    ) -> tuple[str, str]:
+        """はるかの初回フォローアップ反応を生成する"""
+        haruka_base = build_haruka_system_prompt()
+        system = _FOLLOW_UP_HARUKA_FIRST.format(
+            haruka_base=haruka_base,
+            user_text=user_text,
+            lily_text=lily_text,
+        )
+        try:
+            result = await send_chat_message(
+                api_key=self._config.openai.api_key,
+                model=self._config.openai.chat_model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": "反応してください。"},
+                ],
+            )
+            if isinstance(result, TextResult):
+                return _parse_talk_response(result.content)
+        except Exception:
+            logger.exception("はるかのフォローアップ初回生成に失敗")
+        return "", "default"
+
+    async def _generate_lily_follow_up(
+        self, conv_history: list[dict[str, str]]
+    ) -> tuple[str, str]:
+        """フォローアップ中のリリィ発話を生成する"""
+        recent = conv_history[-6:]
+        conv_lines = "\n".join(f"{e['speaker']}: 「{e['text']}」" for e in recent)
+        conv_context = f"【これまでの流れ】\n{conv_lines}\n\n上の流れを受けて自然に返してください。"
+
+        system = _FOLLOW_UP_LILY.format(conv_context=conv_context)
+        try:
+            result = await send_chat_message(
+                api_key=self._config.openai.api_key,
+                model=self._config.openai.chat_model,
+                messages=[
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": "続けてください。"},
+                ],
+            )
+            if isinstance(result, TextResult):
+                return _parse_talk_response(result.content)
+        except Exception:
+            logger.exception("リリィのフォローアップ発話生成に失敗")
+        return "", "default"
+
+
+def _make_dummy_seed(conv_history: list[dict[str, str]]):
+    """掛け合い継続用のダミーシードを作成する（_generate_haruka の引数に使用）"""
+    from ai.talk_seed import TalkSeed
+    recent_text = " / ".join(e["text"] for e in conv_history[-3:])
+    return TalkSeed(
+        summary=recent_text[:80],
+        tags=[],
+        source="follow_up",
+        lily_perspective="",
+        haruka_perspective="リリィとの会話の流れを受けて、自然に返してください。",
+        freshness="fresh",
+        created_at="",
+    )
 
 
 def _parse_talk_response(raw: str) -> tuple[str, str]:

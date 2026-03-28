@@ -62,8 +62,8 @@ class ChatEngine:
         self._tools = tools
         self._tool_executor = executor
 
-    async def handle_user_message(self, text: str) -> None:
-        """ユーザーメッセージを処理し、リリィの応答を返す"""
+    async def handle_user_message(self, text: str) -> str | None:
+        """ユーザーメッセージを処理し、リリィの応答テキストを返す（掛け合い連携用）"""
         try:
             # ユーザーメッセージをDB保存
             await self._session_mgr.save_message("user", text)
@@ -79,9 +79,12 @@ class ChatEngine:
             await self._session_mgr.save_message("assistant", lily_text)
             self._history.append({"role": "assistant", "content": lily_text})
 
+            return lily_text
+
         except Exception as e:
             logger.exception("会話処理エラー")
             bus.balloon_show.emit("システム", f"エラー: {e}")
+            return None
 
     async def _get_lily_response(self) -> str:
         """リリィのシステムプロンプトを構築してAI応答を取得"""
