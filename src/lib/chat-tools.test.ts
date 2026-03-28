@@ -6,6 +6,24 @@ import type { BrowsingTimeData } from './api-client'
 vi.mock('./api-client', () => ({
   getBrowsingTimes: vi.fn(),
   getActivityLogs: vi.fn(),
+  postQuest: vi.fn().mockResolvedValue(undefined),
+  deleteQuest: vi.fn().mockResolvedValue(undefined),
+  putQuest: vi.fn().mockResolvedValue(undefined),
+}))
+
+// useAppStore のモック — upsertQuest / deleteQuest / archiveQuest を検証
+const mockUpsertQuest = vi.fn()
+const mockDeleteQuest = vi.fn().mockReturnValue({ ok: true })
+const mockArchiveQuest = vi.fn()
+
+vi.mock('@/store/app-store', () => ({
+  useAppStore: {
+    getState: () => ({
+      upsertQuest: mockUpsertQuest,
+      deleteQuest: mockDeleteQuest,
+      archiveQuest: mockArchiveQuest,
+    }),
+  },
 }))
 
 import * as api from './api-client'
@@ -501,5 +519,183 @@ describe('executeTool - get_messages_and_logs', () => {
     const result = await executeTool('get_messages_and_logs', { type: 'chat_messages' }, ctx)
 
     expect(result).toContain('sessionId')
+  })
+})
+
+// ── CHAT_TOOLS 定義テスト（追加分） ──
+
+describe('CHAT_TOOLS - create_quest', () => {
+  it('create_questツールが定義されている', () => {
+    const tool = CHAT_TOOLS.find((t) => t.function.name === 'create_quest')
+    expect(tool).toBeDefined()
+    expect(tool?.type).toBe('function')
+    expect(tool?.function.parameters.required).toContain('title')
+  })
+})
+
+describe('CHAT_TOOLS - delete_quest', () => {
+  it('delete_questツールが定義されている', () => {
+    const tool = CHAT_TOOLS.find((t) => t.function.name === 'delete_quest')
+    expect(tool).toBeDefined()
+    expect(tool?.type).toBe('function')
+  })
+})
+
+// ── create_quest ──
+
+describe('executeTool - create_quest', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('タイトルのみでクエストを作成できる', async () => {
+    const ctx = createContext()
+    const result = await executeTool('create_quest', { title: '毎朝ストレッチ' }, ctx)
+
+    expect(result).toContain('作成しました')
+    expect(result).toContain('毎朝ストレッチ')
+    expect(mockUpsertQuest).toHaveBeenCalledTimes(1)
+
+    const quest = mockUpsertQuest.mock.calls[0][0]
+    expect(quest.title).toBe('毎朝ストレッチ')
+    expect(quest.questType).toBe('repeatable')
+    expect(quest.xpReward).toBe(10)
+    expect(quest.status).toBe('active')
+    expect(quest.skillMappingMode).toBe('ai_auto')
+    expect(quest.privacyMode).toBe('normal')
+    expect(quest.pinned).toBe(false)
+    expect(quest.source).toBe('manual')
+    expect(quest.id).toMatch(/^quest_/)
+  })
+
+  it('全パラメータを指定してクエストを作成できる', async () => {
+    const ctx = createContext()
+    const result = await executeTool('create_quest', {
+      title: 'React本を読む',
+      description: 'React公式ドキュメントを読み切る',
+      questType: 'one_time',
+      xpReward: 30,
+      category: '学習',
+    }, ctx)
+
+    expect(result).toContain('作成しました')
+    expect(result).toContain('React本を読む')
+
+    const quest = mockUpsertQuest.mock.calls[0][0]
+    expect(quest.title).toBe('React本を読む')
+    expect(quest.description).toBe('React公式ドキュメントを読み切る')
+    expect(quest.questType).toBe('one_time')
+    expect(quest.xpReward).toBe(30)
+    expect(quest.category).toBe('学習')
+  })
+
+  it('タイトルなしでエラーを返す', async () => {
+    const ctx = createContext()
+    const result = await executeTool('create_quest', {}, ctx)
+
+    expect(result).toContain('タイトル')
+    expect(mockUpsertQuest).not.toHaveBeenCalled()
+  })
+
+  it('contextなしでエラーを返す', async () => {
+    const result = await executeTool('create_quest', { title: 'テスト' })
+
+    expect(result).toContain('データを取得できません')
+  })
+})
+
+// ── delete_quest ──
+
+describe('executeTool - delete_quest', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    mockDeleteQuest.mockReturnValue({ ok: true })
+  })
+
+  it('questIdで指定してクエストを削除できる', async () => {
+    const ctx = createContext()
+    const result = await executeTool('delete_quest', { questId: 'q3' }, ctx)
+
+    expect(result).toContain('削除しました')
+    expect(result).toContain('古いクエスト')
+    expect(mockDeleteQuest).toHaveBeenCalledWith('q3')
+  })
+
+  it('titleで指定してクエストを削除できる', async () => {
+    const ctx = createContext()
+    const result = await executeTool('delete_quest', { title: '古いクエスト' }, ctx)
+
+    expect(result).toContain('削除しました')
+    expect(mockDeleteQuest).toHaveBeenCalledWith('q3')
+  })
+
+  it('titleの部分一致でクエストを検索できる', async () => {
+    const ctx = createContext()
+    const result = await executeTool('delete_quest', { title: '古い' }, ctx)
+
+    expect(result).toContain('削除しました')
+    expect(mockDeleteQuest).toHaveBeenCalledWith('q3')
+  })
+
+  it('mode=archiveでアーカイブする', async () => {
+    const ctx = createContext()
+    const result = await executeTool('delete_quest', { questId: 'q1', mode: 'archive' }, ctx)
+
+    expect(result).toContain('アーカイブしました')
+    expect(result).toContain('毎日ランニング')
+    expect(mockArchiveQuest).toHaveBeenCalledWith('q1')
+    expect(mockDeleteQuest).not.toHaveBeenCalled()
+  })
+
+  it('存在しないquestIdでエラーを返す', async () => {
+    const ctx = createContext()
+    const result = await executeTool('delete_quest', { questId: 'nonexistent' }, ctx)
+
+    expect(result).toContain('見つかりません')
+    expect(mockDeleteQuest).not.toHaveBeenCalled()
+  })
+
+  it('titleで複数マッチした場合にエラーを返す', async () => {
+    const ctx = createContext()
+    // 'を' は q2='TypeScript本を読む' と q3='古いクエスト' にはマッチしないが
+    // テストデータの3つ全部には共通文字がない。カスタムコンテキストで検証
+    const multiCtx = createContext()
+    multiCtx.appState.quests = [
+      ...multiCtx.appState.quests,
+      { id: 'q4', title: '毎日読書', questType: 'repeatable', xpReward: 10, category: '学習', status: 'active', skillMappingMode: 'ai_auto', privacyMode: 'normal', pinned: false, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-03-01T00:00:00.000Z' },
+    ]
+    // '毎日' は q1='毎日ランニング' と q4='毎日読書' にマッチ
+    const result = await executeTool('delete_quest', { title: '毎日' }, multiCtx)
+
+    expect(result).toContain('複数')
+    expect(mockDeleteQuest).not.toHaveBeenCalled()
+  })
+
+  it('titleで該当なしの場合にエラーを返す', async () => {
+    const ctx = createContext()
+    const result = await executeTool('delete_quest', { title: '存在しないクエスト名' }, ctx)
+
+    expect(result).toContain('見つかりません')
+  })
+
+  it('questIdもtitleもない場合にエラーを返す', async () => {
+    const ctx = createContext()
+    const result = await executeTool('delete_quest', {}, ctx)
+
+    expect(result).toContain('questId')
+  })
+
+  it('deleteQuestがok:falseを返した場合にそのreasonを返す', async () => {
+    mockDeleteQuest.mockReturnValue({ ok: false, reason: '履歴があるため削除できません。不要化したクエストはアーカイブしてください。' })
+    const ctx = createContext()
+    const result = await executeTool('delete_quest', { questId: 'q1' }, ctx)
+
+    expect(result).toContain('アーカイブ')
+  })
+
+  it('contextなしでエラーを返す', async () => {
+    const result = await executeTool('delete_quest', { questId: 'q1' })
+
+    expect(result).toContain('データを取得できません')
   })
 })

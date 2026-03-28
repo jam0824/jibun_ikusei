@@ -5,8 +5,11 @@ import type { ActivityLogEntry } from '@/lib/api-client'
 import { aggregateDomains, aggregateByCategory } from '@/lib/browsing-aggregator'
 import { formatSeconds } from '@/lib/time-format'
 import { maskApiKey } from '@/domain/logic'
+import { createId } from '@/lib/utils'
+import { useAppStore } from '@/store/app-store'
 import type {
   PersistedAppState,
+  Quest,
   ChatSession,
   ChatMessage,
 } from '@/domain/types'
@@ -158,6 +161,66 @@ export const CHAT_TOOLS = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'create_quest',
+      description: 'ユーザーの代わりにクエストを新規作成する。「〇〇するクエスト作って」「新しいクエストを追加して」などに対応。',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: {
+            type: 'string',
+            description: 'クエストのタイトル',
+          },
+          description: {
+            type: 'string',
+            description: 'クエストの説明（任意）',
+          },
+          questType: {
+            type: 'string',
+            enum: ['repeatable', 'one_time'],
+            description: 'クエスト種別。repeatable=繰り返し（デフォルト）、one_time=一回限り',
+          },
+          xpReward: {
+            type: 'number',
+            description: '獲得XP（デフォルト: 10）',
+          },
+          category: {
+            type: 'string',
+            enum: ['学習', '運動', '仕事', '生活', '対人', '創作', 'その他'],
+            description: 'カテゴリ（任意）',
+          },
+        },
+        required: ['title'],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'delete_quest',
+      description: 'クエストを削除またはアーカイブする。「〇〇のクエスト消して」「クエストをアーカイブして」などに対応。完了履歴があるクエストはアーカイブのみ可能。',
+      parameters: {
+        type: 'object',
+        properties: {
+          questId: {
+            type: 'string',
+            description: 'クエストID（get_quest_dataで取得可能）',
+          },
+          title: {
+            type: 'string',
+            description: 'クエストのタイトル（部分一致で検索。questIdが不明な場合に使用）',
+          },
+          mode: {
+            type: 'string',
+            enum: ['delete', 'archive'],
+            description: 'delete=完全削除（デフォルト）、archive=アーカイブ（非表示にするが履歴は保持）',
+          },
+        },
+      },
+    },
+  },
 ]
 
 // ── 共通ユーティリティ ──
@@ -304,7 +367,7 @@ function executeGetQuestData(args: Record<string, unknown>, context: ToolContext
         q.category ?? '',
         q.pinned ? '📌' : '',
       ].filter(Boolean).join(', ')
-      lines.push(`- ${q.title}（${tags}）XP: ${q.xpReward}`)
+      lines.push(`- [${q.id}] ${q.title}（${tags}）XP: ${q.xpReward}`)
     }
     if (quests.length > 20) lines.push(`  ...他${quests.length - 20}件`)
 
@@ -519,6 +582,74 @@ async function executeGetMessagesAndLogs(args: Record<string, unknown>, context:
   return `不明なtype: ${type}`
 }
 
+// ── create_quest ──
+
+function executeCreateQuest(args: Record<string, unknown>): string {
+  const title = args.title as string | undefined
+  if (!title) return 'クエストのタイトルを指定してください。'
+
+  const quest: Quest = {
+    id: createId('quest'),
+    title,
+    description: (args.description as string) ?? undefined,
+    questType: (args.questType as Quest['questType']) ?? 'repeatable',
+    xpReward: (args.xpReward as number) ?? 10,
+    category: (args.category as string) ?? undefined,
+    skillMappingMode: 'ai_auto',
+    privacyMode: 'normal',
+    pinned: false,
+    source: 'manual',
+    status: 'active',
+    createdAt: '',
+    updatedAt: '',
+  }
+
+  useAppStore.getState().upsertQuest(quest)
+
+  const tags = [
+    quest.questType === 'repeatable' ? '繰り返し' : '一回限り',
+    quest.category ?? '',
+    `XP: ${quest.xpReward}`,
+  ].filter(Boolean).join(', ')
+
+  return `クエスト「${quest.title}」を作成しました。（${tags}）`
+}
+
+// ── delete_quest ──
+
+function executeDeleteQuest(args: Record<string, unknown>, context: ToolContext): string {
+  const questId = args.questId as string | undefined
+  const title = args.title as string | undefined
+  const mode = (args.mode as string) ?? 'delete'
+
+  if (!questId && !title) return 'questIdまたはtitleを指定してください。'
+
+  let targetQuest: ToolContext['appState']['quests'][number] | undefined
+
+  if (questId) {
+    targetQuest = context.appState.quests.find((q) => q.id === questId)
+    if (!targetQuest) return `ID「${questId}」のクエストが見つかりません。`
+  } else {
+    const matches = context.appState.quests.filter((q) => q.title.includes(title!))
+    if (matches.length === 0) return `「${title}」に該当するクエストが見つかりません。`
+    if (matches.length > 1) {
+      const names = matches.map((q) => `「${q.title}」`).join('、')
+      return `「${title}」に複数のクエストが該当します: ${names}。questIdで指定してください。`
+    }
+    targetQuest = matches[0]
+  }
+
+  if (mode === 'archive') {
+    useAppStore.getState().archiveQuest(targetQuest.id)
+    return `クエスト「${targetQuest.title}」をアーカイブしました。`
+  }
+
+  const result = useAppStore.getState().deleteQuest(targetQuest.id)
+  if (!result.ok) return result.reason!
+
+  return `クエスト「${targetQuest.title}」を削除しました。`
+}
+
 // ── メインディスパッチ ──
 
 export async function executeTool(
@@ -549,6 +680,14 @@ export async function executeTool(
 
   if (name === 'get_messages_and_logs') {
     return executeGetMessagesAndLogs(args, context)
+  }
+
+  if (name === 'create_quest') {
+    return executeCreateQuest(args)
+  }
+
+  if (name === 'delete_quest') {
+    return executeDeleteQuest(args, context)
   }
 
   return `不明なツール: ${name}`
