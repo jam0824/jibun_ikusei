@@ -239,8 +239,7 @@ async def async_init(app_instance: App) -> None:
         try:
             await app_instance.auth.get_id_token()
             logger.info("Cognito認証成功")
-            await app_instance.session_mgr.load_latest_session()
-            await app_instance.chat_engine.load_session_history()
+            await app_instance.session_mgr.create_new_session()
         except Exception:
             logger.exception("初期化中にエラー（認証またはセッション読み込み失敗）")
     else:
