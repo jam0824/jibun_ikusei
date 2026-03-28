@@ -23,14 +23,13 @@ export function QuestListScreen() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [tab, setTab] = useState<(typeof tabs)[number]['key']>('today')
   const [query, setQuery] = useState('')
-  const { quests, completions, skills, completeQuest, reopenQuest, archiveQuest } = useAppStore(
+  const { quests, completions, skills, completeQuest, reopenQuest } = useAppStore(
     useShallow((state) => ({
       quests: state.quests,
       completions: state.completions,
       skills: state.skills,
       completeQuest: state.completeQuest,
       reopenQuest: state.reopenQuest,
-      archiveQuest: state.archiveQuest,
     })),
   )
 
