@@ -33,7 +33,15 @@
       "WebFetch(domain:qiita.com)",
       "Bash(find /d/codes/自分育成アプリ/chrome-extension/src -type f \\\\\\(-name *.ts -o -name *.tsx -o -name *.js \\\\\\))",
       "Bash(find src/screens -type f -name *lily* -o -name *chat*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(npx vite:*)",
+      "Bash(find D:codes自分育成アプリ -maxdepth 2 -type f \\\\\\(-name *.py -o -name requirements.txt -o -name pyproject.toml -o -name setup.py \\\\\\))",
+      "Bash(find D:codes自分育成アプリ -type f -name *.py)",
+      "Bash(find D:codes自分育成アプリsrc -type f -name *.ts -o -name *.tsx -o -name *.js -o -name *.jsx)",
+      "Bash(find D:codes自分育成アプリ -maxdepth 3 -name *.py -type f)",
+      "Bash(uv add:*)",
+      "Bash(mkdir -p core ui ai pose api data)",
+      "Bash(touch core/__init__.py ui/__init__.py ai/__init__.py pose/__init__.py api/__init__.py data/__init__.py)"
     ]
   }
 }
