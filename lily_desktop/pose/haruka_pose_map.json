@@ -1,149 +1,46 @@
 {
-  "poses": [
-    {
-      "filename": "05_saigusa_haruka01.png",
-      "emotions": ["default", "neutral", "calm", "polite", "confident"],
-      "description": "通常・微笑（制服A）。礼儀正しく入室、自信満々。"
-    },
-    {
-      "filename": "05_saigusa_haruka02.png",
-      "emotions": ["surprised", "protest", "complaining"],
-      "description": "通常・微笑（制服B）。驚く、抗議する。"
-    },
-    {
-      "filename": "05_saigusa_haruka03.png",
-      "emotions": ["neutral_b"],
-      "description": "通常・微笑（制服B差分）。"
-    },
-    {
-      "filename": "05_saigusa_haruka04.png",
-      "emotions": ["reluctant", "farewell", "distant_happy"],
-      "description": "元気・口開き。渋々、劇的なお別れ。"
-    },
-    {
-      "filename": "05_saigusa_haruka05.png",
-      "emotions": ["dramatic", "acting", "performative"],
-      "description": "元気・口開き。劇的に演技する。"
-    },
-    {
-      "filename": "05_saigusa_haruka06.png",
-      "emotions": ["shocked", "discovery", "looking_away"],
-      "description": "元気・口開き。予想外の発見に驚く。"
-    },
-    {
-      "filename": "05_saigusa_haruka07.png",
-      "emotions": ["energetic"],
-      "description": "元気・口開き差分。"
-    },
-    {
-      "filename": "05_saigusa_haruka08.png",
-      "emotions": ["happy", "excited", "wanting", "cheerful"],
-      "description": "元気・口開き。嬉しい、興奮する、かわいいものを要求。"
-    },
-    {
-      "filename": "05_saigusa_haruka09.png",
-      "emotions": ["clingy", "affectionate", "needy"],
-      "description": "困り笑い。構ってほしくて腕に抱きつく。"
-    },
-    {
-      "filename": "05_saigusa_haruka10.png",
-      "emotions": ["troubled", "lying", "persuading", "sulking"],
-      "description": "困り笑い。腹痛の嘘をつく、熱心に説得する、拗ねる。"
-    },
-    {
-      "filename": "05_saigusa_haruka11.png",
-      "emotions": ["awkward"],
-      "description": "困り笑い差分。"
-    },
-    {
-      "filename": "05_saigusa_haruka12.png",
-      "emotions": ["startled", "angry", "defeated", "frustrated"],
-      "description": "困り笑い。手を叩かれて驚く、騙されて怒る、ぐったり。"
-    },
-    {
-      "filename": "05_saigusa_haruka13.png",
-      "emotions": ["teasing", "playful", "mischievous"],
-      "description": "強照れ・驚き。Sっぽいと遊び心で責める。"
-    },
-    {
-      "filename": "05_saigusa_haruka14.png",
-      "emotions": ["encouraging", "urging"],
-      "description": "強照れ・驚き。感情を込めるよう促す。"
-    },
-    {
-      "filename": "05_saigusa_haruka15.png",
-      "emotions": ["pouting", "demanding", "insisting"],
-      "description": "強照れ・驚き。ふくれっ面で強く要求する。"
-    },
-    {
-      "filename": "05_saigusa_haruka16.png",
-      "emotions": ["disappointed", "slow_protest"],
-      "description": "強照れ・驚き。失望してゆっくり抗議する。"
-    },
-    {
-      "filename": "05_saigusa_haruka17.png",
-      "emotions": ["proud", "satisfied", "smug"],
-      "description": "強照れ・驚き。自信満々、嬉しそう。"
-    },
-    {
-      "filename": "05_saigusa_haruka18.png",
-      "emotions": ["flustered"],
-      "description": "強照れ・驚き差分。"
-    },
-    {
-      "filename": "05_saigusa_haruka19.png",
-      "emotions": ["gentle", "waiting", "patient", "soft"],
-      "description": "照れ・微笑。静かに穏やかに待つ。"
-    },
-    {
-      "filename": "05_saigusa_haruka20.png",
-      "emotions": ["shock", "sudden_surprise"],
-      "description": "照れ・微笑。突然の出現に衝撃。"
-    },
-    {
-      "filename": "05_saigusa_haruka21.png",
-      "emotions": ["motivated", "proposing", "joking", "suggesting"],
-      "description": "照れ・微笑。やる気を持って提案、ジョークを言う。"
-    },
-    {
-      "filename": "05_saigusa_haruka22.png",
-      "emotions": ["shy", "blushing", "bashful"],
-      "description": "照れ・微笑。恥ずかしそう。"
-    },
-    {
-      "filename": "05_saigusa_haruka23.png",
-      "emotions": ["shy_smile"],
-      "description": "照れ・微笑差分。"
-    },
-    {
-      "filename": "05_saigusa_haruka24.png",
-      "emotions": ["requesting", "cute_demand"],
-      "description": "照れ・微笑。可愛いあだ名を要求する。"
-    },
-    {
-      "filename": "05_saigusa_haruka25.png",
-      "emotions": ["nickname", "responding"],
-      "description": "照れ・微笑。自分もあだ名で呼び返す。"
-    },
-    {
-      "filename": "05_saigusa_haruka26.png",
-      "emotions": ["delighted", "confirming", "pleasantly_surprised"],
-      "description": "照れ・微笑。驚いて嬉しそうに確認する。"
-    },
-    {
-      "filename": "05_saigusa_haruka27.png",
-      "emotions": ["leaving", "goodbye", "departing"],
-      "description": "照れ・微笑。その場を去る。"
-    },
-    {
-      "filename": "05_saigusa_haruka28.png",
-      "emotions": ["casual_demand", "easygoing"],
-      "description": "照れ・微笑。調子よく要求する。"
-    },
-    {
-      "filename": "05_saigusa_haruka29.png",
-      "emotions": ["loud_protest", "yelling", "indignant"],
-      "description": "照れ・微笑。口を引っ張られ大声で抗議する。"
-    }
-  ]
+  "categories": {
+    "default": [
+      {"filename": "05_saigusa_haruka01.png", "description": "通常・微笑（制服A）。礼儀正しく入室、自信満々。"},
+      {"filename": "05_saigusa_haruka03.png", "description": "通常・微笑（制服B差分）。"},
+      {"filename": "05_saigusa_haruka07.png", "description": "元気・口開き差分。"}
+    ],
+    "joy": [
+      {"filename": "05_saigusa_haruka08.png", "description": "嬉しい、興奮する、かわいいものを要求。"},
+      {"filename": "05_saigusa_haruka26.png", "description": "驚いて嬉しそうに確認する。"},
+      {"filename": "05_saigusa_haruka17.png", "description": "自信満々、嬉しそう。"}
+    ],
+    "anger": [
+      {"filename": "05_saigusa_haruka12.png", "description": "手を叩かれて驚く、騙されて怒る、ぐったり。"},
+      {"filename": "05_saigusa_haruka29.png", "description": "口を引っ張られ大声で抗議する。"},
+      {"filename": "05_saigusa_haruka15.png", "description": "ふくれっ面で強く要求する。"},
+      {"filename": "05_saigusa_haruka16.png", "description": "失望してゆっくり抗議する。"}
+    ],
+    "sad": [
+      {"filename": "05_saigusa_haruka04.png", "description": "渋々、劇的なお別れ。"},
+      {"filename": "05_saigusa_haruka27.png", "description": "その場を去る。"}
+    ],
+    "fun": [
+      {"filename": "05_saigusa_haruka08.png", "description": "嬉しい、興奮する。"},
+      {"filename": "05_saigusa_haruka05.png", "description": "劇的に演技する。"},
+      {"filename": "05_saigusa_haruka21.png", "description": "やる気を持って提案、ジョークを言う。"},
+      {"filename": "05_saigusa_haruka13.png", "description": "Sっぽいと遊び心で責める。"}
+    ],
+    "shy": [
+      {"filename": "05_saigusa_haruka22.png", "description": "恥ずかしそう。"},
+      {"filename": "05_saigusa_haruka23.png", "description": "照れ・微笑差分。"},
+      {"filename": "05_saigusa_haruka19.png", "description": "静かに穏やかに待つ。"},
+      {"filename": "05_saigusa_haruka18.png", "description": "強照れ・驚き差分。"}
+    ],
+    "worried": [
+      {"filename": "05_saigusa_haruka10.png", "description": "腹痛の嘘をつく、熱心に説得する、拗ねる。"},
+      {"filename": "05_saigusa_haruka11.png", "description": "困り笑い差分。"},
+      {"filename": "05_saigusa_haruka09.png", "description": "構ってほしくて腕に抱きつく。"}
+    ],
+    "surprised": [
+      {"filename": "05_saigusa_haruka02.png", "description": "驚く、抗議する。"},
+      {"filename": "05_saigusa_haruka06.png", "description": "予想外の発見に驚く。"},
+      {"filename": "05_saigusa_haruka20.png", "description": "突然の出現に衝撃。"}
+    ]
+  }
 }

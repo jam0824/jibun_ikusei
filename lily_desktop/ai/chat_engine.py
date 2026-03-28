@@ -24,6 +24,29 @@ logger = logging.getLogger(__name__)
 JST = timezone(timedelta(hours=9))
 
 
+def parse_ai_response(raw: str) -> tuple[str, str]:
+    """AIレスポンス(JSON)をパースして (text, pose_category) を返す。
+
+    期待形式: {"text": "セリフ", "pose_category": "joy"}
+    パース失敗時は生テキストをそのまま使い、pose_categoryは"default"にする。
+    """
+    cleaned = raw.strip()
+    # コードブロック除去
+    if cleaned.startswith("```"):
+        lines = cleaned.split("\n")
+        lines = [l for l in lines if not l.strip().startswith("```")]
+        cleaned = "\n".join(lines)
+
+    try:
+        data = json.loads(cleaned)
+        text = data.get("text", "")
+        pose = data.get("pose_category", "default")
+        return text, pose
+    except json.JSONDecodeError:
+        # JSONでない場合は生テキストをそのまま使用
+        return raw.strip(), "default"
+
+
 class ChatEngine:
     """リリィとの会話を管理するエンジン"""
 
@@ -46,13 +69,15 @@ class ChatEngine:
             await self._session_mgr.save_message("user", text)
             self._history.append({"role": "user", "content": text})
 
-            # リリィ応答
-            lily_response = await self._get_lily_response()
-            bus.ai_response_ready.emit("リリィ", lily_response, "default")
+            # リリィ応答（JSON形式）
+            raw_response = await self._get_lily_response()
+            lily_text, pose_category = parse_ai_response(raw_response)
 
-            # リリィ応答をDB保存
-            await self._session_mgr.save_message("assistant", lily_response)
-            self._history.append({"role": "assistant", "content": lily_response})
+            bus.ai_response_ready.emit("リリィ", lily_text, pose_category)
+
+            # リリィ応答をDB保存（テキスト部分のみ）
+            await self._session_mgr.save_message("assistant", lily_text)
+            self._history.append({"role": "assistant", "content": lily_text})
 
         except Exception as e:
             logger.exception("会話処理エラー")

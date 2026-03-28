@@ -1,14 +1,41 @@
 {
-  "poses": [
-    {
-      "filename": "lily_default.png",
-      "emotions": ["default", "neutral", "greeting", "happy", "cheerful", "welcome"],
-      "description": "デフォルト立ちポーズ。右手を挙げて挨拶。笑顔。"
-    },
-    {
-      "filename": "lily_stand02.png",
-      "emotions": ["calm", "gentle", "thinking", "shy", "soft", "listening"],
-      "description": "落ち着いたポーズ。穏やかな表情。"
-    }
-  ]
+  "categories": {
+    "default": [
+      {
+        "filename": "lily_default.png",
+        "description": "通常・穏やかな笑顔"
+      },
+      {
+        "filename": "lily_default02.png",
+        "description": "通常・リラックスした立ちポーズ"
+      }
+    ],
+    "joy": [
+      {
+        "filename": "lily_joy_01.png",
+        "description": "満面の笑み、嬉しそうに両手を合わせている、幸せな表情（バリエーション1）"
+      }
+    ],
+    "anger": [],
+    "sad": [],
+    "fun": [],
+    "shy": [],
+    "worried": [],
+    "surprised": [],
+    "proud": [],
+    "caring": [
+      {
+        "filename": "lily_caring_01.png",
+        "description": "優しく微笑んでいる、手を差し伸べている、気遣いの表情（バリエーション1）"
+      },
+      {
+        "filename": "lily_caring_02.png",
+        "description": "優しく微笑んでいる、手を差し伸べている、気遣いの表情（バリエーション2）"
+      }
+    ],
+    "serious": [],
+    "sleepy": [],
+    "playful": []
+  },
+  "max_per_category": 5
 }
