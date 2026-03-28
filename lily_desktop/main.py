@@ -13,7 +13,7 @@ from ai.tool_definitions import CHAT_TOOLS
 from ai.tool_executor import ToolExecutor
 from api.api_client import ApiClient
 from api.auth import CognitoAuth
-from core.config import load_config
+from core.config import load_config, save_voice_device
 from core.desktop_context import DesktopContext, fetch_desktop_context, format_context_log
 from core.event_bus import bus
 from data.session_manager import SessionManager
@@ -21,6 +21,7 @@ from pose.pose_generator import ensure_pose
 from pose.pose_manager import PoseManager
 from ui.main_window import MainWindow
 from ui.tray_icon import TrayIcon
+from voice.voice_pipeline import VoicePipeline
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,6 +47,7 @@ class App:
         )
         self.chat_engine.set_tools(CHAT_TOOLS, self.tool_executor.execute)
         self.auto_conversation = AutoConversation(self.config, self.session_mgr)
+        self.voice_pipeline: VoicePipeline | None = None
 
     def connect_signals(self, window: MainWindow) -> None:
         """イベントバスとUIの配線"""
@@ -58,6 +60,10 @@ class App:
 
         # AI応答 → 吹き出し表示 + ポーズ変更
         bus.ai_response_ready.connect(self._on_ai_response)
+
+        # 音声入力
+        bus.voice_toggle_requested.connect(self._on_voice_toggle)
+        bus.voice_device_selected.connect(self._on_voice_device_selected)
 
         # デバッグ
         bus.desktop_context_requested.connect(self._on_desktop_context_requested)
@@ -76,6 +82,38 @@ class App:
         await self.session_mgr.create_new_session()
         self.chat_engine._history.clear()
         bus.balloon_show.emit("リリィ", "新しい会話を始めるね！")
+
+    def _on_voice_toggle(self) -> None:
+        """音声入力のON/OFFを切り替える"""
+        if self.voice_pipeline is None:
+            self.voice_pipeline = VoicePipeline(
+                config=self.config.voice,
+                loop=asyncio.get_event_loop(),
+            )
+
+        if self.voice_pipeline.is_running:
+            self.voice_pipeline.stop()
+            bus.balloon_show.emit("リリィ", "音声入力をオフにしたよ")
+        else:
+            self.voice_pipeline.start()
+            if self.voice_pipeline.is_running:
+                bus.balloon_show.emit("リリィ", "音声入力をオンにしたよ！話しかけてね")
+
+    def _on_voice_device_selected(self, device_index: int, device_name: str) -> None:
+        """マイクデバイスを切り替えて設定を保存する"""
+        if self.voice_pipeline is None:
+            self.voice_pipeline = VoicePipeline(
+                config=self.config.voice,
+                loop=asyncio.get_event_loop(),
+            )
+
+        self.voice_pipeline.set_device(device_index, device_name)
+        self.config.voice.device_name = device_name
+
+        # config.yaml に保存
+        save_voice_device(device_name)
+        logger.info("マイクを選択・保存: %s", device_name)
+        bus.balloon_show.emit("リリィ", f"マイクを「{device_name}」に切り替えたよ！")
 
     def _on_auto_talk_requested(self) -> None:
         self.auto_conversation.trigger_now()
@@ -156,6 +194,14 @@ async def async_init(app_instance: App) -> None:
     # 自動雑談タイマーを開始
     app_instance.auto_conversation.start()
 
+    # 音声入力の自動開始
+    if app_instance.config.voice.enabled and app_instance.config.voice.google_api_key:
+        app_instance.voice_pipeline = VoicePipeline(
+            config=app_instance.config.voice,
+            loop=asyncio.get_event_loop(),
+        )
+        app_instance.voice_pipeline.start()
+
 
 def main() -> None:
     qt_app = QApplication(sys.argv)
@@ -186,6 +232,13 @@ def main() -> None:
 
     tray = TrayIcon(window)
     tray.show()
+
+    # アプリ終了時に音声パイプラインを停止
+    def on_quit():
+        if app_instance.voice_pipeline is not None:
+            app_instance.voice_pipeline.stop()
+
+    qt_app.aboutToQuit.connect(on_quit)
 
     # 非同期初期化を開始
     asyncio.ensure_future(async_init(app_instance))

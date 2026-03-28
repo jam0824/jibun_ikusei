@@ -18,6 +18,10 @@ class EventBus(QObject):
     # セッション操作
     new_chat_requested = Signal()
 
+    # 音声入力
+    voice_toggle_requested = Signal()       # ON/OFFトグル要求
+    voice_device_selected = Signal(int, str)  # マイク選択 (device_index, device_name)
+
     # デバッグ
     desktop_context_requested = Signal()  # 手動で状況取得を要求
     auto_talk_requested = Signal()        # 手動で雑談を発火
