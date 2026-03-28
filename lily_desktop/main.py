@@ -72,7 +72,13 @@ class App:
         # 掛け合い中ならユーザー割り込みで中断
         if self.auto_conversation.is_talking:
             self.auto_conversation.interrupt()
-        asyncio.ensure_future(self.chat_engine.handle_user_message(text))
+        asyncio.ensure_future(self._handle_user_message_with_follow_up(text))
+
+    async def _handle_user_message_with_follow_up(self, text: str) -> None:
+        """リリィの応答後にはるかを交えた掛け合いを起動する"""
+        lily_text = await self.chat_engine.handle_user_message(text)
+        if lily_text:
+            self.auto_conversation.trigger_follow_up(text, lily_text)
 
     def _on_new_chat(self) -> None:
         asyncio.ensure_future(self._create_new_chat())
