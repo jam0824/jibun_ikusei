@@ -2,10 +2,20 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from core.config import SYS_DIR
+
+JST = timezone(timedelta(hours=9))
+_WEEKDAYS_JA = ["月", "火", "水", "木", "金", "土", "日"]
+
+
+def _now_str() -> str:
+    now = datetime.now(JST)
+    weekday = _WEEKDAYS_JA[now.weekday()]
+    return now.strftime(f"%Y年%m月%d日({weekday}) %H:%M")
 
 _AIKATA_SETTINGS_PATH = SYS_DIR / "aikata.md"
 
@@ -72,6 +82,8 @@ def build_lily_system_prompt(
 
     return "\n".join(
         [
+            f"【現在日時】{_now_str()}",
+            "",
             "あなたの名前はリリィです。自分育成アプリの温かく励ます成長パートナーです。",
             "ユーザーの名前は峰生（みねお）です。",
             "日本語で会話してください。",
@@ -134,6 +146,8 @@ def build_haruka_system_prompt() -> str:
 
     return "\n".join(
         [
+            f"【現在日時】{_now_str()}",
+            "",
             "あなたは三枝葉留佳（さいぐさ はるか）です。",
             "リリィの相方で、デスクトップマスコットとして峰生のパソコンの画面に立っています。",
             "ユーザーの名前は峰生（みねお）です。「峰生」と呼んでください。",
