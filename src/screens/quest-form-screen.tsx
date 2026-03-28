@@ -29,7 +29,7 @@ export function QuestFormScreen() {
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const editId = searchParams.get('edit')
-  const { quests, completions, skills, settings, upsertQuest, deleteQuest } = useAppStore(
+  const { quests, completions, skills, settings, upsertQuest, deleteQuest, archiveQuest } = useAppStore(
     useShallow((state) => ({
       quests: state.quests,
       completions: state.completions,
@@ -37,6 +37,7 @@ export function QuestFormScreen() {
       settings: state.settings,
       upsertQuest: state.upsertQuest,
       deleteQuest: state.deleteQuest,
+      archiveQuest: state.archiveQuest,
     })),
   )
 
@@ -142,6 +143,12 @@ export function QuestFormScreen() {
     }
 
     navigate('/quests')
+  }
+
+  const handleArchive = () => {
+    if (!editingQuest) return
+    archiveQuest(editingQuest.id)
+    navigate(-1)
   }
 
   const mappingModes: Array<{ key: SkillMappingMode; title: string; description: string }> = [
@@ -441,23 +448,38 @@ export function QuestFormScreen() {
       </section>
 
       {editingQuest ? (
-        <section className="mt-5">
+        <section className="mt-5 space-y-3">
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="space-y-4 p-4">
+              <div>
+                <div className="text-sm font-semibold text-amber-950">アーカイブ</div>
+                <div className="mt-1 text-sm text-amber-800">
+                  クエストを非表示にします。履歴は保持され、あとから再オープンできます。
+                </div>
+              </div>
+
+              <Button variant="secondary" className="w-full" onClick={handleArchive}>
+                このクエストをアーカイブする
+              </Button>
+            </CardContent>
+          </Card>
+
           <Card className="border-rose-200 bg-rose-50">
             <CardContent className="space-y-4 p-4">
               <div>
                 <div className="text-sm font-semibold text-rose-950">削除</div>
                 <div className="mt-1 text-sm text-rose-800">
-                  誤って追加した不要なクエストを完全に削除します。削除後は元に戻せません。
+                  クエストを完全に削除します。削除後は元に戻せません。
                 </div>
               </div>
 
               <div className="rounded-2xl border border-rose-200 bg-white/80 px-4 py-3 text-xs leading-5 text-rose-700">
                 {hasActiveCompletion
                   ? '履歴があるため削除できません。不要化したクエストはアーカイブしてください。'
-                  : '完了履歴がないため削除できます。初期サンプルクエストも未クリアならここから削除できます。'}
+                  : '完了履歴がないため削除できます。'}
               </div>
 
-              <Button variant="danger" className="w-full" onClick={handleDelete}>
+              <Button variant="danger" className="w-full" disabled={hasActiveCompletion} onClick={handleDelete}>
                 このクエストを削除する
               </Button>
             </CardContent>
