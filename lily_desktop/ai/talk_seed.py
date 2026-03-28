@@ -73,9 +73,9 @@ class TalkSeedManager:
         return seeds
 
     def select_best_seed(self, seeds: list[TalkSeed]) -> TalkSeed | None:
-        """優先度に基づいて最適な種を選ぶ。
+        """話題のバランスを考慮して種を選ぶ。
 
-        優先度: デスクトップ状況 > Wikimedia/Annict
+        デスクトップ状況 50% / その他（Wikimedia・Annict）50% の配分。
         クールダウン中の種は除外。
         """
         self._cleanup_cooldown()
@@ -91,13 +91,19 @@ class TalkSeedManager:
         if not available:
             return None
 
-        # デスクトップ状況を最優先
         desktop_seeds = [s for s in available if s.source == "desktop"]
+        other_seeds = [s for s in available if s.source != "desktop"]
+
+        # 両方ある場合は50%ずつ
+        if desktop_seeds and other_seeds:
+            if random.random() < 0.5:
+                return desktop_seeds[0]
+            return random.choice(other_seeds)
+
+        # 片方しかない場合はそちらから選ぶ
         if desktop_seeds:
             return desktop_seeds[0]
-
-        # Wikimedia と Annict からランダムに選択
-        return random.choice(available)
+        return random.choice(other_seeds)
 
     def mark_used(self, seed: TalkSeed) -> None:
         """種を使用済みとして記録する"""
