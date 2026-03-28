@@ -59,7 +59,7 @@ class BalloonWidget(QWidget):
 
         # 文字数に応じた表示時間後に次のメッセージへ切り替え or 非表示
         char_count = len(text)
-        duration = max(BALLOON_DISPLAY_SECONDS * 1000, char_count * 80)
+        duration = max(BALLOON_DISPLAY_SECONDS * 1000, char_count * 200)
         self._hide_timer.start(int(duration))
 
     def _advance_queue(self) -> None:

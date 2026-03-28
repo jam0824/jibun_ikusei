@@ -115,7 +115,12 @@
       }
     ],
     "sleepy": [],
-    "playful": []
+    "playful": [
+      {
+        "filename": "lily_playful_01.png",
+        "description": "いたずらっぽい表情、ウィンクしている、舌を出している（バリエーション1）"
+      }
+    ]
   },
   "max_per_category": 5
 }
