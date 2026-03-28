@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root {
+      color-scheme: light;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    body.debug {
+      background: #00aa00;
+    }
+
+    model-viewer {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      --poster-color: transparent;
+    }
+
+    body.debug model-viewer {
+      background: #00aa00;
+    }
+
+    #error {
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      background: rgba(0, 0, 0, 0.75);
+      color: white;
+      font: 12px/1.4 sans-serif;
+      display: none;
+      white-space: pre-wrap;
+    }
+  </style>
+  <script type="module" src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js"></script>
+</head>
+<body>
+  <model-viewer
+    id="viewer"
+    src="./Flame.glb"
+    animation-name="Idle"
+    autoplay
+    camera-controls
+    disable-pan
+    interaction-prompt="none"
+    shadow-intensity="0"
+    exposure="1.2"
+    camera-orbit="0deg 75deg 105%"
+    field-of-view="18deg"
+    min-camera-orbit="auto auto 70%"
+    max-camera-orbit="auto auto 130%">
+  </model-viewer>
+  <div id="error"></div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("debug") === "1") {
+      document.body.classList.add("debug");
+    }
+
+    const viewer = document.getElementById("viewer");
+    const error = document.getElementById("error");
+
+    function showError(message) {
+      error.textContent = message;
+      error.style.display = "block";
+    }
+
+    viewer.addEventListener("error", (event) => {
+      const detail = event?.detail ? JSON.stringify(event.detail) : "unknown error";
+      showError(`model-viewer error\n${detail}`);
+      console.error("model-viewer error", event.detail);
+    });
+
+    viewer.addEventListener("load", () => {
+      viewer.animationName = "Idle";
+      viewer.play({ repetitions: Infinity });
+      console.log("model loaded");
+    });
+  </script>
+</body>
+</html>
