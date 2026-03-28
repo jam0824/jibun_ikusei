@@ -9,7 +9,6 @@ import threading
 from core.config import VoiceConfig
 from core.event_bus import bus
 from voice.audio_capture import AudioCapture, find_device_index
-from voice.vad import _compute_rms
 from voice.speech_recognizer import SpeechRecognizer
 from voice.vad import VadGate
 
@@ -115,10 +114,6 @@ class VoicePipeline:
             # 最初のフレーム受信をログ出力（マイクからデータが来ているか確認）
             if frame_count == 1:
                 logger.info("マイクからフレーム受信開始 (%d bytes)", len(frame))
-            # 1秒ごとに音量をログ出力（閾値調整用）
-            if frame_count % 33 == 0:
-                rms = _compute_rms(frame)
-                logger.info("RMS: %d (閾値: %d)", rms, self._config.volume_threshold)
 
             audio_data = self._vad.process_frame(frame)
             if audio_data is not None:
