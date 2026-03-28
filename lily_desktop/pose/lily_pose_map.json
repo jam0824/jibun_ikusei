@@ -50,6 +50,10 @@
       {
         "filename": "lily_fun_04.png",
         "description": "楽しそうに笑っている、口を大きく開けて笑顔、ウキウキしている（バリエーション4）"
+      },
+      {
+        "filename": "lily_fun_05.png",
+        "description": "楽しそうに笑っている、口を大きく開けて笑顔、ウキウキしている（バリエーション5）"
       }
     ],
     "shy": [],
@@ -76,6 +80,10 @@
       {
         "filename": "lily_proud_04.png",
         "description": "自信満々の表情、胸を張っている、ドヤ顔、得意げ（バリエーション4）"
+      },
+      {
+        "filename": "lily_proud_05.png",
+        "description": "自信満々の表情、胸を張っている、ドヤ顔、得意げ（バリエーション5）"
       }
     ],
     "caring": [
