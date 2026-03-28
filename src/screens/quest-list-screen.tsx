@@ -15,6 +15,7 @@ const tabs = [
   { key: 'repeatable', label: '繰り返し' },
   { key: 'one_time', label: '単発' },
   { key: 'completed', label: '完了済み' },
+  { key: 'archived', label: 'アーカイブ' },
 ] as const
 
 export function QuestListScreen() {
@@ -22,13 +23,14 @@ export function QuestListScreen() {
   const [searchParams, setSearchParams] = useSearchParams()
   const [tab, setTab] = useState<(typeof tabs)[number]['key']>('today')
   const [query, setQuery] = useState('')
-  const { quests, completions, skills, completeQuest, reopenQuest } = useAppStore(
+  const { quests, completions, skills, completeQuest, reopenQuest, archiveQuest } = useAppStore(
     useShallow((state) => ({
       quests: state.quests,
       completions: state.completions,
       skills: state.skills,
       completeQuest: state.completeQuest,
       reopenQuest: state.reopenQuest,
+      archiveQuest: state.archiveQuest,
     })),
   )
 
@@ -49,8 +51,9 @@ export function QuestListScreen() {
     }
 
     return quests
-      .filter((quest) => quest.status !== 'archived')
+      .filter((quest) => tab === 'archived' ? quest.status === 'archived' : quest.status !== 'archived')
       .filter((quest) => {
+        if (tab === 'archived') return true
         const availability = getQuestAvailability(quest, completions)
         if (tab === 'today') {
           return (availability.canComplete || availability.state === 'expired' || quest.pinned) && quest.source !== 'browsing'
@@ -182,15 +185,17 @@ export function QuestListScreen() {
             const availability = getQuestAvailability(quest, completions)
             const skill = skills.find((entry) => entry.id === (quest.fixedSkillId ?? quest.defaultSkillId))
             const actionLabel =
-              tab === 'completed'
-                ? quest.status === 'completed'
-                  ? '再オープン'
-                  : '詳細'
-                : quest.status === 'completed'
-                  ? '再オープン'
-                  : availability.canComplete
-                    ? 'クリア'
+              tab === 'archived'
+                ? '再オープン'
+                : tab === 'completed'
+                  ? quest.status === 'completed'
+                    ? '再オープン'
                     : '詳細'
+                  : quest.status === 'completed'
+                    ? '再オープン'
+                    : availability.canComplete
+                      ? 'クリア'
+                      : '詳細'
 
             return (
               <QuestCard
@@ -200,6 +205,10 @@ export function QuestListScreen() {
                 skill={skill}
                 actionLabel={actionLabel}
                 onAction={() => {
+                  if (tab === 'archived') {
+                    reopenQuest(quest.id)
+                    return
+                  }
                   if (quest.status === 'completed') {
                     reopenQuest(quest.id)
                     return
