@@ -7,9 +7,8 @@ chat:
 display:
   lily_scale: 0.3
   haruka_scale: 0.65
-
-  window_x: -1884
-  window_y: 1932
+  window_x: -1927
+  window_y: 2515
 voice:
   enabled: true
   device_name: マイク (Yeti Nano)
