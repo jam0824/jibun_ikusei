@@ -97,7 +97,7 @@ class BalloonWidget(QWidget):
 
         # 話者名
         painter.setFont(self._name_font)
-        painter.setPen(QColor(60, 60, 60))
+        painter.setPen(QColor(255, 255, 255))
         name_text = f"【{self._speaker}】"
         name_fm = QFontMetrics(self._name_font)
         name_y = self._PADDING_Y + name_fm.ascent()
@@ -105,7 +105,7 @@ class BalloonWidget(QWidget):
 
         # セリフ
         painter.setFont(self._font)
-        painter.setPen(QColor(40, 40, 40))
+        painter.setPen(QColor(255, 255, 255))
         text_top = self._PADDING_Y + name_fm.height() + 4
         text_rect = QRect(
             self._PADDING_X,

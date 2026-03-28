@@ -30,6 +30,7 @@ class MainWindow(QWidget):
         self._init_ui()
         self._connect_signals()
         self._position_bottom_right()
+        self.input_widget.raise_()
 
     def _init_ui(self) -> None:
         root_layout = QVBoxLayout(self)
@@ -66,11 +67,8 @@ class MainWindow(QWidget):
 
         root_layout.addWidget(char_row)
 
-        # テキスト入力
-        self.input_widget = InputWidget()
-        root_layout.addWidget(
-            self.input_widget, alignment=Qt.AlignmentFlag.AlignRight
-        )
+        # テキスト入力（レイアウト外でキャラクターに重ねて表示）
+        self.input_widget = InputWidget(self)
 
     def _connect_signals(self) -> None:
         bus.balloon_show.connect(self._on_balloon_show)
@@ -95,6 +93,17 @@ class MainWindow(QWidget):
         x = geo.right() - self.width()
         y = geo.bottom() - self.height()
         self.move(x, y)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._position_input_widget()
+
+    def _position_input_widget(self) -> None:
+        """入力ウィジェットをウィンドウ右下にオーバーレイ配置"""
+        iw = self.input_widget
+        x = self.width() - iw.width()
+        y = self.height() - iw.sizeHint().height() - 8
+        iw.move(x, y)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
