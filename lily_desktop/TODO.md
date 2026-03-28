@@ -150,13 +150,18 @@
 
 ---
 
-## Phase 7: 音声入力 — 未実装
+## Phase 7: 音声入力 — 完了
 
 > 仕様: セクション4
 
-- [ ] `voice/voice_input.py` マイク入力 + WebRTC VAD
-- [ ] `voice/speech_to_text.py` Google Cloud Speech-to-Text
-- [ ] VADゲート（常時受付、発話検出時のみ認識）
+- [x] `voice/audio_capture.py` マイク入力（sounddevice, 16kHz/mono/16bit）
+- [x] `voice/vad.py` WebRTC VADゲート（webrtcvad-wheels, 30msフレーム）
+- [x] `voice/speech_recognizer.py` Google Cloud Speech-to-Text REST API（httpx）
+- [x] `voice/voice_pipeline.py` 統合パイプライン（別スレッド→asyncio→イベントバス）
+- [x] `core/config.py` VoiceConfig（enabled, vad_aggressiveness, language, google_api_key）
+- [x] トレイアイコンから音声入力ON/OFF切り替え
+- [x] 60秒超の発話は強制分割（STT制限対応）
+- [x] テスト: `tests/test_vad.py`, `tests/test_speech_recognizer.py`
 
 ---
 
@@ -189,7 +194,7 @@
 | 1. コンセプト | デスクトップマスコット表示 | **実装済み** (Phase 1) |
 | 2. 表示・UI | 透過ウィンドウ、吹き出し、入力UI | **実装済み** (Phase 1-2) |
 | 3. 会話 | テキスト会話、Tool Search | **実装済み** (Phase 3) |
-| 4. 音声入力 | VAD + Google STT | 未実装 (Phase 7) |
+| 4. 音声入力 | VAD + Google STT | **実装済み** (Phase 7) |
 | 5. デスクトップ状況システム | 画面判定、スクリーンショット解析、状況要約 | **実装済み** (Phase 4) |
 | 6. 雑談システム | Wikimedia / Annict / 画面状況の種管理 | **実装済み** (Phase 4) |
 | 7. データ管理 | DB保存、Web連携、雑談種履歴管理 | **一部実装** (Phase 3, Phase 4未着手) |

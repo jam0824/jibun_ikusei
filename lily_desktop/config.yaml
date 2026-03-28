@@ -1,14 +1,23 @@
-# リリィデスクトップ設定
-# 秘密情報（APIキー、パスワード）はプロジェクトルートの .env に記載してください
-
 openai:
-  chat_model: "gpt-5.4"
-  image_model: "gpt-image-1.5"
-  screen_analysis_model: "gpt-5.4"  # スクリーンショット解析AIモデル
-
+  chat_model: gpt-5.4
+  image_model: gpt-image-1.5
+  screen_analysis_model: gpt-5.4
 chat:
-  auto_talk_interval_minutes: 15  # 自動雑談の間隔（分）
-
+  auto_talk_interval_minutes: 15
 display:
-  lily_scale: 0.3      # リリィ画像の縮小率 (1024x1536 -> 約307x461)
-  haruka_scale: 0.65    # 葉留佳画像の縮小率 (396x600 -> 約277x420)
+  lily_scale: 0.3
+  haruka_scale: 0.65
+voice:
+  enabled: true
+  device_name: マイク (Webcam internal mic)
+  vad_aggressiveness: 3
+  vad_start_frames: 10      # 発話開始判定に必要な連続音声フレーム数（大きい=誤検知しにくい）
+  vad_end_frames: 30        # 発話終了判定の連続無音フレーム数（大きい=間を許容）
+  max_speech_seconds: 8      # 最大発話時間（秒）— これを超えると認識を打ち切る
+  volume_threshold: 400     # 音量閾値(RMS) — これ以下の音量は無視（スピーカー音除去用）
+  use_wake_words: true       # ウェイクワードを使うか（falseなら全音声に応答）
+  wake_words:                # この中のいずれかが含まれている時だけ応答する
+    - リリィ
+    - リリー
+  wake_word_aliases:         # リリィに変換する誤認識パターン
+    - DD
