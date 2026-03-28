@@ -43,6 +43,7 @@ class MainWindow(QWidget):
         # キャラクター行
         char_row = QWidget()
         char_row.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        char_row.setStyleSheet("background: transparent;")
         char_layout = QHBoxLayout(char_row)
         char_layout.setContentsMargins(0, 0, 0, 0)
         char_layout.setSpacing(0)
