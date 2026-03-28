@@ -39,6 +39,7 @@ class MainWindow(QWidget):
 
         # 吹き出し
         self.balloon = BalloonWidget()
+        self._root_layout = root_layout
         root_layout.addWidget(self.balloon, alignment=Qt.AlignmentFlag.AlignRight)
 
         # キャラクター行
@@ -77,6 +78,15 @@ class MainWindow(QWidget):
         bus.user_message_received.connect(self._on_user_message)
 
     def _on_balloon_show(self, speaker: str, text: str) -> None:
+        # 話者に応じて吹き出し位置を切り替え
+        if speaker in ("葉留佳", "はるちん", "はるか"):
+            self._root_layout.setAlignment(
+                self.balloon, Qt.AlignmentFlag.AlignLeft
+            )
+        else:
+            self._root_layout.setAlignment(
+                self.balloon, Qt.AlignmentFlag.AlignRight
+            )
         self.balloon.show_message(speaker, text)
         self._position_bottom_right()
 
@@ -137,6 +147,12 @@ class MainWindow(QWidget):
             lambda: bus.desktop_context_requested.emit()
         )
         debug_menu.addAction(desktop_ctx_action)
+
+        auto_talk_action = QAction("雑談を発火", self)
+        auto_talk_action.triggered.connect(
+            lambda: bus.auto_talk_requested.emit()
+        )
+        debug_menu.addAction(auto_talk_action)
 
         menu.addSeparator()
 

@@ -43,6 +43,16 @@ class CognitoConfig:
 
 
 @dataclass
+class AnnictConfig:
+    access_token: str = ""
+
+
+@dataclass
+class ChatConfig:
+    auto_talk_interval_minutes: int = 15
+
+
+@dataclass
 class DisplayConfig:
     lily_scale: float = 0.3
     haruka_scale: float = 0.7
@@ -52,6 +62,8 @@ class DisplayConfig:
 class AppConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     cognito: CognitoConfig = field(default_factory=CognitoConfig)
+    annict: AnnictConfig = field(default_factory=AnnictConfig)
+    chat: ChatConfig = field(default_factory=ChatConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
 
 
@@ -65,6 +77,8 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
     config = AppConfig(
         openai=OpenAIConfig(**raw.get("openai", {})),
         cognito=CognitoConfig(**raw.get("cognito", {})),
+        annict=AnnictConfig(**raw.get("annict", {})),
+        chat=ChatConfig(**raw.get("chat", {})),
         display=DisplayConfig(**raw.get("display", {})),
     )
 
@@ -76,5 +90,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         config.cognito.email = env["COGNITO_EMAIL"]
     if env.get("COGNITO_PASSWORD"):
         config.cognito.password = env["COGNITO_PASSWORD"]
+    if env.get("ANNICT_ACCESS_TOKEN"):
+        config.annict.access_token = env["ANNICT_ACCESS_TOKEN"]
 
     return config
