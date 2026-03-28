@@ -10,6 +10,7 @@ from core.event_bus import bus
 from ui.balloon_widget import BalloonWidget
 from ui.character_widget import CharacterWidget
 from ui.input_widget import InputWidget
+from ui.user_balloon_widget import UserBalloonWidget
 
 
 class MainWindow(QWidget):
@@ -70,6 +71,8 @@ class MainWindow(QWidget):
 
         # テキスト入力（レイアウト外でキャラクターに重ねて表示）
         self.input_widget = InputWidget(self)
+        # ユーザー発言の吹き出し（入力ボックスの上に表示）
+        self.user_balloon = UserBalloonWidget(self)
 
     def _connect_signals(self) -> None:
         bus.balloon_show.connect(self._on_balloon_show)
@@ -91,8 +94,9 @@ class MainWindow(QWidget):
         self._position_bottom_right()
 
     def _on_user_message(self, text: str) -> None:
-        # フォールバック: AI未接続時のみ使われる（main.pyのAppで上書きされる）
-        pass
+        # ユーザー発言を吹き出しに表示
+        self.user_balloon.show_message(text)
+        self._position_user_balloon()
 
     def _position_bottom_right(self) -> None:
         screen = QApplication.primaryScreen()
@@ -114,6 +118,15 @@ class MainWindow(QWidget):
         x = self.width() - iw.width()
         y = self.height() - iw.sizeHint().height() - 8
         iw.move(x, y)
+        self._position_user_balloon()
+
+    def _position_user_balloon(self) -> None:
+        """ユーザー吹き出しを入力ウィジェットの上に配置"""
+        ub = self.user_balloon
+        iw = self.input_widget
+        x = self.width() - ub.width()
+        y = iw.y() - ub.height() - 4
+        ub.move(x, y)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
