@@ -22,6 +22,11 @@ class EventBus(QObject):
     voice_toggle_requested = Signal()       # ON/OFFトグル要求
     voice_device_selected = Signal(int, str)  # マイク選択 (device_index, device_name)
 
+    # 音声合成
+    tts_playback_started = Signal()    # TTS再生開始（マイク一時停止用）
+    tts_playback_finished = Signal()   # TTS再生終了（マイク再開用）
+    tts_toggle_requested = Signal()    # 読み上げON/OFFトグル要求
+
     # デバッグ
     desktop_context_requested = Signal()  # 手動で状況取得を要求
     auto_talk_requested = Signal()        # 手動で雑談を発火

@@ -72,6 +72,14 @@ class VoiceConfig:
 
 
 @dataclass
+class TTSConfig:
+    enabled: bool = False
+    voicevox_url: str = "http://localhost:50021"
+    lily_speaker_id: int = 20
+    haruka_speaker_id: int = 8
+
+
+@dataclass
 class DisplayConfig:
     lily_scale: float = 0.3
     haruka_scale: float = 0.7
@@ -86,6 +94,7 @@ class AppConfig:
     annict: AnnictConfig = field(default_factory=AnnictConfig)
     chat: ChatConfig = field(default_factory=ChatConfig)
     voice: VoiceConfig = field(default_factory=VoiceConfig)
+    tts: TTSConfig = field(default_factory=TTSConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
 
 
@@ -102,6 +111,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         annict=AnnictConfig(**raw.get("annict", {})),
         chat=ChatConfig(**raw.get("chat", {})),
         voice=VoiceConfig(**{k: v for k, v in raw.get("voice", {}).items() if k != "google_api_key"}),
+        tts=TTSConfig(**raw.get("tts", {})),
         display=DisplayConfig(**raw.get("display", {})),
     )
 

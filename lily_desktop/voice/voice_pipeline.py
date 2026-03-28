@@ -87,6 +87,22 @@ class VoicePipeline:
         self._thread.start()
         logger.info("音声入力パイプラインを開始")
 
+    def pause(self) -> None:
+        """TTS再生中、マイク入力を一時停止する"""
+        if self.is_running:
+            self._capture.stop()
+            self._vad.reset()
+            logger.debug("マイク入力を一時停止（TTS再生中）")
+
+    def resume(self) -> None:
+        """TTS再生後、マイク入力を再開する"""
+        if self.is_running:
+            try:
+                self._capture.start()
+                logger.debug("マイク入力を再開")
+            except Exception:
+                logger.exception("マイク再開に失敗しました")
+
     def stop(self) -> None:
         """パイプラインを停止する"""
         if not self.is_running:

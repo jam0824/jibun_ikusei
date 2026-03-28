@@ -21,6 +21,7 @@ from pose.pose_generator import ensure_pose
 from pose.pose_manager import PoseManager
 from ui.main_window import MainWindow
 from ui.tray_icon import TrayIcon
+from voice.tts import TTSEngine
 from voice.voice_pipeline import VoicePipeline
 
 logging.basicConfig(
@@ -48,6 +49,7 @@ class App:
         self.chat_engine.set_tools(CHAT_TOOLS, self.tool_executor.execute)
         self.auto_conversation = AutoConversation(self.config, self.session_mgr)
         self.voice_pipeline: VoicePipeline | None = None
+        self.tts_engine: TTSEngine | None = None
 
     def connect_signals(self, window: MainWindow) -> None:
         """イベントバスとUIの配線"""
@@ -64,6 +66,11 @@ class App:
         bus.voice_toggle_requested.connect(self._on_voice_toggle)
         bus.voice_device_selected.connect(self._on_voice_device_selected)
 
+        # TTS再生中のマイク制御
+        bus.tts_playback_started.connect(self._on_tts_started)
+        bus.tts_playback_finished.connect(self._on_tts_finished)
+        bus.tts_toggle_requested.connect(self._on_tts_toggle)
+
         # デバッグ
         bus.desktop_context_requested.connect(self._on_desktop_context_requested)
         bus.auto_talk_requested.connect(self._on_auto_talk_requested)
@@ -72,6 +79,9 @@ class App:
         # 掛け合い中ならユーザー割り込みで中断
         if self.auto_conversation.is_talking:
             self.auto_conversation.interrupt()
+        # TTS再生中ならキューをクリア
+        if self.tts_engine is not None:
+            self.tts_engine.clear_queue()
         asyncio.ensure_future(self._handle_user_message_with_follow_up(text))
 
     async def _handle_user_message_with_follow_up(self, text: str) -> None:
@@ -119,6 +129,40 @@ class App:
         save_voice_device(device_name)
         logger.info("マイクを選択・保存: %s", device_name)
         bus.balloon_show.emit("リリィ", f"マイクを「{device_name}」に切り替えたよ！")
+
+    # --- TTS ---
+
+    def _on_tts_started(self) -> None:
+        """TTS再生開始 → マイク一時停止"""
+        if self.voice_pipeline is not None and self.voice_pipeline.is_running:
+            self.voice_pipeline.pause()
+
+    def _on_tts_finished(self) -> None:
+        """TTS再生終了 → マイク再開"""
+        if self.voice_pipeline is not None and self.voice_pipeline.is_running:
+            self.voice_pipeline.resume()
+
+    def _on_tts_toggle(self) -> None:
+        """読み上げのON/OFFを切り替える"""
+        if self.tts_engine is None:
+            # 未初期化 → 起動
+            self.tts_engine = TTSEngine(self.config.tts)
+            self.auto_conversation.set_tts(self.tts_engine)
+            asyncio.ensure_future(self.tts_engine.start())
+            bus.balloon_show.emit("リリィ", "読み上げをオンにしたよ！")
+        elif self.tts_engine._running:
+            # 動作中 → 停止
+            self.tts_engine.clear_queue()
+            asyncio.ensure_future(self.tts_engine.stop())
+            self.auto_conversation.set_tts(None)
+            bus.balloon_show.emit("リリィ", "読み上げをオフにしたよ")
+        else:
+            # 停止中 → 再起動
+            asyncio.ensure_future(self.tts_engine.start())
+            self.auto_conversation.set_tts(self.tts_engine)
+            bus.balloon_show.emit("リリィ", "読み上げをオンにしたよ！")
+
+    # --- デバッグ ---
 
     def _on_auto_talk_requested(self) -> None:
         self.auto_conversation.trigger_now()
@@ -170,6 +214,10 @@ class App:
             path = self.pose_mgr.select_haruka_pose(pose_category)
             bus.pose_change.emit("haruka", str(path))
 
+        # TTS読み上げ
+        if self.tts_engine is not None and self.tts_engine._running:
+            self.tts_engine.enqueue(speaker, text)
+
     async def _ensure_lily_pose(self, category: str) -> None:
         """リリィのポーズが不足していれば1枚生成する"""
         try:
@@ -207,6 +255,12 @@ async def async_init(app_instance: App) -> None:
         )
         app_instance.voice_pipeline.start()
 
+    # TTS の自動開始
+    if app_instance.config.tts.enabled:
+        app_instance.tts_engine = TTSEngine(app_instance.config.tts)
+        app_instance.auto_conversation.set_tts(app_instance.tts_engine)
+        await app_instance.tts_engine.start()
+
 
 def main() -> None:
     qt_app = QApplication(sys.argv)
@@ -238,10 +292,12 @@ def main() -> None:
     tray = TrayIcon(window)
     tray.show()
 
-    # アプリ終了時に音声パイプラインを停止
+    # アプリ終了時にパイプライン・TTSを停止
     def on_quit():
         if app_instance.voice_pipeline is not None:
             app_instance.voice_pipeline.stop()
+        if app_instance.tts_engine is not None:
+            app_instance.tts_engine.clear_queue()
 
     qt_app.aboutToQuit.connect(on_quit)
 

@@ -136,6 +136,17 @@ class AutoConversation:
         self._timer.timeout.connect(self._on_timer)
         self._is_talking = False
         self._interrupted = False  # ユーザー割り込みフラグ
+        self._tts = None  # TTSEngine（optional）
+
+    def set_tts(self, tts_engine) -> None:
+        """TTSEngine の参照を設定/解除する"""
+        self._tts = tts_engine
+
+    async def _wait_for_turn(self) -> None:
+        """TTS 再生完了を待ってからターン間の間を置く"""
+        if self._tts is not None:
+            await self._tts.wait_until_idle()
+        await asyncio.sleep(1.0)
 
     def start(self) -> None:
         interval_ms = self._config.chat.auto_talk_interval_minutes * 60 * 1000
@@ -222,7 +233,7 @@ class AutoConversation:
                 )
                 conv_history.append({"speaker": "リリィ", "text": lily_text})
 
-                await asyncio.sleep(_TURN_DELAY)
+                await self._wait_for_turn()
                 if self._interrupted:
                     break
 
@@ -241,7 +252,7 @@ class AutoConversation:
 
                 # 最後のターン以外は間をおく
                 if not is_last_turn:
-                    await asyncio.sleep(_TURN_DELAY)
+                    await self._wait_for_turn()
 
             # 種を使用済みに
             self._seed_mgr.mark_used(seed)
@@ -341,7 +352,7 @@ class AutoConversation:
         self._is_talking = True
         self._interrupted = False
         try:
-            await asyncio.sleep(_FOLLOW_UP_DELAY)
+            await self._wait_for_turn()
             if self._interrupted:
                 return
 
@@ -369,7 +380,7 @@ class AutoConversation:
                 if self._interrupted:
                     break
 
-                await asyncio.sleep(_TURN_DELAY)
+                await self._wait_for_turn()
                 if self._interrupted:
                     break
 
@@ -382,7 +393,7 @@ class AutoConversation:
                 await self._session_mgr.save_message("assistant", f"[掛け合い:リリィ] {lily_follow}")
                 conv_history.append({"speaker": "リリィ", "text": lily_follow})
 
-                await asyncio.sleep(_TURN_DELAY)
+                await self._wait_for_turn()
                 if self._interrupted:
                     break
 
