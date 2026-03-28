@@ -77,6 +77,14 @@
       {
         "filename": "lily_caring_03.png",
         "description": "優しく微笑んでいる、手を差し伸べている、気遣いの表情（バリエーション3）"
+      },
+      {
+        "filename": "lily_caring_04.png",
+        "description": "優しく微笑んでいる、手を差し伸べている、気遣いの表情（バリエーション4）"
+      },
+      {
+        "filename": "lily_caring_05.png",
+        "description": "優しく微笑んでいる、手を差し伸べている、気遣いの表情（バリエーション5）"
       }
     ],
     "serious": [
