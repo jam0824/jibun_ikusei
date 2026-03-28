@@ -73,6 +73,8 @@ class ToolExecutor:
                 return await self._skill_data(args)
             if name == "get_messages_and_logs":
                 return await self._messages_and_logs(args)
+            if name == "complete_quest":
+                return await self._complete_quest(args)
             if name == "create_quest":
                 return await self._create_quest(args)
             if name == "delete_quest":
@@ -307,6 +309,78 @@ class ToolExecutor:
             return "\n".join(lines)
 
         return f"不明なtype: {data_type}"
+
+    # ---- あいまいクエスト検索 ----
+
+    @staticmethod
+    def _fuzzy_match_score(query: str, title: str) -> float:
+        """クエリとタイトルのあいまいスコア (0〜1)"""
+        q = query.lower().strip()
+        t = title.lower().strip()
+
+        if q == t:
+            return 1.0
+        if q in t or t in q:
+            return 0.8
+
+        import re
+        tokens = [tok for tok in re.split(r"[\s　、,・]+", q) if tok]
+        if not tokens:
+            return 0.0
+
+        match_count = sum(1 for tok in tokens if tok in t)
+        if match_count == len(tokens):
+            return 0.6
+        return (match_count / len(tokens)) * 0.5
+
+    async def _complete_quest(self, args: dict) -> str:
+        query = args.get("query")
+        if not query:
+            return "クエストを特定するための検索クエリを指定してください。"
+
+        quests = await self._api.get_quests()
+        active_quests = [q for q in quests if q.get("status") == "active"]
+
+        if not active_quests:
+            return "アクティブなクエストがありません。"
+
+        # ベストマッチを探す
+        best = None
+        best_score = 0.0
+        for quest in active_quests:
+            score = self._fuzzy_match_score(query, quest.get("title", ""))
+            if score > best_score:
+                best = quest
+                best_score = score
+
+        if not best or best_score < 0.2:
+            names = "、".join(f"「{q.get('title', '')}」" for q in active_quests[:10])
+            return f"「{query}」に該当するアクティブなクエストが見つかりません。\n現在のアクティブクエスト: {names or 'なし'}"
+
+        quest_id = best["id"]
+        quest_title = best.get("title", "")
+        xp_reward = best.get("xpReward", 10)
+        quest_type = best.get("questType", "repeatable")
+        now = datetime.now(JST).isoformat()
+
+        completion = {
+            "id": f"completion_{uuid.uuid4().hex[:12]}",
+            "questId": quest_id,
+            "clientRequestId": f"req_{uuid.uuid4().hex[:12]}",
+            "completedAt": now,
+            "note": args.get("note"),
+            "userXpAwarded": xp_reward,
+            "skillResolutionStatus": "pending",
+            "createdAt": now,
+        }
+
+        await self._api.post_completion(completion)
+
+        # one_time クエストはステータスを completed に更新
+        if quest_type == "one_time":
+            await self._api.put_quest(quest_id, {"status": "completed", "updatedAt": now})
+
+        return f"クエスト「{quest_title}」をクリアしました！ +{xp_reward} XP"
 
     async def _create_quest(self, args: dict) -> str:
         title = args.get("title")

@@ -50,6 +50,10 @@ class AnnictConfig:
 @dataclass
 class ChatConfig:
     auto_talk_interval_minutes: int = 15
+    auto_talk_min_turns: int = 3
+    auto_talk_max_turns: int = 5
+    follow_up_min_extra: int = 1
+    follow_up_max_extra: int = 3
 
 
 @dataclass

@@ -17,4 +17,4 @@ if not errorlevel 1 (
 
 echo リリィデスクトップを起動中...
 cd /d "%~dp0"
-python main.py
+uv run main.py

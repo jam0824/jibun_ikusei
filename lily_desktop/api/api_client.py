@@ -54,6 +54,9 @@ class ApiClient:
     async def get_completions(self) -> list[dict]:
         return await self._request("GET", "/completions")
 
+    async def post_completion(self, completion: dict) -> dict:
+        return await self._request("POST", "/completions", json=completion)
+
     # ---- スキル ----
     async def get_skills(self) -> list[dict]:
         return await self._request("GET", "/skills")

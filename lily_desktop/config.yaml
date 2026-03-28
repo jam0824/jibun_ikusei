@@ -4,6 +4,10 @@ openai:
   screen_analysis_model: gpt-5.4
 chat:
   auto_talk_interval_minutes: 15
+  auto_talk_min_turns: 3        # 掛け合いの最小ターン数
+  auto_talk_max_turns: 5        # 掛け合いの最大ターン数
+  follow_up_min_extra: 1        # ユーザー発言後の追加往復 最小
+  follow_up_max_extra: 3        # ユーザー発言後の追加往復 最大
 display:
   lily_scale: 0.3
   haruka_scale: 0.65
@@ -26,7 +30,7 @@ voice:
     - ギリー
   speaker_verification_enabled: true  # 話者照合を使うか（enroll_speaker.py でプロファイルを作成してから有効化）
   speaker_profile_path: speaker_profile.pt  # 話者プロファイルのパス
-  speaker_verification_threshold: 0.40  # 照合閾値（コサイン類似度、0〜1）
+  speaker_verification_threshold: 0.35  # 照合閾値（コサイン類似度、0〜1）
 tts:
   enabled: true
   voicevox_url: http://localhost:50021
