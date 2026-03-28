@@ -663,7 +663,7 @@ async function executeCompleteQuest(args: Record<string, unknown>, context: Tool
   const now = new Date()
   const completedAt = now.toISOString()
 
-  const result = await useAppStore.getState().completeQuest(quest.id, { completedAt, note })
+  const result = await useAppStore.getState().completeQuest(quest.id, { completedAt, note, sourceScreen: 'home' })
   if (result.error) {
     return `クエスト「${quest.title}」のクリアに失敗しました: ${result.error}`
   }
