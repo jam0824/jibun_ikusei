@@ -28,6 +28,11 @@ voice:
   wake_word_aliases:         # リリィに変換する誤認識パターン
     - DD
     - ギリー
+  ignore_words:              # このワードが含まれていたら返答生成に送らない
+    - alexa
+    - Alexa
+    - アレクサ
+    - アレックス
   speaker_verification_enabled: true  # 話者照合を使うか（enroll_speaker.py でプロファイルを作成してから有効化）
   speaker_profile_path: speaker_profile.pt  # 話者プロファイルのパス
   speaker_verification_threshold: 0.35  # 照合閾値（コサイン類似度、0〜1）
