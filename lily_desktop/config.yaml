@@ -32,7 +32,7 @@ voice:
   speaker_profile_path: speaker_profile.pt  # 話者プロファイルのパス
   speaker_verification_threshold: 0.35  # 照合閾値（コサイン類似度、0〜1）
 camera:
-  enabled: false
+  enabled: true
   device_name: ELECOM 5MP Webcam
   interval_seconds: 180            # カメラキャプチャ間隔（秒）
   analysis_model: gpt-5            # カメラ画像分析AI

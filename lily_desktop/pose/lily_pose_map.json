@@ -130,6 +130,14 @@
       {
         "filename": "lily_serious_03.png",
         "description": "真剣な目つき、集中した表情、決意を込めた顔（バリエーション3）"
+      },
+      {
+        "filename": "lily_serious_04.png",
+        "description": "真剣な目つき、集中した表情、決意を込めた顔（バリエーション4）"
+      },
+      {
+        "filename": "lily_serious_05.png",
+        "description": "真剣な目つき、集中した表情、決意を込めた顔（バリエーション5）"
       }
     ],
     "sleepy": [],
