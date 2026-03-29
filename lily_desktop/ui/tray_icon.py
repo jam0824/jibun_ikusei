@@ -30,6 +30,11 @@ class TrayIcon(QSystemTrayIcon):
         menu.addMenu(self._mic_menu)
         self._mic_menu.aboutToShow.connect(self._populate_mic_menu)
 
+        # カメラ選択サブメニュー
+        self._camera_menu = QMenu("カメラ選択", menu)
+        menu.addMenu(self._camera_menu)
+        self._camera_menu.aboutToShow.connect(self._populate_camera_menu)
+
         self._tts_action = QAction("読み上げ: OFF", menu)
         self._tts_action.triggered.connect(self._toggle_tts)
         menu.addAction(self._tts_action)
@@ -84,6 +89,32 @@ class TrayIcon(QSystemTrayIcon):
     def _select_mic(self, device_index: int, device_name: str) -> None:
         """マイクを選択してシグナルを発火する"""
         bus.voice_device_selected.emit(device_index, device_name)
+
+    def _populate_camera_menu(self) -> None:
+        """カメラ選択サブメニューを開く時にデバイス一覧を更新する"""
+        from core.camera import list_cameras
+
+        self._camera_menu.clear()
+        cameras = list_cameras()
+
+        if not cameras:
+            no_device = QAction("カメラが見つかりません", self._camera_menu)
+            no_device.setEnabled(False)
+            self._camera_menu.addAction(no_device)
+            return
+
+        for cam in cameras:
+            action = QAction(cam["name"], self._camera_menu)
+            cam_index = cam["index"]
+            cam_name = cam["name"]
+            action.triggered.connect(
+                lambda checked, idx=cam_index, name=cam_name: self._select_camera(idx, name)
+            )
+            self._camera_menu.addAction(action)
+
+    def _select_camera(self, device_index: int, device_name: str) -> None:
+        """カメラを選択してシグナルを発火する"""
+        bus.camera_device_selected.emit(device_index, device_name)
 
     def _toggle_tts(self) -> None:
         bus.tts_toggle_requested.emit()

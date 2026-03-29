@@ -248,6 +248,12 @@ class MainWindow(QWidget):
         )
         debug_menu.addAction(auto_talk_action)
 
+        camera_action = QAction("カメラ状況を取得", self)
+        camera_action.triggered.connect(
+            lambda: bus.camera_capture_requested.emit()
+        )
+        debug_menu.addAction(camera_action)
+
         menu.addSeparator()
 
         hide_action = QAction("非表示", self)

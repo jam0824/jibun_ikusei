@@ -90,6 +90,16 @@ class TTSConfig:
 
 
 @dataclass
+class CameraConfig:
+    enabled: bool = False
+    device_name: str = ""  # 選択されたカメラデバイス名（空=デフォルト）
+    interval_seconds: int = 180  # キャプチャ間隔（秒）— デフォルト3分
+    analysis_model: str = "gpt-5"  # カメラ画像分析AIモデル
+    summary_model: str = "gpt-5.4"  # 30分要約AIモデル
+    summary_interval_seconds: int = 1800  # サーバー要約間隔（秒）— デフォルト30分
+
+
+@dataclass
 class DisplayConfig:
     lily_scale: float = 0.3
     haruka_scale: float = 0.7
@@ -105,6 +115,7 @@ class AppConfig:
     chat: ChatConfig = field(default_factory=ChatConfig)
     voice: VoiceConfig = field(default_factory=VoiceConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
+    camera: CameraConfig = field(default_factory=CameraConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
 
 
@@ -122,6 +133,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         chat=ChatConfig(**raw.get("chat", {})),
         voice=VoiceConfig(**{k: v for k, v in raw.get("voice", {}).items() if k != "google_api_key"}),
         tts=TTSConfig(**{k: v for k, v in raw.get("tts", {}).items() if k != "gemini_api_key"}),
+        camera=CameraConfig(**raw.get("camera", {})),
         display=DisplayConfig(**raw.get("display", {})),
     )
 
@@ -184,6 +196,48 @@ def save_voice_device(device_name: str, path: Path = _CONFIG_PATH) -> None:
 
     # ファイル末尾まで voice セクションだった場合
     if in_voice and not device_written:
+        new_lines.append(f"  device_name: {device_name}\n")
+
+    path.write_text("".join(new_lines), encoding="utf-8")
+
+
+def save_camera_device(device_name: str, path: Path = _CONFIG_PATH) -> None:
+    """選択されたカメラデバイス名を config.yaml に保存する（コメント保持）"""
+    if not path.exists():
+        path.write_text(f"camera:\n  device_name: {device_name}\n", encoding="utf-8")
+        return
+
+    lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+    new_lines: list[str] = []
+    in_camera = False
+    device_written = False
+
+    for line in lines:
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+
+        if stripped.startswith("camera:") and indent == 0:
+            in_camera = True
+            new_lines.append(line)
+            continue
+
+        if in_camera and indent > 0:
+            if stripped.startswith("device_name:"):
+                new_lines.append(f"  device_name: {device_name}\n")
+                device_written = True
+            else:
+                new_lines.append(line)
+            continue
+
+        if in_camera and indent == 0 and not stripped.startswith("#"):
+            if not device_written:
+                new_lines.append(f"  device_name: {device_name}\n")
+                device_written = True
+            in_camera = False
+
+        new_lines.append(line)
+
+    if in_camera and not device_written:
         new_lines.append(f"  device_name: {device_name}\n")
 
     path.write_text("".join(new_lines), encoding="utf-8")

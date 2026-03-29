@@ -124,6 +124,8 @@ class AutoConversation:
             openai_api_key=config.openai.api_key,
             screen_analysis_model=config.openai.screen_analysis_model,
             annict_access_token=config.annict.access_token,
+            camera_enabled=config.camera.enabled,
+            camera_analysis_model=config.camera.analysis_model,
         )
         self._timer = QTimer()
         self._timer.setSingleShot(False)
