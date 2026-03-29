@@ -9,8 +9,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from ai.annict_client import AnnictWork, fetch_seasonal_works
+from ai.camera_analyzer import CameraAnalysis, analyze_camera_frame
 from ai.screen_analyzer import ScreenAnalysis
 from ai.wikimedia_client import WikimediaArticle, fetch_featured_content
+from core.camera import capture_camera_frame
 from core.desktop_context import DesktopContext, fetch_desktop_context
 
 logger = logging.getLogger(__name__)
@@ -43,39 +45,51 @@ class TalkSeedManager:
         openai_api_key: str,
         screen_analysis_model: str,
         annict_access_token: str = "",
+        camera_enabled: bool = False,
+        camera_analysis_model: str = "gpt-5",
+        camera_device_index: int = 0,
     ):
         self._openai_api_key = openai_api_key
         self._screen_analysis_model = screen_analysis_model
         self._annict_access_token = annict_access_token
+        self._camera_enabled = camera_enabled
+        self._camera_analysis_model = camera_analysis_model
+        self._camera_device_index = camera_device_index
         self._used_history: list[tuple[str, datetime]] = []  # (source_key, used_at)
+        self._last_camera_analysis: CameraAnalysis | None = None
 
     async def collect_seeds(self) -> list[TalkSeed]:
-        """3系統から雑談の種を並行収集する"""
+        """4系統から雑談の種を並行収集する"""
         seeds: list[TalkSeed] = []
 
         # 並行で取得
         desktop_task = asyncio.create_task(self._collect_desktop())
         wiki_task = asyncio.create_task(self._collect_wikimedia())
         annict_task = asyncio.create_task(self._collect_annict())
+        camera_task = asyncio.create_task(self._collect_camera())
 
         desktop_seeds = await desktop_task
         wiki_seeds = await wiki_task
         annict_seeds = await annict_task
+        camera_seeds = await camera_task
 
         seeds.extend(desktop_seeds)
         seeds.extend(wiki_seeds)
         seeds.extend(annict_seeds)
+        seeds.extend(camera_seeds)
 
         logger.info(
-            "雑談の種: desktop=%d wiki=%d annict=%d 合計=%d",
-            len(desktop_seeds), len(wiki_seeds), len(annict_seeds), len(seeds),
+            "雑談の種: desktop=%d wiki=%d annict=%d camera=%d 合計=%d",
+            len(desktop_seeds), len(wiki_seeds), len(annict_seeds),
+            len(camera_seeds), len(seeds),
         )
         return seeds
 
     def select_best_seed(self, seeds: list[TalkSeed]) -> TalkSeed | None:
         """話題のバランスを考慮して種を選ぶ。
 
-        デスクトップ状況 50% / その他（Wikimedia・Annict）50% の配分。
+        デスクトップ状況 25% / カメラ状況 25% / その他（Wikimedia・Annict）50% の配分。
+        該当カテゴリの種がない場合は、残りのカテゴリで再配分する。
         クールダウン中の種は除外。
         """
         self._cleanup_cooldown()
@@ -85,25 +99,38 @@ class TalkSeedManager:
         # クールダウンチェック後の候補
         available = [s for s in seeds if s._source_key not in cooled_down_keys]
         if not available:
-            # クールダウンを無視して全候補から選ぶ
             available = seeds
 
         if not available:
             return None
 
         desktop_seeds = [s for s in available if s.source == "desktop"]
-        other_seeds = [s for s in available if s.source != "desktop"]
+        camera_seeds = [s for s in available if s.source == "camera"]
+        other_seeds = [s for s in available if s.source not in ("desktop", "camera")]
 
-        # 両方ある場合は50%ずつ
-        if desktop_seeds and other_seeds:
-            if random.random() < 0.5:
-                return desktop_seeds[0]
-            return random.choice(other_seeds)
-
-        # 片方しかない場合はそちらから選ぶ
+        # 利用可能なカテゴリで重み付き抽選
+        candidates: list[tuple[float, list[TalkSeed]]] = []
         if desktop_seeds:
-            return desktop_seeds[0]
-        return random.choice(other_seeds)
+            candidates.append((0.25, desktop_seeds))
+        if camera_seeds:
+            candidates.append((0.25, camera_seeds))
+        if other_seeds:
+            candidates.append((0.50, other_seeds))
+
+        if not candidates:
+            return None
+
+        # 重みを正規化して抽選
+        total_weight = sum(w for w, _ in candidates)
+        roll = random.random() * total_weight
+        cumulative = 0.0
+        for weight, seed_list in candidates:
+            cumulative += weight
+            if roll < cumulative:
+                return random.choice(seed_list) if len(seed_list) > 1 else seed_list[0]
+
+        # フォールバック
+        return candidates[-1][1][0]
 
     def mark_used(self, seed: TalkSeed) -> None:
         """種を使用済みとして記録する"""
@@ -175,6 +202,41 @@ class TalkSeedManager:
             logger.exception("Wikimedia の収集に失敗")
             return []
 
+    async def _collect_camera(self) -> list[TalkSeed]:
+        """カメラ画像から種を生成"""
+        if not self._camera_enabled:
+            return []
+        try:
+            frame_png = capture_camera_frame(self._camera_device_index)
+            if frame_png is None:
+                return []
+
+            analysis = await analyze_camera_frame(
+                api_key=self._openai_api_key,
+                model=self._camera_analysis_model,
+                frame_png=frame_png,
+            )
+            self._last_camera_analysis = analysis
+
+            # 「特に変化なし」的な内容は雑談向きでないのでスキップ
+            if analysis.scene_type == "quiet" and "変化" not in analysis.summary:
+                return []
+
+            now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+            return [TalkSeed(
+                summary=analysis.summary,
+                tags=analysis.tags,
+                freshness="fresh",
+                source="camera",
+                lily_perspective=_camera_lily_perspective(analysis),
+                haruka_perspective=_camera_haruka_perspective(analysis),
+                created_at=now_str,
+                _source_key=f"camera:{analysis.scene_type}:{analysis.summary[:20]}",
+            )]
+        except Exception:
+            logger.exception("カメラ画像の収集に失敗")
+            return []
+
     async def _collect_annict(self) -> list[TalkSeed]:
         """Annict から種を生成"""
         if not self._annict_access_token:
@@ -202,6 +264,32 @@ class TalkSeedManager:
         except Exception:
             logger.exception("Annict の収集に失敗")
             return []
+
+
+def _camera_lily_perspective(analysis: CameraAnalysis) -> str:
+    """カメラ画像に基づくリリィの切り口"""
+    perspectives = {
+        "outdoor": "外の様子について話しかける",
+        "indoor": "部屋の中の様子について声をかける",
+        "weather": "天気の話をする",
+        "people": "誰かが来たみたいだね、と声をかける",
+        "animal": "動物がいるよ！とテンション上げて教える",
+        "quiet": "静かだね、と穏やかに声をかける",
+    }
+    return perspectives.get(analysis.scene_type, "カメラに映った状況について柔らかく話す")
+
+
+def _camera_haruka_perspective(analysis: CameraAnalysis) -> str:
+    """カメラ画像に基づく葉留佳の切り口"""
+    perspectives = {
+        "outdoor": "外の様子にリアクションする",
+        "indoor": "おっ、なんか映ってるじゃん！と乗っかる",
+        "weather": "天気に対してハイテンションにコメントする",
+        "people": "誰？誰？とテンション高く絡む",
+        "animal": "かわいい！！とめちゃくちゃ盛り上がる",
+        "quiet": "静かだねー、とリリィの話に乗っかる",
+    }
+    return perspectives.get(analysis.scene_type, "リリィの話にテンション高く乗っかる")
 
 
 def _desktop_lily_perspective(analysis: ScreenAnalysis) -> str:

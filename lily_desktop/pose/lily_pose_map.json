@@ -33,7 +33,12 @@
       }
     ],
     "anger": [],
-    "sad": [],
+    "sad": [
+      {
+        "filename": "lily_sad_01.png",
+        "description": "悲しそうな表情、目がうるうるしている、肩を落としている（バリエーション1）"
+      }
+    ],
     "fun": [
       {
         "filename": "lily_fun_01.png",
@@ -117,6 +122,14 @@
       {
         "filename": "lily_serious_01.png",
         "description": "真剣な目つき、集中した表情、決意を込めた顔（バリエーション1）"
+      },
+      {
+        "filename": "lily_serious_02.png",
+        "description": "真剣な目つき、集中した表情、決意を込めた顔（バリエーション2）"
+      },
+      {
+        "filename": "lily_serious_03.png",
+        "description": "真剣な目つき、集中した表情、決意を込めた顔（バリエーション3）"
       }
     ],
     "sleepy": [],
@@ -132,6 +145,14 @@
       {
         "filename": "lily_playful_03.png",
         "description": "いたずらっぽい表情、ウィンクしている、舌を出している（バリエーション3）"
+      },
+      {
+        "filename": "lily_playful_04.png",
+        "description": "いたずらっぽい表情、ウィンクしている、舌を出している（バリエーション4）"
+      },
+      {
+        "filename": "lily_playful_05.png",
+        "description": "いたずらっぽい表情、ウィンクしている、舌を出している（バリエーション5）"
       }
     ]
   },

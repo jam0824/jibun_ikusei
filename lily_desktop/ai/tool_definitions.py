@@ -119,10 +119,11 @@ CHAT_TOOLS: list[dict] = [
                             "assistant_messages",
                             "ai_config",
                             "activity_logs",
+                            "situation_logs",
                             "chat_sessions",
                             "chat_messages",
                         ],
-                        "description": "assistant_messages=リリィの過去メッセージ、ai_config=AI設定、activity_logs=操作ログ、chat_sessions=チャットセッション一覧、chat_messages=特定セッションのメッセージ",
+                        "description": "assistant_messages=リリィの過去メッセージ、ai_config=AI設定、activity_logs=操作ログ、situation_logs=状況ログ（カメラ・デスクトップ状況の30分要約）、chat_sessions=チャットセッション一覧、chat_messages=特定セッションのメッセージ",
                     },
                     "triggerType": {
                         "type": "string",

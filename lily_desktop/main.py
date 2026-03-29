@@ -3,19 +3,25 @@
 import asyncio
 import logging
 import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import qasync
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from ai.auto_conversation import AutoConversation
+from ai.camera_analyzer import analyze_camera_frame
 from ai.chat_engine import ChatEngine
 from ai.tool_definitions import CHAT_TOOLS
 from ai.tool_executor import ToolExecutor
 from api.api_client import ApiClient
 from api.auth import CognitoAuth
-from core.config import load_config, save_voice_device
+from core.camera import capture_camera_frame, find_camera_index
+from core.config import load_config, save_camera_device, save_voice_device
 from core.desktop_context import DesktopContext, fetch_desktop_context, format_context_log
 from core.event_bus import bus
+from core.situation_logger import SituationLogger, SituationRecord
 from data.session_manager import SessionManager
 from pose.pose_generator import ensure_pose
 from pose.pose_manager import PoseManager
@@ -29,6 +35,7 @@ logging.basicConfig(
     format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+JST = timezone(timedelta(hours=9))
 
 
 class App:
@@ -51,6 +58,17 @@ class App:
         self.voice_pipeline: VoicePipeline | None = None
         self.tts_engine: TTSEngine | None = None
 
+        # カメラシステム
+        self._camera_device_index: int = 0
+        self._camera_timer = QTimer()
+        self._camera_timer.setSingleShot(False)
+        self._summary_timer = QTimer()
+        self._summary_timer.setSingleShot(False)
+        self.situation_logger = SituationLogger(
+            openai_api_key=self.config.openai.api_key,
+            summary_model=self.config.camera.summary_model,
+        )
+
     def connect_signals(self, window: MainWindow) -> None:
         """イベントバスとUIの配線"""
         # ユーザーメッセージ → AI会話（window側の吹き出し表示も残す）
@@ -71,9 +89,13 @@ class App:
         bus.tts_playback_finished.connect(self._on_tts_finished)
         bus.tts_toggle_requested.connect(self._on_tts_toggle)
 
+        # カメラ
+        bus.camera_device_selected.connect(self._on_camera_device_selected)
+
         # デバッグ
         bus.desktop_context_requested.connect(self._on_desktop_context_requested)
         bus.auto_talk_requested.connect(self._on_auto_talk_requested)
+        bus.camera_capture_requested.connect(self._on_camera_capture_requested)
 
     def _on_user_message(self, text: str) -> None:
         # 掛け合い中ならユーザー割り込みで中断
@@ -164,6 +186,121 @@ class App:
             self.auto_conversation.set_tts(self.tts_engine)
             bus.balloon_show.emit("リリィ", "読み上げをオンにしたよ！")
 
+    # --- カメラ ---
+
+    def _on_camera_device_selected(self, device_index: int, device_name: str) -> None:
+        """カメラデバイスを切り替えて設定を保存する"""
+        self._camera_device_index = device_index
+        self.config.camera.device_name = device_name
+        # TalkSeedManager にも反映
+        self.auto_conversation._seed_mgr._camera_device_index = device_index
+        save_camera_device(device_name)
+        logger.info("カメラを選択・保存: %s (index=%d)", device_name, device_index)
+        bus.balloon_show.emit("リリィ", f"カメラを「{device_name}」に切り替えたよ！")
+
+    def start_camera_system(self) -> None:
+        """カメラシステムを開始する（3分間隔キャプチャ + 30分間隔要約）"""
+        cam_cfg = self.config.camera
+
+        # カメラデバイスの初期設定
+        if cam_cfg.device_name:
+            idx = find_camera_index(cam_cfg.device_name)
+            if idx is not None:
+                self._camera_device_index = idx
+                self.auto_conversation._seed_mgr._camera_device_index = idx
+
+        # 3分間隔キャプチャタイマー
+        self._camera_timer.timeout.connect(self._on_camera_timer)
+        self._camera_timer.start(cam_cfg.interval_seconds * 1000)
+
+        # 30分間隔要約タイマー
+        self._summary_timer.timeout.connect(self._on_summary_timer)
+        self._summary_timer.start(cam_cfg.summary_interval_seconds * 1000)
+
+        logger.info(
+            "カメラシステム開始: キャプチャ %d秒間隔, 要約 %d秒間隔",
+            cam_cfg.interval_seconds,
+            cam_cfg.summary_interval_seconds,
+        )
+
+    def stop_camera_system(self) -> None:
+        """カメラシステムを停止する"""
+        self._camera_timer.stop()
+        self._summary_timer.stop()
+        logger.info("カメラシステム停止")
+
+    def _on_camera_timer(self) -> None:
+        """3分間隔のカメラキャプチャ + デスクトップ状況取得"""
+        asyncio.ensure_future(self._capture_and_record())
+
+    def _on_summary_timer(self) -> None:
+        """30分間隔のサーバー要約"""
+        asyncio.ensure_future(self._generate_and_send_summary())
+
+    async def _capture_and_record(self) -> None:
+        """カメラ画像取得 + デスクトップ状況取得 → ローカル記録"""
+        from core.active_window import get_active_window_info
+
+        record = SituationRecord()
+        record.timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+
+        # カメラ画像取得・分析
+        try:
+            frame_png = capture_camera_frame(self._camera_device_index)
+            if frame_png is not None:
+                # デバッグ: カメラ画像を保存
+                debug_dir = Path(__file__).parent / "logs" / "camera_debug"
+                debug_dir.mkdir(parents=True, exist_ok=True)
+                ts = datetime.now(JST).strftime("%Y%m%d_%H%M%S")
+                debug_path = debug_dir / f"camera_{ts}.png"
+                debug_path.write_bytes(frame_png)
+                logger.info("デバッグ: カメラ画像保存 %s (%d bytes)", debug_path, len(frame_png))
+
+                analysis = await analyze_camera_frame(
+                    api_key=self.config.openai.api_key,
+                    model=self.config.camera.analysis_model,
+                    frame_png=frame_png,
+                )
+                record.camera_summary = analysis.summary
+                record.camera_tags = analysis.tags
+                record.camera_scene_type = analysis.scene_type
+        except Exception:
+            logger.exception("カメラキャプチャ・分析に失敗")
+
+        # デスクトップ状況取得
+        try:
+            ctx = await fetch_desktop_context(
+                api_key=self.config.openai.api_key,
+                model=self.config.openai.screen_analysis_model,
+            )
+            if ctx.analysis:
+                record.desktop_summary = ctx.analysis.summary
+                record.desktop_tags = ctx.analysis.tags
+                record.desktop_activity_type = ctx.analysis.activity_type
+        except Exception:
+            logger.exception("デスクトップ状況取得に失敗")
+
+        # アクティブアプリ取得
+        try:
+            win_info = get_active_window_info()
+            record.active_app = win_info.app_name
+            record.window_title = win_info.window_title[:80]
+        except Exception:
+            logger.exception("アクティブアプリ取得に失敗")
+
+        self.situation_logger.record(record)
+        return record
+
+    async def _generate_and_send_summary(self) -> None:
+        """30分間の要約を生成してサーバーに送信する"""
+        summary_data = await self.situation_logger.generate_summary()
+        if summary_data:
+            try:
+                await self.api_client.post_situation_log(summary_data)
+                logger.info("30分要約をサーバーに送信: %s", summary_data["summary"][:100])
+            except Exception:
+                logger.exception("30分要約のサーバー送信に失敗")
+
     # --- デバッグ ---
 
     def _on_auto_talk_requested(self) -> None:
@@ -203,6 +340,30 @@ class App:
         except Exception:
             logger.exception("デスクトップ状況取得に失敗")
             bus.balloon_show.emit("リリィ", "[デバッグ] 状況取得に失敗しちゃった…")
+
+    def _on_camera_capture_requested(self) -> None:
+        asyncio.ensure_future(self._debug_capture_and_record())
+
+    async def _debug_capture_and_record(self) -> None:
+        """カメラ+デスクトップ+アクティブアプリを取得・記録して吹き出しに表示（デバッグ用）"""
+        bus.balloon_show.emit("リリィ", "カメラ・デスクトップ状況を確認中…")
+        try:
+            record = await self._capture_and_record()
+
+            parts = ["[デバッグ] 状況記録完了"]
+            if record.camera_summary:
+                parts.append(f"カメラ: {record.camera_summary}")
+            else:
+                parts.append("カメラ: 取得できず")
+            if record.desktop_summary:
+                parts.append(f"デスクトップ: {record.desktop_summary}")
+            if record.active_app:
+                parts.append(f"アプリ: {record.active_app}")
+
+            bus.balloon_show.emit("リリィ", "\n".join(parts))
+        except Exception:
+            logger.exception("デバッグ: 状況記録に失敗")
+            bus.balloon_show.emit("リリィ", "[デバッグ] 状況記録に失敗しちゃった…")
 
     def _on_ai_response(self, speaker: str, text: str, pose_category: str) -> None:
         bus.balloon_show.emit(speaker, text)
@@ -264,6 +425,10 @@ async def async_init(app_instance: App) -> None:
         app_instance.auto_conversation.set_tts(app_instance.tts_engine)
         await app_instance.tts_engine.start()
 
+    # カメラシステムの自動開始
+    if app_instance.config.camera.enabled:
+        app_instance.start_camera_system()
+
 
 def main() -> None:
     qt_app = QApplication(sys.argv)
@@ -301,6 +466,7 @@ def main() -> None:
             app_instance.voice_pipeline.stop()
         if app_instance.tts_engine is not None:
             app_instance.tts_engine.clear_queue()
+        app_instance.stop_camera_system()
 
     qt_app.aboutToQuit.connect(on_quit)
 

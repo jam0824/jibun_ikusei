@@ -281,6 +281,26 @@ class ToolExecutor:
                 lines.append(f"  ...他{len(logs) - 20}件")
             return "\n".join(lines)
 
+        if data_type == "situation_logs":
+            period = args.get("period", "week")
+            from_date, to_date = _get_date_range(period)
+            logs = await self._api.get_situation_logs(from_date, to_date)
+            if not logs:
+                return f"{_PERIOD_LABELS.get(period, period)}の状況ログがありません。"
+            lines = [f"【状況ログ（{_PERIOD_LABELS.get(period, period)}）】", f"合計: {len(logs)}件", ""]
+            for log in logs[:20]:
+                ts = str(log.get("timestamp", ""))[:16]
+                summary = log.get("summary", "")
+                details = log.get("details", {})
+                apps = ", ".join(details.get("active_apps", []))
+                line = f"- [{ts}] {summary}"
+                if apps:
+                    line += f"（アプリ: {apps}）"
+                lines.append(line)
+            if len(logs) > 20:
+                lines.append(f"  ...他{len(logs) - 20}件")
+            return "\n".join(lines)
+
         if data_type == "chat_sessions":
             sessions = await self._api.get_chat_sessions()
             if not sessions:

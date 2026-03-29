@@ -1,7 +1,7 @@
 openai:
   chat_model: gpt-5.4
   image_model: gpt-image-1.5
-  screen_analysis_model: gpt-5
+  screen_analysis_model: gpt-5.4
 chat:
   auto_talk_interval_minutes: 15
   auto_talk_min_turns: 3        # 掛け合いの最小ターン数
@@ -31,6 +31,13 @@ voice:
   speaker_verification_enabled: true  # 話者照合を使うか（enroll_speaker.py でプロファイルを作成してから有効化）
   speaker_profile_path: speaker_profile.pt  # 話者プロファイルのパス
   speaker_verification_threshold: 0.35  # 照合閾値（コサイン類似度、0〜1）
+camera:
+  enabled: false
+  device_name: ELECOM 5MP Webcam
+  interval_seconds: 180            # カメラキャプチャ間隔（秒）
+  analysis_model: gpt-5            # カメラ画像分析AI
+  summary_model: gpt-5.4           # 30分要約AI
+  summary_interval_seconds: 1800   # サーバー要約間隔（秒）
 tts:
   enabled: true
   voicevox_url: http://localhost:50021
@@ -38,6 +45,6 @@ tts:
   lily_speaker_id: 20              # VOICEVOX用
   lily_gemini_voice: Zephyr        # Gemini TTS用
   haruka_engine: voicevox            # voicevox or gemini
-  haruka_speaker_id: 8             # VOICEVOX用
+  haruka_speaker_id: 3             # VOICEVOX用
   haruka_gemini_voice: Kore        # Gemini TTS用
   gemini_model: gemini-2.5-flash-preview-tts

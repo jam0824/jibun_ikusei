@@ -89,6 +89,15 @@ class ApiClient:
             "GET", "/activity-logs", params={"from": from_date, "to": to_date}
         )
 
+    # ---- 状況ログ ----
+    async def get_situation_logs(self, from_date: str, to_date: str) -> list[dict]:
+        return await self._request(
+            "GET", "/situation-logs", params={"from": from_date, "to": to_date}
+        )
+
+    async def post_situation_log(self, log: dict) -> dict:
+        return await self._request("POST", "/situation-logs", json=log)
+
     # ---- 辞書 ----
     async def get_dictionary(self) -> list[dict]:
         return await self._request("GET", "/dictionary")
