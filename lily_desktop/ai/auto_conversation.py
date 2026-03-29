@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import random
+from dataclasses import dataclass
 
 from PySide6.QtCore import QTimer
 
@@ -92,6 +93,15 @@ default(通常), joy(喜び), anger(怒り), sad(哀しみ), fun(楽しい),
 shy(照れ), worried(悩み), surprised(驚き)
 """
 
+@dataclass
+class _PrefetchResult:
+    """プリフェッチ済みのセリフ + 音声データ"""
+    text: str
+    pose_category: str
+    audio_bytes: bytes | None
+    audio_format: str  # "wav" or "pcm"
+
+
 _FOLLOW_UP_LILY = """\
 あなたの名前はリリィです。デスクトップマスコットとして峰生のパソコンの画面に立っています。
 相方の三枝葉留佳（はるちん）が隣にいます。
@@ -133,6 +143,7 @@ class AutoConversation:
         self._is_talking = False
         self._interrupted = False  # ユーザー割り込みフラグ
         self._tts = None  # TTSEngine（optional）
+        self._prefetch_task: asyncio.Task | None = None  # プリフェッチ用タスク
 
     def set_tts(self, tts_engine) -> None:
         """TTSEngine の参照を設定/解除する"""
@@ -168,6 +179,8 @@ class AutoConversation:
         """ユーザーが会話に参加したため、掛け合いを中断する"""
         if self._is_talking:
             self._interrupted = True
+            if self._prefetch_task and not self._prefetch_task.done():
+                self._prefetch_task.cancel()
             logger.info("ユーザー割り込みにより掛け合い中断")
 
     def trigger_follow_up(self, user_text: str, lily_text: str) -> None:
@@ -210,6 +223,8 @@ class AutoConversation:
             num_turns = random.randint(cfg.auto_talk_min_turns, cfg.auto_talk_max_turns)
             logger.info("掛け合いターン数: %d", num_turns)
 
+            prefetch: _PrefetchResult | None = None
+
             for turn in range(num_turns):
                 if self._interrupted:
                     logger.info("ユーザー割り込みのため掛け合い終了 (turn %d/%d)", turn, num_turns)
@@ -218,38 +233,70 @@ class AutoConversation:
                 is_last_turn = turn == num_turns - 1
 
                 # --- リリィの発話 ---
-                lily_text, lily_pose = await self._generate_lily(
-                    seed, conv_history, is_last_turn
-                )
+                if prefetch is not None:
+                    lily_text, lily_pose = prefetch.text, prefetch.pose_category
+                    lily_audio, lily_fmt = prefetch.audio_bytes, prefetch.audio_format
+                    prefetch = None
+                else:
+                    lily_text, lily_pose = await self._generate_lily(
+                        seed, conv_history, is_last_turn
+                    )
+                    lily_audio, lily_fmt = None, "wav"
+
                 if not lily_text or self._interrupted:
                     break
 
-                bus.ai_response_ready.emit("リリィ", lily_text, lily_pose)
+                self._emit_and_enqueue("リリィ", lily_text, lily_pose, lily_audio, lily_fmt)
                 await self._session_mgr.save_message(
                     "assistant", f"[雑談:リリィ] {lily_text}"
                 )
                 conv_history.append({"speaker": "リリィ", "text": lily_text})
 
+                # TTS 再生中に葉留佳のセリフ + 音声を先行生成
+                self._prefetch_task = asyncio.ensure_future(
+                    self._prefetch_next("葉留佳", seed, conv_history)
+                )
                 await self._wait_for_turn()
                 if self._interrupted:
+                    self._prefetch_task.cancel()
                     break
 
-                # --- 葉留佳の反応 ---
-                haruka_text, haruka_pose = await self._generate_haruka(
-                    seed, conv_history
-                )
+                # プリフェッチ結果を回収（失敗時はフォールバック）
+                haruka_pf = await self._prefetch_task
+                self._prefetch_task = None
+
+                if haruka_pf and haruka_pf.text:
+                    haruka_text, haruka_pose = haruka_pf.text, haruka_pf.pose_category
+                    haruka_audio, haruka_fmt = haruka_pf.audio_bytes, haruka_pf.audio_format
+                else:
+                    haruka_text, haruka_pose = await self._generate_haruka(
+                        seed, conv_history
+                    )
+                    haruka_audio, haruka_fmt = None, "wav"
+
                 if not haruka_text or self._interrupted:
                     break
 
-                bus.ai_response_ready.emit("葉留佳", haruka_text, haruka_pose)
+                self._emit_and_enqueue("葉留佳", haruka_text, haruka_pose, haruka_audio, haruka_fmt)
                 await self._session_mgr.save_message(
                     "assistant", f"[雑談:葉留佳] {haruka_text}"
                 )
                 conv_history.append({"speaker": "葉留佳", "text": haruka_text})
 
-                # 最後のターン以外は間をおく
+                # 最後のターン以外: TTS 再生中にリリィの次のセリフを先行生成
                 if not is_last_turn:
+                    next_is_last = (turn + 1) == num_turns - 1
+                    self._prefetch_task = asyncio.ensure_future(
+                        self._prefetch_next(
+                            "リリィ", seed, conv_history, is_last_turn=next_is_last
+                        )
+                    )
                     await self._wait_for_turn()
+                    if self._interrupted:
+                        self._prefetch_task.cancel()
+                        break
+                    prefetch = await self._prefetch_task
+                    self._prefetch_task = None
 
             # 種を使用済みに
             self._seed_mgr.mark_used(seed)
@@ -349,23 +396,37 @@ class AutoConversation:
         self._is_talking = True
         self._interrupted = False
         try:
-            await self._wait_for_turn()
-            if self._interrupted:
-                return
-
             conv_history: list[dict[str, str]] = [
                 {"speaker": "峰生", "text": user_text},
                 {"speaker": "リリィ", "text": lily_text},
             ]
 
-            # --- はるかの初回反応 ---
-            haruka_text, haruka_pose = await self._generate_haruka_follow_up_first(
-                user_text, lily_text
+            # --- はるかの初回反応（リリィの TTS 再生中に先行生成） ---
+            self._prefetch_task = asyncio.ensure_future(
+                self._prefetch_haruka_follow_up_first(user_text, lily_text)
             )
+            await self._wait_for_turn()
+            if self._interrupted:
+                self._prefetch_task.cancel()
+                return
+
+            # プリフェッチ結果を回収
+            haruka_pf = await self._prefetch_task
+            self._prefetch_task = None
+
+            if haruka_pf and haruka_pf.text:
+                haruka_text, haruka_pose = haruka_pf.text, haruka_pf.pose_category
+                haruka_audio, haruka_fmt = haruka_pf.audio_bytes, haruka_pf.audio_format
+            else:
+                haruka_text, haruka_pose = await self._generate_haruka_follow_up_first(
+                    user_text, lily_text
+                )
+                haruka_audio, haruka_fmt = None, "wav"
+
             if not haruka_text or self._interrupted:
                 return
 
-            bus.ai_response_ready.emit("葉留佳", haruka_text, haruka_pose)
+            self._emit_and_enqueue("葉留佳", haruka_text, haruka_pose, haruka_audio, haruka_fmt)
             await self._session_mgr.save_message("assistant", f"[掛け合い:葉留佳] {haruka_text}")
             conv_history.append({"speaker": "葉留佳", "text": haruka_text})
 
@@ -374,35 +435,67 @@ class AutoConversation:
             extra_turns = random.randint(cfg.follow_up_min_extra, cfg.follow_up_max_extra)
             logger.info("フォローアップ追加ターン数: %d", extra_turns)
 
+            prefetch: _PrefetchResult | None = None
+
             for turn in range(extra_turns):
                 if self._interrupted:
                     break
 
+                # TTS 再生中にリリィのセリフを先行生成
+                self._prefetch_task = asyncio.ensure_future(
+                    self._prefetch_follow_up_next("リリィ", conv_history)
+                )
                 await self._wait_for_turn()
                 if self._interrupted:
+                    self._prefetch_task.cancel()
                     break
 
+                # プリフェッチ結果を回収
+                prefetch = await self._prefetch_task
+                self._prefetch_task = None
+
                 # リリィの返し
-                lily_follow, lily_pose = await self._generate_lily_follow_up(conv_history)
+                if prefetch and prefetch.text:
+                    lily_follow, lily_pose_val = prefetch.text, prefetch.pose_category
+                    lily_audio, lily_fmt = prefetch.audio_bytes, prefetch.audio_format
+                else:
+                    lily_follow, lily_pose_val = await self._generate_lily_follow_up(conv_history)
+                    lily_audio, lily_fmt = None, "wav"
+
                 if not lily_follow or self._interrupted:
                     break
 
-                bus.ai_response_ready.emit("リリィ", lily_follow, lily_pose)
+                self._emit_and_enqueue("リリィ", lily_follow, lily_pose_val, lily_audio, lily_fmt)
                 await self._session_mgr.save_message("assistant", f"[掛け合い:リリィ] {lily_follow}")
                 conv_history.append({"speaker": "リリィ", "text": lily_follow})
 
+                # TTS 再生中にはるかのセリフを先行生成
+                self._prefetch_task = asyncio.ensure_future(
+                    self._prefetch_follow_up_next("葉留佳", conv_history)
+                )
                 await self._wait_for_turn()
                 if self._interrupted:
+                    self._prefetch_task.cancel()
                     break
 
+                # プリフェッチ結果を回収
+                prefetch = await self._prefetch_task
+                self._prefetch_task = None
+
                 # はるかの返し
-                haruka_follow, haruka_pose2 = await self._generate_haruka(
-                    _make_dummy_seed(conv_history), conv_history
-                )
+                if prefetch and prefetch.text:
+                    haruka_follow, haruka_pose2 = prefetch.text, prefetch.pose_category
+                    haruka_audio, haruka_fmt = prefetch.audio_bytes, prefetch.audio_format
+                else:
+                    haruka_follow, haruka_pose2 = await self._generate_haruka(
+                        _make_dummy_seed(conv_history), conv_history
+                    )
+                    haruka_audio, haruka_fmt = None, "wav"
+
                 if not haruka_follow or self._interrupted:
                     break
 
-                bus.ai_response_ready.emit("葉留佳", haruka_follow, haruka_pose2)
+                self._emit_and_enqueue("葉留佳", haruka_follow, haruka_pose2, haruka_audio, haruka_fmt)
                 await self._session_mgr.save_message("assistant", f"[掛け合い:葉留佳] {haruka_follow}")
                 conv_history.append({"speaker": "葉留佳", "text": haruka_follow})
 
@@ -460,6 +553,129 @@ class AutoConversation:
         except Exception:
             logger.exception("リリィのフォローアップ発話生成に失敗")
         return "", "default"
+
+
+    # ---- プリフェッチ（パイプライン化） ----
+
+    async def _prefetch_next(
+        self,
+        speaker: str,
+        seed: TalkSeed,
+        conv_history: list[dict[str, str]],
+        is_last_turn: bool = False,
+    ) -> _PrefetchResult | None:
+        """次の話者のセリフ生成 + 音声合成を先行実行する。"""
+        try:
+            if speaker == "葉留佳":
+                text, pose = await self._generate_haruka(seed, conv_history)
+            else:
+                text, pose = await self._generate_lily(
+                    seed, conv_history, is_last_turn
+                )
+
+            if not text:
+                return None
+
+            # 音声合成（TTS が有効な場合のみ）
+            audio_bytes = None
+            audio_format = "wav"
+            if self._tts is not None:
+                result = await self._tts.synthesize(speaker, text)
+                if result:
+                    audio_bytes, audio_format = result
+
+            return _PrefetchResult(
+                text=text,
+                pose_category=pose,
+                audio_bytes=audio_bytes,
+                audio_format=audio_format,
+            )
+        except asyncio.CancelledError:
+            logger.debug("プリフェッチがキャンセルされました: %s", speaker)
+            return None
+        except Exception:
+            logger.exception("プリフェッチに失敗: %s", speaker)
+            return None
+
+    async def _prefetch_haruka_follow_up_first(
+        self, user_text: str, lily_text: str
+    ) -> _PrefetchResult | None:
+        """はるかの初回フォローアップ反応を先行生成する（リリィの TTS 再生中に実行）。"""
+        try:
+            text, pose = await self._generate_haruka_follow_up_first(
+                user_text, lily_text
+            )
+            if not text:
+                return None
+
+            audio_bytes = None
+            audio_format = "wav"
+            if self._tts is not None:
+                result = await self._tts.synthesize("葉留佳", text)
+                if result:
+                    audio_bytes, audio_format = result
+
+            return _PrefetchResult(
+                text=text,
+                pose_category=pose,
+                audio_bytes=audio_bytes,
+                audio_format=audio_format,
+            )
+        except asyncio.CancelledError:
+            logger.debug("はるか初回フォローアッププリフェッチがキャンセルされました")
+            return None
+        except Exception:
+            logger.exception("はるか初回フォローアッププリフェッチに失敗")
+            return None
+
+    async def _prefetch_follow_up_next(
+        self,
+        speaker: str,
+        conv_history: list[dict[str, str]],
+    ) -> _PrefetchResult | None:
+        """フォローアップ掛け合いの次の話者を先行生成する。"""
+        try:
+            if speaker == "葉留佳":
+                text, pose = await self._generate_haruka(
+                    _make_dummy_seed(conv_history), conv_history
+                )
+            else:
+                text, pose = await self._generate_lily_follow_up(conv_history)
+
+            if not text:
+                return None
+
+            audio_bytes = None
+            audio_format = "wav"
+            if self._tts is not None:
+                result = await self._tts.synthesize(speaker, text)
+                if result:
+                    audio_bytes, audio_format = result
+
+            return _PrefetchResult(
+                text=text,
+                pose_category=pose,
+                audio_bytes=audio_bytes,
+                audio_format=audio_format,
+            )
+        except asyncio.CancelledError:
+            logger.debug("フォローアッププリフェッチがキャンセルされました: %s", speaker)
+            return None
+        except Exception:
+            logger.exception("フォローアッププリフェッチに失敗: %s", speaker)
+            return None
+
+    def _emit_and_enqueue(
+        self, speaker: str, text: str, pose: str,
+        audio_bytes: bytes | None = None, audio_format: str = "wav",
+    ) -> None:
+        """UI更新シグナル発火 + TTS enqueue を一括で行う。"""
+        bus.ai_response_ready_no_tts.emit(speaker, text, pose)
+        if self._tts is not None:
+            if audio_bytes:
+                self._tts.enqueue_audio(speaker, audio_bytes, audio_format)
+            else:
+                self._tts.enqueue(speaker, text)
 
 
 def _make_dummy_seed(conv_history: list[dict[str, str]]):

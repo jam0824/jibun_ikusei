@@ -8,6 +8,9 @@ class EventBus(QObject):
     # AI応答: (話者名, テキスト, ポーズヒント)
     ai_response_ready = Signal(str, str, str)
 
+    # AI応答（UI更新のみ、TTS enqueue は呼び出し元が管理）
+    ai_response_ready_no_tts = Signal(str, str, str)
+
     # 吹き出し: (話者名, テキスト)
     balloon_show = Signal(str, str)
     balloon_hide = Signal()
