@@ -9,6 +9,13 @@ import { BottomNav } from '@/components/layout'
 import { useChatStore } from '@/store/chat-store'
 import { useAppStore } from '@/store/app-store'
 
+const SPEAKER_PREFIX_RE = /^\[(雑談|掛け合い):(リリィ|葉留佳)\]\s*/
+function parseAssistantMessage(content: string) {
+  const isHaruka = /^\[(雑談|掛け合い):葉留佳\]/.test(content)
+  const displayContent = content.replace(SPEAKER_PREFIX_RE, '')
+  return { isHaruka, displayContent }
+}
+
 function TypingIndicator() {
   return (
     <div className="flex items-start gap-3">
@@ -166,12 +173,21 @@ export function LilyChatScreen() {
                   </div>
                 </div>
               ) : (
-                <div key={msg.id} className="flex items-start gap-3">
-                  <img src={`${import.meta.env.BASE_URL}lily/face.png`} alt="リリィ" className="h-13 w-13 shrink-0 rounded-full object-cover" />
-                  <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tl-md bg-white px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm">
-                    {msg.content}
-                  </div>
-                </div>
+                (() => {
+                  const { isHaruka, displayContent } = parseAssistantMessage(msg.content)
+                  return (
+                    <div key={msg.id} className="flex items-start gap-3">
+                      <img
+                        src={`${import.meta.env.BASE_URL}${isHaruka ? 'aikata/haruka_face.png' : 'lily/face.png'}`}
+                        alt={isHaruka ? '葉留佳' : 'リリィ'}
+                        className="h-13 w-13 shrink-0 rounded-full object-cover"
+                      />
+                      <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tl-md bg-white px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm">
+                        {displayContent}
+                      </div>
+                    </div>
+                  )
+                })()
               ),
             )}
             {isSending ? <TypingIndicator /> : null}
