@@ -184,12 +184,12 @@
 
 ---
 
-## Phase 9: カメラシステム — 実装中
+## Phase 9: カメラシステム — 完了
 
 > 仕様: セクション10
 
 ### 9-1. カメラ画像取得・分析
-- [x] `core/camera.py` カメラデバイス列挙・画像キャプチャ（OpenCV）
+- [x] `core/camera.py` カメラデバイス列挙・画像キャプチャ（OpenCV + PnPデバイス名取得）
 - [x] `ai/camera_analyzer.py` カメラ画像AI分析（gpt-5）
 - [x] `core/config.py` CameraConfig（分析モデル・要約モデル・間隔を設定可能）
 - [x] トレイアイコンからカメラ選択サブメニュー（デバイス一覧表示・切り替え + config.yaml保存）
@@ -200,17 +200,18 @@
 
 ### 9-3. サーバー要約・同期
 - [x] 30分おきに要約を生成（gpt-5.4、設定で変更可能）
-- [ ] サーバーAPIへの要約送信（API側の実装待ち）
+- [x] `infra/lambda/situationLogHandler/index.mjs` GET/POST /situation-logs API
+- [x] `api_client.py` get_situation_logs / post_situation_log
+- [x] 30分要約をサーバーに自動送信（31日TTL）
 
 ### 9-4. Tool Search連携
-- [ ] desktopアプリからtool searchでカメラ情報を参照可能
-- [ ] webアプリからもtool searchでカメラ情報を参照可能
+- [x] `get_messages_and_logs` に `situation_logs` タイプ追加（desktop: tool_definitions.py + tool_executor.py）
+- [x] webアプリからも `situation_logs` で参照可能（chat-tools.ts + api-client.ts）
 
 ### 9-5. 会話連携
 - [x] `ai/talk_seed.py` の `select_best_seed` を3分岐に変更（デスクトップ25% / カメラ25% / その他50%）
 - [x] カメラ用の `TalkSeed`（source: "camera"）を `TalkSeedManager` に追加
 - [x] カメラ情報をもとに雑談の種として自動会話に組み込み
-- [ ] サーバー側tool search API対応後、カメラ情報をtool searchで参照可能にする
 
 ---
 
@@ -227,6 +228,6 @@
 | 7. データ管理 | DB保存、Web連携、雑談種履歴管理 | **一部実装** (Phase 3, Phase 4未着手) |
 | 8. ポーズ生成 | gpt-image-1.5生成、対応表管理 | **実装済み** (Phase 6) |
 | 9. 相方システム | 葉留佳の立ち絵・設定管理 | **実装済み** (Phase 1, 5) |
-| 10. カメラ | 定期撮影(3分)、AI分析(gpt-5)、ローカル記録、サーバー要約(30分)、tool search連携 | **一部実装** (Phase 9: サーバー送信・tool search未実装) |
+| 10. カメラ | 定期撮影(3分)、AI分析(gpt-5)、ローカル記録、サーバー要約(30分)、tool search連携 | **実装済み** (Phase 9) |
 | 11. 音声合成 | VOICEVOX TTS | **実装済み** (Phase 8) |
 | 12. 技術 | PySide6, gpt-5.4 | **実装済み** (Phase 1-3) |

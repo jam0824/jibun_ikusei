@@ -245,3 +245,19 @@ export interface ActivityLogEntry {
 export function getActivityLogs(from: string, to: string) {
   return request<ActivityLogEntry[]>(`/activity-logs?from=${from}&to=${to}`)
 }
+
+// ---- 状況ログ ----
+
+export type SituationLogEntry = {
+  summary: string
+  timestamp: string
+  details: {
+    camera_summaries?: string[]
+    desktop_summaries?: string[]
+    active_apps?: string[]
+  }
+}
+
+export function getSituationLogs(from: string, to: string) {
+  return request<SituationLogEntry[]>(`/situation-logs?from=${from}&to=${to}`)
+}

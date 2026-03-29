@@ -54,7 +54,8 @@
       "Bash(find /d/codes/自分育成アプリ/lily_desktop -name *quest* -o -name *tool*)",
       "Bash(python -c \"from ai.tool_definitions import CHAT_TOOLS; from ai.tool_executor import ToolExecutor; print\\(f''Tools: {len\\(CHAT_TOOLS\\)}, ToolExecutor OK''\\)\")",
       "WebFetch(domain:docs.cloud.google.com)",
-      "WebFetch(domain:developers.openai.com)"
+      "WebFetch(domain:developers.openai.com)",
+      "Bash(find /d/codes/自分育成アプリ/lily_desktop -type f \\\\\\(-name *.html -o -name *.js -o -name *.ts -o -name *.tsx -o -name *.jsx \\\\\\))"
     ]
   }
 }

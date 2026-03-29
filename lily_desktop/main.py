@@ -292,11 +292,14 @@ class App:
         return record
 
     async def _generate_and_send_summary(self) -> None:
-        """30分間の要約を生成する"""
-        summary = await self.situation_logger.generate_summary()
-        if summary:
-            # TODO: サーバーAPIが実装されたらここで送信する
-            logger.info("30分要約生成完了（サーバー送信は未実装）: %s", summary[:100])
+        """30分間の要約を生成してサーバーに送信する"""
+        summary_data = await self.situation_logger.generate_summary()
+        if summary_data:
+            try:
+                await self.api_client.post_situation_log(summary_data)
+                logger.info("30分要約をサーバーに送信: %s", summary_data["summary"][:100])
+            except Exception:
+                logger.exception("30分要約のサーバー送信に失敗")
 
     # --- デバッグ ---
 

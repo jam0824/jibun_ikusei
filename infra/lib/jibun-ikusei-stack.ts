@@ -124,6 +124,12 @@ export class JibunIkuseiStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/browsingTimeHandler')),
     })
 
+    const situationLogFn = new lambda.Function(this, 'SituationLogHandler', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-situationLogHandler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/situationLogHandler')),
+    })
+
     const chatFn = new lambda.Function(this, 'ChatHandler', {
       ...lambdaDefaults,
       functionName: 'jibun-ikusei-chatHandler',
@@ -137,7 +143,7 @@ export class JibunIkuseiStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(60),
     })
 
-    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, activityLogFn, chatFn, migrateStateFn]) {
+    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, activityLogFn, situationLogFn, chatFn, migrateStateFn]) {
       table.grantReadWriteData(fn)
     }
 
@@ -219,6 +225,11 @@ export class JibunIkuseiStack extends cdk.Stack {
     const activityLogIntegration = new integrations.HttpLambdaIntegration('ActivityLogIntegration', activityLogFn)
     api.addRoutes({ path: '/activity-logs', methods: [apigwv2.HttpMethod.GET], integration: activityLogIntegration })
     api.addRoutes({ path: '/activity-logs', methods: [apigwv2.HttpMethod.POST], integration: activityLogIntegration })
+
+    // Situation Logs
+    const situationLogIntegration = new integrations.HttpLambdaIntegration('SituationLogIntegration', situationLogFn)
+    api.addRoutes({ path: '/situation-logs', methods: [apigwv2.HttpMethod.GET], integration: situationLogIntegration })
+    api.addRoutes({ path: '/situation-logs', methods: [apigwv2.HttpMethod.POST], integration: situationLogIntegration })
 
     // Chat Sessions / Messages
     const chatIntegration = new integrations.HttpLambdaIntegration('ChatIntegration', chatFn)

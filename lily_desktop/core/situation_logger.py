@@ -60,26 +60,61 @@ class SituationLogger:
         logger.info("状況記録: camera=%s desktop=%s app=%s",
                      record.camera_summary, record.desktop_summary, record.active_app)
 
-    async def generate_summary(self) -> str | None:
+    async def generate_summary(self) -> dict | None:
         """蓄積した記録から30分間の要約を生成し、バッファをクリアする。
 
         Returns:
-            要約テキスト。記録がない場合はNone。
+            サーバー送信用の要約dict。記録がない場合はNone。
+            {
+                "summary": "要約テキスト",
+                "timestamp": "ISO8601",
+                "details": {
+                    "camera_summaries": [...],
+                    "desktop_summaries": [...],
+                    "active_apps": [...]
+                }
+            }
         """
         if not self._pending_records:
             logger.info("要約対象の記録がありません")
             return None
 
         records_text = self._format_records_for_summary()
+        details = self._extract_details()
         self._pending_records.clear()
 
         try:
-            summary = await self._call_summary_ai(records_text)
-            logger.info("30分要約を生成: %s", summary[:100])
-            return summary
+            summary_text = await self._call_summary_ai(records_text)
+            logger.info("30分要約を生成: %s", summary_text[:100])
+            now = datetime.now(JST).strftime("%Y-%m-%dT%H:%M:%S+09:00")
+            return {
+                "summary": summary_text,
+                "timestamp": now,
+                "details": details,
+            }
         except Exception:
             logger.exception("要約生成に失敗")
             return None
+
+    def _extract_details(self) -> dict:
+        """バッファ内の記録から詳細情報を抽出する"""
+        camera_summaries: list[str] = []
+        desktop_summaries: list[str] = []
+        active_apps: list[str] = []
+
+        for r in self._pending_records:
+            if r.camera_summary:
+                camera_summaries.append(r.camera_summary)
+            if r.desktop_summary:
+                desktop_summaries.append(r.desktop_summary)
+            if r.active_app and r.active_app not in active_apps:
+                active_apps.append(r.active_app)
+
+        return {
+            "camera_summaries": camera_summaries,
+            "desktop_summaries": desktop_summaries,
+            "active_apps": active_apps,
+        }
 
     def _format_records_for_summary(self) -> str:
         """バッファ内の記録を要約AI用のテキストに整形する"""

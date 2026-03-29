@@ -1,6 +1,6 @@
 import { getDayKey } from '@/lib/date'
 import { subDays, startOfDay } from 'date-fns'
-import { getBrowsingTimes, getActivityLogs } from '@/lib/api-client'
+import { getBrowsingTimes, getActivityLogs, getSituationLogs } from '@/lib/api-client'
 import type { ActivityLogEntry } from '@/lib/api-client'
 import { aggregateDomains, aggregateByCategory } from '@/lib/browsing-aggregator'
 import { formatSeconds } from '@/lib/time-format'
@@ -139,8 +139,8 @@ export const CHAT_TOOLS = [
         properties: {
           type: {
             type: 'string',
-            enum: ['assistant_messages', 'ai_config', 'activity_logs', 'chat_sessions', 'chat_messages'],
-            description: 'assistant_messages=リリィの過去メッセージ、ai_config=AI設定、activity_logs=操作ログ、chat_sessions=チャットセッション一覧、chat_messages=特定セッションのメッセージ',
+            enum: ['assistant_messages', 'ai_config', 'activity_logs', 'situation_logs', 'chat_sessions', 'chat_messages'],
+            description: 'assistant_messages=リリィの過去メッセージ、ai_config=AI設定、activity_logs=操作ログ、situation_logs=状況ログ（カメラ・デスクトップ状況の30分要約）、chat_sessions=チャットセッション一覧、chat_messages=特定セッションのメッセージ',
           },
           triggerType: {
             type: 'string',
@@ -554,6 +554,36 @@ async function executeGetMessagesAndLogs(args: Record<string, unknown>, context:
 
     for (const log of logs.slice(0, 20)) {
       lines.push(`- [${log.category}] ${log.action}（${log.timestamp.slice(0, 16)}）`)
+    }
+    if (logs.length > 20) lines.push(`  ...他${logs.length - 20}件`)
+
+    return lines.join('\n')
+  }
+
+  if (type === 'situation_logs') {
+    const period = (args.period as string) ?? 'week'
+    const { from, to } = getDateRange(period)
+
+    let logs: { summary: string; timestamp: string; details?: { active_apps?: string[] } }[]
+    try {
+      logs = await getSituationLogs(from, to)
+    } catch {
+      return '状況ログの取得に失敗しました。'
+    }
+
+    if (logs.length === 0) return `${PERIOD_LABELS[period] ?? period}の状況ログがありません。`
+
+    const lines: string[] = []
+    lines.push(`【状況ログ（${PERIOD_LABELS[period] ?? period}）】`)
+    lines.push(`合計: ${logs.length}件`)
+    lines.push('')
+
+    for (const log of logs.slice(0, 20)) {
+      const ts = log.timestamp.slice(0, 16)
+      const apps = log.details?.active_apps?.join(', ') ?? ''
+      let line = `- [${ts}] ${log.summary}`
+      if (apps) line += `（アプリ: ${apps}）`
+      lines.push(line)
     }
     if (logs.length > 20) lines.push(`  ...他${logs.length - 20}件`)
 
