@@ -79,6 +79,7 @@ class App:
 
         # AI応答 → 吹き出し表示 + ポーズ変更
         bus.ai_response_ready.connect(self._on_ai_response)
+        bus.ai_response_ready_no_tts.connect(self._on_ai_response_no_tts)
 
         # 音声入力
         bus.voice_toggle_requested.connect(self._on_voice_toggle)
@@ -366,6 +367,17 @@ class App:
             bus.balloon_show.emit("リリィ", "[デバッグ] 状況記録に失敗しちゃった…")
 
     def _on_ai_response(self, speaker: str, text: str, pose_category: str) -> None:
+        self._update_ui_for_response(speaker, text, pose_category)
+        # TTS読み上げ
+        if self.tts_engine is not None and self.tts_engine._running:
+            self.tts_engine.enqueue(speaker, text)
+
+    def _on_ai_response_no_tts(self, speaker: str, text: str, pose_category: str) -> None:
+        """UI更新のみ（TTS enqueue は呼び出し元が管理する）"""
+        self._update_ui_for_response(speaker, text, pose_category)
+
+    def _update_ui_for_response(self, speaker: str, text: str, pose_category: str) -> None:
+        """吹き出し表示 + ポーズ変更の共通処理"""
         bus.balloon_show.emit(speaker, text)
         # ポーズ変更
         if speaker == "リリィ":
@@ -376,10 +388,6 @@ class App:
         elif speaker in ("葉留佳", "はるちん", "はるか"):
             path = self.pose_mgr.select_haruka_pose(pose_category)
             bus.pose_change.emit("haruka", str(path))
-
-        # TTS読み上げ
-        if self.tts_engine is not None and self.tts_engine._running:
-            self.tts_engine.enqueue(speaker, text)
 
     async def _ensure_lily_pose(self, category: str) -> None:
         """リリィのポーズが不足していれば1枚生成する"""

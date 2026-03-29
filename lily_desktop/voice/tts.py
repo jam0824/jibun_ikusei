@@ -28,12 +28,20 @@ class _TTSJob:
     gemini_voice: str     # Gemini TTS用
 
 
+@dataclass
+class _TTSAudioJob:
+    """事前合成済み音声の再生専用ジョブ"""
+    speaker: str
+    audio_bytes: bytes
+    audio_format: str     # "wav" or "pcm"
+
+
 class TTSEngine:
     """VOICEVOX / Gemini TTS によるキュー順再生エンジン"""
 
     def __init__(self, config: TTSConfig):
         self._config = config
-        self._queue: asyncio.Queue[_TTSJob] = asyncio.Queue()
+        self._queue: asyncio.Queue[_TTSJob | _TTSAudioJob] = asyncio.Queue()
         self._idle_event = asyncio.Event()
         self._idle_event.set()
         self._running = False
@@ -112,6 +120,36 @@ class TTSEngine:
         """全キューの再生が完了するまで待つ（auto_conversation 用）。"""
         await self._idle_event.wait()
 
+    async def synthesize(self, speaker: str, text: str) -> tuple[bytes, str] | None:
+        """音声合成のみ実行する（再生・キュー投入なし）。プリフェッチ用。
+
+        Returns:
+            (audio_bytes, audio_format) or None.
+            audio_format は "wav"（VOICEVOX）または "pcm"（Gemini）。
+        """
+        engine, speaker_id, gemini_voice = self._resolve_speaker_config(speaker)
+        if engine == "gemini":
+            data = await self._synthesize_gemini(text, gemini_voice)
+            return (data, "pcm") if data else None
+        else:
+            data = await self._synthesize_voicevox(text, speaker_id)
+            return (data, "wav") if data else None
+
+    def enqueue_audio(
+        self, speaker: str, audio_bytes: bytes, audio_format: str
+    ) -> None:
+        """事前合成済み音声をキューに追加する（合成スキップ、再生のみ）。"""
+        if not self._running:
+            return
+        self._idle_event.clear()
+        self._queue.put_nowait(
+            _TTSAudioJob(
+                speaker=speaker,
+                audio_bytes=audio_bytes,
+                audio_format=audio_format,
+            )
+        )
+
     def clear_queue(self) -> None:
         """キューをクリアし、再生中の音声も停止する（ユーザー割り込み用）。"""
         while not self._queue.empty():
@@ -147,7 +185,15 @@ class TTSEngine:
                 break
 
             try:
-                if job.engine == "gemini":
+                if isinstance(job, _TTSAudioJob):
+                    # 事前合成済み音声 → 合成スキップ、再生のみ
+                    bus.tts_playback_started.emit()
+                    if job.audio_format == "pcm":
+                        await self._play_pcm_audio(job.audio_bytes)
+                    else:
+                        await self._play_audio(job.audio_bytes)
+                    bus.tts_playback_finished.emit()
+                elif job.engine == "gemini":
                     pcm_bytes = await self._synthesize_gemini(
                         job.text, job.gemini_voice
                     )
@@ -164,7 +210,7 @@ class TTSEngine:
                         await self._play_audio(wav_bytes)
                         bus.tts_playback_finished.emit()
             except Exception:
-                logger.exception("TTS 再生エラー: %s", job.text[:30])
+                logger.exception("TTS 再生エラー: %s", getattr(job, 'text', '(prefetched)')[:30])
             finally:
                 if self._queue.empty():
                     self._idle_event.set()
