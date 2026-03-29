@@ -46,5 +46,5 @@ tts:
   lily_gemini_voice: Zephyr        # Gemini TTS用
   haruka_engine: voicevox            # voicevox or gemini
   haruka_speaker_id: 3             # VOICEVOX用
-  haruka_gemini_voice: Kore        # Gemini TTS用
+  haruka_gemini_voice: Achernar        # Gemini TTS用
   gemini_model: gemini-2.5-flash-preview-tts

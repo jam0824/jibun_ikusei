@@ -55,7 +55,10 @@
       "Bash(python -c \"from ai.tool_definitions import CHAT_TOOLS; from ai.tool_executor import ToolExecutor; print\\(f''Tools: {len\\(CHAT_TOOLS\\)}, ToolExecutor OK''\\)\")",
       "WebFetch(domain:docs.cloud.google.com)",
       "WebFetch(domain:developers.openai.com)",
-      "Bash(find /d/codes/自分育成アプリ/lily_desktop -type f \\\\\\(-name *.html -o -name *.js -o -name *.ts -o -name *.tsx -o -name *.jsx \\\\\\))"
+      "Bash(find /d/codes/自分育成アプリ/lily_desktop -type f \\\\\\(-name *.html -o -name *.js -o -name *.ts -o -name *.tsx -o -name *.jsx \\\\\\))",
+      "Bash(find D:codes自分育成アプリ/chrome-extension/src -type f -name *.ts -o -name *.tsx)",
+      "Bash(find D:/codes/自分育成アプリ/infra -type f -name *.ts -o -name *.js)",
+      "Bash(.venv/Scripts/python -m pytest tests/test_skill_resolution.py -v)"
     ]
   }
 }
