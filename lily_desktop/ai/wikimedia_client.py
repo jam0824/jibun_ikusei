@@ -1,8 +1,9 @@
-"""Wikimedia Feed API クライアント — 今日の注目記事・今日は何の日を取得"""
+"""Wikimedia Feed API クライアント — 今日の注目記事・今日は何の日・興味ある分野を取得"""
 
 from __future__ import annotations
 
 import logging
+import random
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -72,7 +73,7 @@ async def fetch_featured_content(language: str = "ja") -> list[WikimediaArticle]
 
         # 今日は何の日 (On This Day)
         onthisday = data.get("onthisday", [])
-        for event in onthisday[:5]:  # 最大5件
+        for event in onthisday[:8]:  # 最大8件
             text = event.get("text", "")
             if _is_excluded(text, ""):
                 continue
@@ -102,6 +103,71 @@ async def fetch_featured_content(language: str = "ja") -> list[WikimediaArticle]
         logger.exception("Wikimedia Feed API の取得に失敗")
 
     logger.info("Wikimedia: %d 件の記事を取得", len(articles))
+    return articles
+
+
+async def fetch_interest_articles(
+    topics: list[str],
+    language: str = "ja",
+) -> list[WikimediaArticle]:
+    """興味ある分野のトピックごとにWikipedia記事をランダム取得する。
+
+    各トピックで検索し、上位5件からランダムに1件選ぶ。
+
+    Args:
+        topics: 興味ある分野のキーワードリスト（例: ["科学", "オカルト", "宇宙"]）
+        language: Wikipedia の言語コード (デフォルト: "ja")
+
+    Returns:
+        WikimediaArticle のリスト（トピックごとに最大1件）。
+    """
+    if not topics:
+        return []
+
+    articles: list[WikimediaArticle] = []
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for topic in topics:
+            try:
+                resp = await client.get(
+                    f"https://{language}.wikipedia.org/w/api.php",
+                    params={
+                        "action": "query",
+                        "generator": "search",
+                        "gsrsearch": topic,
+                        "gsrlimit": 5,
+                        "prop": "extracts",
+                        "exintro": 1,
+                        "explaintext": 1,
+                        "exlimit": 5,
+                        "format": "json",
+                        "utf8": 1,
+                    },
+                    headers={"User-Agent": "LilyDesktop/1.0 (contact: lily-desktop@example.com)"},
+                )
+                if not resp.is_success:
+                    logger.warning("Wikipedia Search API エラー (%s): %d", topic, resp.status_code)
+                    continue
+
+                data = resp.json()
+                pages = list(data.get("query", {}).get("pages", {}).values())
+                valid = [
+                    p for p in pages
+                    if not _is_excluded(p.get("title", ""), p.get("extract", ""))
+                ]
+                if not valid:
+                    continue
+
+                chosen = random.choice(valid)
+                articles.append(WikimediaArticle(
+                    title=chosen.get("title", ""),
+                    extract=chosen.get("extract", "")[:200],
+                    article_type="interest",
+                ))
+            except Exception:
+                logger.exception("興味ある分野の取得に失敗: %s", topic)
+
+    logger.info("Wikimedia interest: %d 件の記事を取得 (topics=%s)", len(articles), topics)
     return articles
 
 

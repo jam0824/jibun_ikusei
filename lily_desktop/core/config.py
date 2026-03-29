@@ -108,6 +108,11 @@ class DisplayConfig:
 
 
 @dataclass
+class TalkSeedsConfig:
+    interest_topics: list[str] = field(default_factory=list)  # 豆知識で優先する興味ある分野
+
+
+@dataclass
 class AppConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     cognito: CognitoConfig = field(default_factory=CognitoConfig)
@@ -117,6 +122,7 @@ class AppConfig:
     tts: TTSConfig = field(default_factory=TTSConfig)
     camera: CameraConfig = field(default_factory=CameraConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
+    talk_seeds: TalkSeedsConfig = field(default_factory=TalkSeedsConfig)
 
 
 def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
@@ -135,6 +141,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         tts=TTSConfig(**{k: v for k, v in raw.get("tts", {}).items() if k != "gemini_api_key"}),
         camera=CameraConfig(**raw.get("camera", {})),
         display=DisplayConfig(**raw.get("display", {})),
+        talk_seeds=TalkSeedsConfig(**raw.get("talk_seeds", {})),
     )
 
     # .env から秘密情報を上書き（.env の値を優先）

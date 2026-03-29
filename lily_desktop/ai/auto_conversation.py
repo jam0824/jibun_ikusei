@@ -136,6 +136,7 @@ class AutoConversation:
             annict_access_token=config.annict.access_token,
             camera_enabled=config.camera.enabled,
             camera_analysis_model=config.camera.analysis_model,
+            interest_topics=config.talk_seeds.interest_topics,
         )
         self._timer = QTimer()
         self._timer.setSingleShot(False)
@@ -321,6 +322,15 @@ class AutoConversation:
             f"- 出典: {seed.source}",
             f"- あなたの切り口: {seed.lily_perspective}",
         ]
+
+        if not conv_history and seed.source in ("wikimedia", "wikimedia_interest", "annict"):
+            context_parts.append("")
+            context_parts.append(
+                "【最初の一言について】"
+                "これが話題の切り出しです。"
+                "セリフの冒頭で「～の話だけど」「～って知ってる？」のように、"
+                "何の話かが伝わるひと言から始めてください。"
+            )
 
         if conv_history:
             context_parts.append("")

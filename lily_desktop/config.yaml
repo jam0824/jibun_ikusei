@@ -38,6 +38,11 @@ camera:
   analysis_model: gpt-5            # カメラ画像分析AI
   summary_model: gpt-5.4           # 30分要約AI
   summary_interval_seconds: 1800   # サーバー要約間隔（秒）
+talk_seeds:
+  interest_topics:
+    - 科学
+    - オカルト
+    - 宇宙
 tts:
   enabled: true
   voicevox_url: http://localhost:50021

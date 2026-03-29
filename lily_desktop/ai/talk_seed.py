@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from ai.annict_client import AnnictWork, fetch_seasonal_works
 from ai.camera_analyzer import CameraAnalysis, analyze_camera_frame
 from ai.screen_analyzer import ScreenAnalysis
-from ai.wikimedia_client import WikimediaArticle, fetch_featured_content
+from ai.wikimedia_client import WikimediaArticle, fetch_featured_content, fetch_interest_articles
 from core.camera import capture_camera_frame
 from core.desktop_context import DesktopContext, fetch_desktop_context
 
@@ -48,6 +48,7 @@ class TalkSeedManager:
         camera_enabled: bool = False,
         camera_analysis_model: str = "gpt-5",
         camera_device_index: int = 0,
+        interest_topics: list[str] | None = None,
     ):
         self._openai_api_key = openai_api_key
         self._screen_analysis_model = screen_analysis_model
@@ -55,40 +56,45 @@ class TalkSeedManager:
         self._camera_enabled = camera_enabled
         self._camera_analysis_model = camera_analysis_model
         self._camera_device_index = camera_device_index
+        self._interest_topics: list[str] = interest_topics or []
         self._used_history: list[tuple[str, datetime]] = []  # (source_key, used_at)
         self._last_camera_analysis: CameraAnalysis | None = None
 
     async def collect_seeds(self) -> list[TalkSeed]:
-        """4系統から雑談の種を並行収集する"""
+        """5系統から雑談の種を並行収集する"""
         seeds: list[TalkSeed] = []
 
         # 並行で取得
         desktop_task = asyncio.create_task(self._collect_desktop())
         wiki_task = asyncio.create_task(self._collect_wikimedia())
+        wiki_interest_task = asyncio.create_task(self._collect_wikimedia_interest())
         annict_task = asyncio.create_task(self._collect_annict())
         camera_task = asyncio.create_task(self._collect_camera())
 
         desktop_seeds = await desktop_task
         wiki_seeds = await wiki_task
+        wiki_interest_seeds = await wiki_interest_task
         annict_seeds = await annict_task
         camera_seeds = await camera_task
 
         seeds.extend(desktop_seeds)
         seeds.extend(wiki_seeds)
+        seeds.extend(wiki_interest_seeds)
         seeds.extend(annict_seeds)
         seeds.extend(camera_seeds)
 
         logger.info(
-            "雑談の種: desktop=%d wiki=%d annict=%d camera=%d 合計=%d",
-            len(desktop_seeds), len(wiki_seeds), len(annict_seeds),
-            len(camera_seeds), len(seeds),
+            "雑談の種: desktop=%d wiki=%d wiki_interest=%d annict=%d camera=%d 合計=%d",
+            len(desktop_seeds), len(wiki_seeds), len(wiki_interest_seeds),
+            len(annict_seeds), len(camera_seeds), len(seeds),
         )
         return seeds
 
     def select_best_seed(self, seeds: list[TalkSeed]) -> TalkSeed | None:
         """話題のバランスを考慮して種を選ぶ。
 
-        デスクトップ状況 25% / カメラ状況 25% / その他（Wikimedia・Annict）50% の配分。
+        デスクトップ 25% / カメラ 25% / 注目記事・今日は何の日 12.5% /
+        興味ある分野 12.5% / アニメ(Annict) 25% の配分。
         該当カテゴリの種がない場合は、残りのカテゴリで再配分する。
         クールダウン中の種は除外。
         """
@@ -106,7 +112,9 @@ class TalkSeedManager:
 
         desktop_seeds = [s for s in available if s.source == "desktop"]
         camera_seeds = [s for s in available if s.source == "camera"]
-        other_seeds = [s for s in available if s.source not in ("desktop", "camera")]
+        wikimedia_seeds = [s for s in available if s.source == "wikimedia"]
+        wikimedia_interest_seeds = [s for s in available if s.source == "wikimedia_interest"]
+        annict_seeds = [s for s in available if s.source == "annict"]
 
         # 利用可能なカテゴリで重み付き抽選
         candidates: list[tuple[float, list[TalkSeed]]] = []
@@ -114,8 +122,12 @@ class TalkSeedManager:
             candidates.append((0.25, desktop_seeds))
         if camera_seeds:
             candidates.append((0.25, camera_seeds))
-        if other_seeds:
-            candidates.append((0.50, other_seeds))
+        if wikimedia_seeds:
+            candidates.append((0.125, wikimedia_seeds))
+        if wikimedia_interest_seeds:
+            candidates.append((0.125, wikimedia_interest_seeds))
+        if annict_seeds:
+            candidates.append((0.25, annict_seeds))
 
         if not candidates:
             return None
@@ -186,7 +198,7 @@ class TalkSeedManager:
             seeds: list[TalkSeed] = []
             now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
 
-            for article in articles[:3]:  # 最大3件
+            for article in articles[:10]:  # 最大10件
                 seeds.append(TalkSeed(
                     summary=article.extract[:100] if article.extract else article.title,
                     tags=[article.article_type, "豆知識"],
@@ -237,6 +249,31 @@ class TalkSeedManager:
             logger.exception("カメラ画像の収集に失敗")
             return []
 
+    async def _collect_wikimedia_interest(self) -> list[TalkSeed]:
+        """興味ある分野のトピックからWikipedia記事を種として生成"""
+        if not self._interest_topics:
+            return []
+        try:
+            articles = await fetch_interest_articles(self._interest_topics)
+            seeds: list[TalkSeed] = []
+            now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+
+            for article in articles:
+                seeds.append(TalkSeed(
+                    summary=article.extract[:100] if article.extract else article.title,
+                    tags=[article.article_type, "興味ある分野"],
+                    freshness="fresh",
+                    source="wikimedia_interest",
+                    lily_perspective=f"「{article.title}」について豆知識として話を振る",
+                    haruka_perspective=f"「{article.title}」に対してリアクションや脱線コメントを返す",
+                    created_at=now_str,
+                    _source_key=f"wiki_interest:{article.title[:30]}",
+                ))
+            return seeds
+        except Exception:
+            logger.exception("興味ある分野のWikipedia収集に失敗")
+            return []
+
     async def _collect_annict(self) -> list[TalkSeed]:
         """Annict から種を生成"""
         if not self._annict_access_token:
@@ -244,12 +281,12 @@ class TalkSeedManager:
         try:
             works = await fetch_seasonal_works(
                 access_token=self._annict_access_token,
-                per_page=5,
+                per_page=10,
             )
             seeds: list[TalkSeed] = []
             now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
 
-            for work in works[:3]:  # 最大3件
+            for work in works[:10]:  # 最大10件
                 seeds.append(TalkSeed(
                     summary=f"今期のアニメ「{work.title}」({work.watchers_count}人が視聴中)",
                     tags=["アニメ", work.media_type, work.season_name],
