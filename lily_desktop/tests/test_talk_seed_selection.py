@@ -1,4 +1,4 @@
-"""雑談の種選択ロジックのテスト — 配分変更(desktop25%/camera25%/other50%)の検証"""
+"""雑談の種選択ロジックのテスト — 配分変更(desktop25%/camera25%/wiki12.5%/wiki_interest12.5%/annict25%)の検証"""
 
 import pytest
 
@@ -42,37 +42,55 @@ class TestSelectBestSeed:
         assert result is not None
         assert result.source == "camera"
 
-    def test_その他のみの場合はその他を返す(self, seed_mgr):
-        seeds = [_make_seed("wikimedia"), _make_seed("annict")]
+    def test_wikiのみの場合はwikiを返す(self, seed_mgr):
+        seeds = [_make_seed("wikimedia")]
         result = seed_mgr.select_best_seed(seeds)
         assert result is not None
-        assert result.source in ("wikimedia", "annict")
+        assert result.source == "wikimedia"
 
-    def test_全カテゴリある場合に3種から選ばれる(self, seed_mgr):
+    def test_wiki_interestのみの場合はwiki_interestを返す(self, seed_mgr):
+        seeds = [_make_seed("wikimedia_interest")]
+        result = seed_mgr.select_best_seed(seeds)
+        assert result is not None
+        assert result.source == "wikimedia_interest"
+
+    def test_annictのみの場合はannictを返す(self, seed_mgr):
+        seeds = [_make_seed("annict")]
+        result = seed_mgr.select_best_seed(seeds)
+        assert result is not None
+        assert result.source == "annict"
+
+    def test_全カテゴリある場合に5種から選ばれる(self, seed_mgr):
         seeds = [
             _make_seed("desktop"),
             _make_seed("camera"),
             _make_seed("wikimedia"),
+            _make_seed("wikimedia_interest"),
+            _make_seed("annict"),
         ]
-        # 100回試行して各sourceが少なくとも1回は選ばれることを確認
+        # 200回試行して各sourceが少なくとも1回は選ばれることを確認
         sources_selected = set()
-        for _ in range(100):
+        for _ in range(200):
             result = seed_mgr.select_best_seed(seeds)
             sources_selected.add(result.source)
 
         assert "desktop" in sources_selected
         assert "camera" in sources_selected
         assert "wikimedia" in sources_selected
+        assert "wikimedia_interest" in sources_selected
+        assert "annict" in sources_selected
 
     def test_配分がおおよそ正しい(self, seed_mgr):
-        """desktop25%/camera25%/other50%の配分を統計的に検証"""
+        """desktop25%/camera25%/wiki12.5%/wiki_interest12.5%/annict25%の配分を統計的に検証"""
         seeds = [
             _make_seed("desktop"),
             _make_seed("camera"),
             _make_seed("wikimedia"),
+            _make_seed("wikimedia_interest"),
+            _make_seed("annict"),
         ]
-        counts = {"desktop": 0, "camera": 0, "wikimedia": 0}
-        n = 1000
+        counts = {"desktop": 0, "camera": 0, "wikimedia": 0, "wikimedia_interest": 0, "annict": 0}
+        n = 2000
         for _ in range(n):
             result = seed_mgr.select_best_seed(seeds)
             counts[result.source] += 1
@@ -80,7 +98,9 @@ class TestSelectBestSeed:
         # 各カテゴリの割合が許容範囲内か（±10%の幅を持たせる）
         assert 0.15 < counts["desktop"] / n < 0.35, f"desktop: {counts['desktop']/n:.2f}"
         assert 0.15 < counts["camera"] / n < 0.35, f"camera: {counts['camera']/n:.2f}"
-        assert 0.35 < counts["wikimedia"] / n < 0.65, f"wikimedia: {counts['wikimedia']/n:.2f}"
+        assert 0.025 < counts["wikimedia"] / n < 0.225, f"wikimedia: {counts['wikimedia']/n:.2f}"
+        assert 0.025 < counts["wikimedia_interest"] / n < 0.225, f"wiki_interest: {counts['wikimedia_interest']/n:.2f}"
+        assert 0.15 < counts["annict"] / n < 0.35, f"annict: {counts['annict']/n:.2f}"
 
     def test_クールダウン中の種は除外される(self, seed_mgr):
         seeds = [
@@ -95,7 +115,7 @@ class TestSelectBestSeed:
             result = seed_mgr.select_best_seed(seeds)
             assert result.source == "wikimedia"
 
-    def test_カメラとその他のみの場合も正しく選択される(self, seed_mgr):
+    def test_カメラとannictのみの場合も正しく選択される(self, seed_mgr):
         seeds = [
             _make_seed("camera"),
             _make_seed("annict"),
@@ -107,3 +127,16 @@ class TestSelectBestSeed:
 
         assert "camera" in sources_selected
         assert "annict" in sources_selected
+
+    def test_wikiとwiki_interestのみの場合も両方選ばれる(self, seed_mgr):
+        seeds = [
+            _make_seed("wikimedia"),
+            _make_seed("wikimedia_interest"),
+        ]
+        sources_selected = set()
+        for _ in range(100):
+            result = seed_mgr.select_best_seed(seeds)
+            sources_selected.add(result.source)
+
+        assert "wikimedia" in sources_selected
+        assert "wikimedia_interest" in sources_selected

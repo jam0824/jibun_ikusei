@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from api.api_client import ApiClient
+from core.skill_resolution import resolve_skill_for_completion
 
 logger = logging.getLogger(__name__)
 
@@ -383,24 +385,62 @@ class ToolExecutor:
         quest_type = best.get("questType", "repeatable")
         now = datetime.now(JST).isoformat()
 
-        completion = {
+        # スキル解決
+        resolution = None
+        try:
+            # fixed / defaultSkillId の場合はskills取得だけで十分だがまとめて取得
+            skills, dictionary = await asyncio.gather(
+                self._api.get_skills(),
+                self._api.get_dictionary(),
+            )
+            resolution = await resolve_skill_for_completion(
+                best, args.get("note"), skills, dictionary, self._api,
+            )
+        except Exception:
+            logger.warning("スキル解決に失敗、pendingで続行", exc_info=True)
+
+        completion: dict[str, Any] = {
             "id": f"completion_{uuid.uuid4().hex[:12]}",
             "questId": quest_id,
             "clientRequestId": f"req_{uuid.uuid4().hex[:12]}",
             "completedAt": now,
             "note": args.get("note"),
             "userXpAwarded": xp_reward,
-            "skillResolutionStatus": "pending",
             "createdAt": now,
         }
+
+        skill_msg = ""
+        if resolution and resolution.get("resolved_skill_id"):
+            completion["resolvedSkillId"] = resolution["resolved_skill_id"]
+            completion["skillXpAwarded"] = resolution["skill_xp_awarded"]
+            completion["skillResolutionStatus"] = "resolved"
+            completion["resolutionReason"] = resolution.get("reason", "")
+            skill_msg = f" [スキル: {resolution.get('skill_name', '')}]"
+        else:
+            completion["skillResolutionStatus"] = (
+                resolution.get("status", "pending") if resolution else "pending"
+            )
 
         await self._api.post_completion(completion)
 
         # one_time クエストはステータスを completed に更新
+        # NOTE: PUT /quests/{id} は PutCommand で全置換のため、完全なオブジェクトを送る
         if quest_type == "one_time":
-            await self._api.put_quest(quest_id, {"status": "completed", "updatedAt": now})
+            await self._api.put_quest(quest_id, {**best, "status": "completed", "updatedAt": now})
 
-        return f"クエスト「{quest_title}」をクリアしました！ +{xp_reward} XP"
+        # 解決成功時、defaultSkillId を保存して次回再利用
+        if resolution and resolution.get("resolved_skill_id"):
+            if best.get("skillMappingMode") != "ask_each_time":
+                try:
+                    await self._api.put_quest(quest_id, {
+                        **best,
+                        "defaultSkillId": resolution["resolved_skill_id"],
+                        "updatedAt": now,
+                    })
+                except Exception:
+                    logger.warning("defaultSkillId の保存に失敗", exc_info=True)
+
+        return f"クエスト「{quest_title}」をクリアしました！ +{xp_reward} XP{skill_msg}"
 
     async def _create_quest(self, args: dict) -> str:
         title = args.get("title")
