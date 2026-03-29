@@ -31,7 +31,10 @@ export function QuestCard({
   const isBrowsing = quest.source === 'browsing'
 
   return (
-    <Card className={`overflow-hidden ${getBrowsingCardClass(quest)}`}>
+    <Card
+      className={`overflow-hidden ${getBrowsingCardClass(quest)} ${onOpen ? 'cursor-pointer hover:shadow-md transition-shadow' : ''}`}
+      onClick={onOpen}
+    >
       <CardContent className="p-4">
         <div className="flex items-start gap-3">
           <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-100 text-slate-700">
@@ -39,13 +42,9 @@ export function QuestCard({
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                className="truncate text-left text-sm font-semibold text-slate-900 hover:text-violet-700"
-                onClick={onOpen}
-              >
+              <span className="truncate text-left text-sm font-semibold text-slate-900">
                 {quest.title}
-              </button>
+              </span>
               <Badge tone={quest.browsingType === 'bad' ? 'warning' : 'soft'}>
                 {getXpLabel(quest.xpReward)}
               </Badge>
@@ -84,7 +83,7 @@ export function QuestCard({
           <Button
             variant={actionLabel === '詳細' ? 'outline' : actionLabel === '再オープン' ? 'secondary' : 'primary'}
             className="px-4"
-            onClick={onAction}
+            onClick={(e) => { e.stopPropagation(); onAction() }}
           >
             {actionLabel}
           </Button>
