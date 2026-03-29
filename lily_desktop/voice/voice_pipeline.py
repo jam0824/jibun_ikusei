@@ -199,6 +199,14 @@ class VoicePipeline:
                 text = text.replace(alias, "リリィ")
                 logger.info("エイリアス変換: %s → リリィ: %s", alias, text)
 
+        # 無視ワード判定
+        ignore_words = self._config.ignore_words
+        if ignore_words:
+            matched_ignore = [w for w in ignore_words if w in text]
+            if matched_ignore:
+                logger.info("無視ワード検出のためスキップ: %s (検出: %s)", text, matched_ignore)
+                return
+
         # ウェイクワード判定
         wake_words = self._config.wake_words
         if self._config.use_wake_words and wake_words:

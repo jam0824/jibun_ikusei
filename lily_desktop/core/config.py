@@ -68,6 +68,7 @@ class VoiceConfig:
     use_wake_words: bool = True  # ウェイクワードを使うかどうか（Falseなら全音声に応答）
     wake_words: list[str] = field(default_factory=lambda: ["リリィ", "リリー"])  # ウェイクワード
     wake_word_aliases: list[str] = field(default_factory=lambda: ["DD"])  # リリィに変換する誤認識パターン
+    ignore_words: list[str] = field(default_factory=list)  # このワードが含まれていたら返答生成に送らない
     max_speech_seconds: float = 8.0  # 最大発話時間（秒）— これを超えると強制終了
     volume_threshold: int = 1500    # 音量閾値 — フレームのRMS振幅がこれ以下なら無視
     speaker_verification_enabled: bool = False  # 話者照合を使うかどうか
