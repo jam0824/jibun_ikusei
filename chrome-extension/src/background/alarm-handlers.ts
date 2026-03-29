@@ -8,15 +8,17 @@ import { generateWeeklyReport } from './weekly-report-generator'
 import { logActivity, flushActivityLogs, logError } from '@ext/lib/activity-logger'
 import { isLoggedIn } from '@ext/lib/auth'
 
-export function setupAlarms(): void {
-  // Periodic sync every 5 minutes
-  chrome.alarms.create('periodic-sync', { periodInMinutes: 5 })
-
-  // Daily reset check every minute (checks date boundary)
-  chrome.alarms.create('daily-reset-check', { periodInMinutes: 1 })
-
-  // Weekly report generation check every hour
-  chrome.alarms.create('weekly-report-gen', { periodInMinutes: 60 })
+export async function setupAlarms(): Promise<void> {
+  // Only create each alarm if it doesn't already exist.
+  // chrome.alarms.create() replaces an existing alarm of the same name,
+  // resetting its timer. Since the service worker restarts on every tab event,
+  // unconditionally calling create() would prevent alarms from ever firing.
+  if (!await chrome.alarms.get('periodic-sync'))
+    chrome.alarms.create('periodic-sync', { periodInMinutes: 5 })
+  if (!await chrome.alarms.get('daily-reset-check'))
+    chrome.alarms.create('daily-reset-check', { periodInMinutes: 1 })
+  if (!await chrome.alarms.get('weekly-report-gen'))
+    chrome.alarms.create('weekly-report-gen', { periodInMinutes: 60 })
 }
 
 export async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {

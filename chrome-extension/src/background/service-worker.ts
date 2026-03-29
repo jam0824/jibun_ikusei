@@ -114,11 +114,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   return true
 })
 
-// Periodic flush via alarm (every 30 seconds)
-chrome.alarms.create('flush-tracker', { periodInMinutes: 0.5 })
-
+// Periodic flush via alarm (every 30 seconds) — only create if not already running
 // Set up periodic sync and daily reset alarms
-setupAlarms()
+// Wrapped in IIFE because top-level await is not available in the build target
+;(async () => {
+  if (!await chrome.alarms.get('flush-tracker'))
+    chrome.alarms.create('flush-tracker', { periodInMinutes: 0.5 })
+  await setupAlarms()
+})()
 
 // Dispatch all alarms
 chrome.alarms.onAlarm.addListener(async (alarm) => {

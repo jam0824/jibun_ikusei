@@ -409,13 +409,23 @@ describe('alarm-handlers', () => {
   })
 
   describe('setupAlarms', () => {
-    it('periodic-sync、daily-reset-check、weekly-report-genアラームを作成する', async () => {
+    it('アラームが存在しない場合にperiodic-sync、daily-reset-check、weekly-report-genを作成する', async () => {
+      vi.mocked(chrome.alarms.get).mockResolvedValue(undefined as unknown as chrome.alarms.Alarm)
       const { setupAlarms } = await import('./alarm-handlers')
-      setupAlarms()
+      await setupAlarms()
 
       expect(chrome.alarms.create).toHaveBeenCalledWith('periodic-sync', { periodInMinutes: 5 })
       expect(chrome.alarms.create).toHaveBeenCalledWith('daily-reset-check', { periodInMinutes: 1 })
       expect(chrome.alarms.create).toHaveBeenCalledWith('weekly-report-gen', { periodInMinutes: 60 })
+    })
+
+    it('アラームが既に存在する場合は再作成しない', async () => {
+      const existingAlarm = { name: 'periodic-sync', periodInMinutes: 5, scheduledTime: Date.now() }
+      vi.mocked(chrome.alarms.get).mockResolvedValue(existingAlarm as chrome.alarms.Alarm)
+      const { setupAlarms } = await import('./alarm-handlers')
+      await setupAlarms()
+
+      expect(chrome.alarms.create).not.toHaveBeenCalled()
     })
   })
 
