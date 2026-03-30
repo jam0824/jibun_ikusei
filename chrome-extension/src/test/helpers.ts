@@ -1,4 +1,9 @@
-import type { ClassificationResult, DailyProgress, DomainTimeEntry, PageInfo } from '@ext/types/browsing'
+import type {
+  ClassificationResult,
+  DailyProgress,
+  DomainTimeEntry,
+  PageInfo,
+} from '@ext/types/browsing'
 
 export function createMockPageInfo(overrides: Partial<PageInfo> = {}): PageInfo {
   return {
@@ -9,7 +14,9 @@ export function createMockPageInfo(overrides: Partial<PageInfo> = {}): PageInfo 
   }
 }
 
-export function createMockClassificationResult(overrides: Partial<ClassificationResult> = {}): ClassificationResult {
+export function createMockClassificationResult(
+  overrides: Partial<ClassificationResult> = {},
+): ClassificationResult {
   return {
     category: '学習',
     isGrowth: true,
@@ -21,7 +28,9 @@ export function createMockClassificationResult(overrides: Partial<Classification
   }
 }
 
-export function createMockDomainTimeEntry(overrides: Partial<DomainTimeEntry> = {}): DomainTimeEntry {
+export function createMockDomainTimeEntry(
+  overrides: Partial<DomainTimeEntry> = {},
+): DomainTimeEntry {
   return {
     domain: 'example.com',
     cacheKey: 'example.com:/page',
@@ -52,7 +61,6 @@ export function createMockDailyProgress(overrides: Partial<DailyProgress> = {}):
   }
 }
 
-/** Create a mock authState with a valid (not-expired) JWT token */
 export function createMockAuthState(expiresInSeconds = 3600) {
   const exp = Math.floor(Date.now() / 1000) + expiresInSeconds
   const payload = btoa(JSON.stringify({ exp }))
@@ -60,7 +68,6 @@ export function createMockAuthState(expiresInSeconds = 3600) {
   return { idToken, email: 'test@example.com', loggedInAt: new Date().toISOString() }
 }
 
-/** Get today's date string in YYYY-MM-DD format (local timezone) */
 export function todayString(): string {
   const now = new Date()
   const year = now.getFullYear()

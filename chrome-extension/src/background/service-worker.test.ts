@@ -1,11 +1,12 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { getLocal } from '@ext/lib/storage'
 
 describe('recoverClassifications', () => {
   beforeEach(() => {
     vi.resetModules()
   })
 
-  it('起動時にアクティブタブへREQUEST_PAGE_INFOを送信する', async () => {
+  it('active な HTTP タブへ REQUEST_PAGE_INFO を送る', async () => {
     vi.mocked(chrome.tabs.query).mockResolvedValue([
       { id: 1, url: 'https://www.youtube.com/watch?v=abc' } as chrome.tabs.Tab,
     ])
@@ -16,7 +17,7 @@ describe('recoverClassifications', () => {
     expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(1, { type: 'REQUEST_PAGE_INFO' })
   })
 
-  it('chrome://やabout:ページにはリクエストを送信しない', async () => {
+  it('chrome:// や about: ページにはリクエストしない', async () => {
     vi.mocked(chrome.tabs.query).mockResolvedValue([
       { id: 2, url: 'chrome://extensions/' } as chrome.tabs.Tab,
     ])
@@ -27,7 +28,7 @@ describe('recoverClassifications', () => {
     expect(chrome.tabs.sendMessage).not.toHaveBeenCalled()
   })
 
-  it('タブIDがない場合はスキップする', async () => {
+  it('タブ ID がない場合はスキップする', async () => {
     vi.mocked(chrome.tabs.query).mockResolvedValue([
       { url: 'https://example.com/' } as chrome.tabs.Tab,
     ])
@@ -38,7 +39,7 @@ describe('recoverClassifications', () => {
     expect(chrome.tabs.sendMessage).not.toHaveBeenCalled()
   })
 
-  it('sendMessageが失敗してもエラーにならない', async () => {
+  it('sendMessage 失敗でもエラーにしない', async () => {
     vi.mocked(chrome.tabs.query).mockResolvedValue([
       { id: 3, url: 'https://example.com/' } as chrome.tabs.Tab,
     ])
@@ -54,7 +55,7 @@ describe('recoverTabTracking', () => {
     vi.resetModules()
   })
 
-  it('HTTPタブが存在する場合エラーなく完了する', async () => {
+  it('HTTP タブが存在するとき復元処理をしてもエラーにならない', async () => {
     vi.mocked(chrome.tabs.query).mockResolvedValue([
       { id: 1, url: 'https://www.youtube.com/' } as chrome.tabs.Tab,
     ])
@@ -63,7 +64,7 @@ describe('recoverTabTracking', () => {
     await expect(recoverTabTracking()).resolves.toBeUndefined()
   })
 
-  it('chrome://タブは無視してエラーにならない', async () => {
+  it('chrome:// タブは無視する', async () => {
     vi.mocked(chrome.tabs.query).mockResolvedValue([
       { id: 2, url: 'chrome://extensions/' } as chrome.tabs.Tab,
     ])
@@ -72,17 +73,45 @@ describe('recoverTabTracking', () => {
     await expect(recoverTabTracking()).resolves.toBeUndefined()
   })
 
-  it('アクティブタブが存在しない場合はスキップする', async () => {
+  it('アクティブタブがない場合はスキップする', async () => {
     vi.mocked(chrome.tabs.query).mockResolvedValue([])
 
     const { recoverTabTracking } = await import('./service-worker')
     await expect(recoverTabTracking()).resolves.toBeUndefined()
   })
 
-  it('tabs.queryが失敗してもエラーにならない', async () => {
+  it('tabs.query 失敗でもエラーにならない', async () => {
     vi.mocked(chrome.tabs.query).mockRejectedValue(new Error('tabs API error'))
 
     const { recoverTabTracking } = await import('./service-worker')
     await expect(recoverTabTracking()).resolves.toBeUndefined()
+  })
+})
+
+describe('message handling', () => {
+  beforeEach(() => {
+    vi.resetModules()
+  })
+
+  it('FLUSH_AND_GET_PROGRESS で当日進捗を作成して ok を返す', async () => {
+    await import('./service-worker')
+
+    const listeners = vi.mocked(chrome.runtime.onMessage.addListener).mock.calls.map(([listener]) => listener)
+    const response = await new Promise<unknown>((resolve) => {
+      for (const listener of listeners) {
+        const keepAlive = listener(
+          { type: 'FLUSH_AND_GET_PROGRESS' },
+          {} as chrome.runtime.MessageSender,
+          resolve,
+        ) as unknown
+
+        if (keepAlive === true) {
+          return
+        }
+      }
+    })
+
+    expect(response).toEqual({ ok: true })
+    expect(await getLocal('dailyProgress')).toBeDefined()
   })
 })

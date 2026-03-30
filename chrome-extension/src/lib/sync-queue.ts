@@ -1,4 +1,4 @@
-import { getLocal, setLocal } from '@ext/lib/storage'
+import { getLocal, mutateLocal } from '@ext/lib/storage'
 
 const STORAGE_KEY = 'syncQueue'
 const MAX_RETRIES = 10
@@ -18,14 +18,18 @@ export interface QueuedRequest {
   retryCount?: number
 }
 
+function getRequestIdentity(request: QueuedRequest): string {
+  return JSON.stringify([request.path, request.method, request.enqueuedAt, request.body])
+}
+
 export class SyncQueue {
   async enqueue(req: { path: string; method: string; body: unknown }): Promise<void> {
-    const queue = await this.load()
-    queue.push({
-      ...req,
-      enqueuedAt: new Date().toISOString(),
+    await mutateLocal<QueuedRequest[]>(STORAGE_KEY, [], (queue) => {
+      queue.push({
+        ...req,
+        enqueuedAt: new Date().toISOString(),
+      })
     })
-    await this.save(queue)
   }
 
   async getPending(): Promise<QueuedRequest[]> {
@@ -35,29 +39,48 @@ export class SyncQueue {
   async replay(
     executor: (req: { path: string; method: string; body: unknown }) => Promise<void>,
   ): Promise<void> {
-    const queue = await this.load()
-    const failed: QueuedRequest[] = []
+    const snapshot = await this.load()
+    if (snapshot.length === 0) return
 
-    for (const req of queue) {
+    const failedByIdentity = new Map<string, QueuedRequest>()
+
+    for (const req of snapshot) {
       try {
         await executor(req)
       } catch (err) {
         if (err instanceof NonRetryableError) continue
-        req.retryCount = (req.retryCount ?? 0) + 1
-        if (req.retryCount < MAX_RETRIES) {
-          failed.push(req)
+
+        const retryCount = (req.retryCount ?? 0) + 1
+        if (retryCount < MAX_RETRIES) {
+          failedByIdentity.set(getRequestIdentity(req), {
+            ...req,
+            retryCount,
+          })
         }
       }
     }
 
-    await this.save(failed)
+    await mutateLocal<QueuedRequest[]>(STORAGE_KEY, [], (currentQueue) => {
+      const remainingQueue = [...currentQueue]
+
+      for (const processed of snapshot) {
+        const identity = getRequestIdentity(processed)
+        const index = remainingQueue.findIndex((candidate) => getRequestIdentity(candidate) === identity)
+        if (index === -1) continue
+
+        const failed = failedByIdentity.get(identity)
+        if (failed) {
+          remainingQueue[index] = failed
+        } else {
+          remainingQueue.splice(index, 1)
+        }
+      }
+
+      return remainingQueue
+    })
   }
 
   private async load(): Promise<QueuedRequest[]> {
     return (await getLocal<QueuedRequest[]>(STORAGE_KEY)) ?? []
-  }
-
-  private async save(queue: QueuedRequest[]): Promise<void> {
-    await setLocal(STORAGE_KEY, queue)
   }
 }

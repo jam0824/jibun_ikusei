@@ -1,10 +1,30 @@
-export type BrowsingCategory = '学習' | '仕事' | '健康' | '生活' | '創作' | '対人' | '娯楽' | 'その他'
+export const BROWSING_CATEGORIES = [
+  '学習',
+  '仕事',
+  '健康',
+  '生活',
+  '創作',
+  '対人',
+  '娯楽',
+  'その他',
+] as const
 
-export const GROWTH_CATEGORIES: readonly BrowsingCategory[] = ['学習', '仕事', '健康', '生活', '創作', '対人']
+export type BrowsingCategory = (typeof BROWSING_CATEGORIES)[number]
+
+export const GROWTH_CATEGORIES: readonly BrowsingCategory[] = [
+  '学習',
+  '仕事',
+  '健康',
+  '生活',
+  '創作',
+  '対人',
+]
+
 export const NON_GROWTH_CATEGORIES: readonly BrowsingCategory[] = ['娯楽', 'その他']
+export const OTHER_BROWSING_CATEGORY: BrowsingCategory = 'その他'
 
 export function isGrowthCategory(category: BrowsingCategory): boolean {
-  return (GROWTH_CATEGORIES as readonly string[]).includes(category)
+  return GROWTH_CATEGORIES.includes(category)
 }
 
 /** Page metadata extracted by content script */
@@ -82,6 +102,8 @@ export interface BrowsingTimeSyncEntry {
   domains: Record<string, { totalSeconds: number; category: BrowsingCategory; isGrowth: boolean }>
   totalSeconds: number
 }
+
+export type BrowsingTimeSyncBacklog = Record<string, BrowsingTimeSyncEntry>
 
 /** Browsing quest XP constants */
 export const BROWSING_XP = {

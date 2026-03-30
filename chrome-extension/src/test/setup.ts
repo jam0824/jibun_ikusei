@@ -1,121 +1,242 @@
 import '@testing-library/jest-dom/vitest'
+import { beforeEach, vi } from 'vitest'
 
-// In-memory chrome.storage implementation
-function createStorageArea(): chrome.storage.StorageArea {
-  let store: Record<string, unknown> = {}
+type Listener = (...args: any[]) => any
+
+function createEventMock<T extends Listener>() {
+  const listeners = new Set<T>()
 
   return {
-    get(keys?: string | string[] | Record<string, unknown> | null) {
-      return new Promise((resolve) => {
-        if (keys === null || keys === undefined) {
-          resolve({ ...store })
-          return
-        }
-        if (typeof keys === 'string') {
-          resolve({ [keys]: store[keys] })
-          return
-        }
-        if (Array.isArray(keys)) {
-          const result: Record<string, unknown> = {}
-          for (const key of keys) {
-            if (key in store) result[key] = store[key]
-          }
-          resolve(result)
-          return
-        }
-        // Record<string, unknown> — use values as defaults
-        const result: Record<string, unknown> = {}
-        for (const [key, defaultValue] of Object.entries(keys)) {
-          result[key] = key in store ? store[key] : defaultValue
-        }
-        resolve(result)
-      })
+    listeners,
+    reset() {
+      listeners.clear()
     },
-    set(items: Record<string, unknown>) {
-      return new Promise<void>((resolve) => {
-        Object.assign(store, items)
-        resolve()
-      })
-    },
-    remove(keys: string | string[]) {
-      return new Promise<void>((resolve) => {
-        const keyList = typeof keys === 'string' ? [keys] : keys
-        for (const key of keyList) {
-          delete store[key]
-        }
-        resolve()
-      })
-    },
-    clear() {
-      return new Promise<void>((resolve) => {
-        store = {}
-        resolve()
-      })
-    },
-    getBytesInUse() {
-      return Promise.resolve(JSON.stringify(store).length)
-    },
-    setAccessLevel() {
-      return Promise.resolve()
-    },
-    onChanged: {
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      hasListener: vi.fn(() => false),
-      hasListeners: vi.fn(() => false),
+    event: {
+      addListener: vi.fn((listener: T) => {
+        listeners.add(listener)
+      }),
+      removeListener: vi.fn((listener: T) => {
+        listeners.delete(listener)
+      }),
+      hasListener: vi.fn((listener: T) => listeners.has(listener)),
+      hasListeners: vi.fn(() => listeners.size > 0),
       addRules: vi.fn(),
       removeRules: vi.fn(),
       getRules: vi.fn(),
     },
-    // helper for tests
+  }
+}
+
+const storageOnChanged = createEventMock<typeof chrome.storage.onChanged.addListener extends (callback: infer T) => any ? T : never>()
+const runtimeOnMessage = createEventMock<typeof chrome.runtime.onMessage.addListener extends (callback: infer T) => any ? T : never>()
+const tabsOnActivated = createEventMock<typeof chrome.tabs.onActivated.addListener extends (callback: infer T) => any ? T : never>()
+const tabsOnUpdated = createEventMock<typeof chrome.tabs.onUpdated.addListener extends (callback: infer T) => any ? T : never>()
+const windowsOnFocusChanged = createEventMock<typeof chrome.windows.onFocusChanged.addListener extends (callback: infer T) => any ? T : never>()
+const alarmsOnAlarm = createEventMock<typeof chrome.alarms.onAlarm.addListener extends (callback: infer T) => any ? T : never>()
+const notificationsOnClicked = createEventMock<typeof chrome.notifications.onClicked.addListener extends (callback: infer T) => any ? T : never>()
+
+function emitStorageChange(
+  changes: Record<string, chrome.storage.StorageChange>,
+  areaName: chrome.storage.AreaName,
+): void {
+  for (const listener of storageOnChanged.listeners) {
+    listener(changes, areaName)
+  }
+}
+
+function createStorageArea(areaName: chrome.storage.AreaName): chrome.storage.StorageArea & {
+  _reset: () => void
+} {
+  let store: Record<string, unknown> = {}
+
+  const clone = <T>(value: T): T => {
+    if (value === undefined || value === null) return value
+    if (typeof structuredClone === 'function') {
+      return structuredClone(value)
+    }
+    return JSON.parse(JSON.stringify(value)) as T
+  }
+
+  const resolveGet = async (keys?: string | string[] | Record<string, unknown> | null) => {
+    if (keys === null || keys === undefined) {
+      return clone(store)
+    }
+    if (typeof keys === 'string') {
+      return { [keys]: clone(store[keys]) }
+    }
+    if (Array.isArray(keys)) {
+      const result: Record<string, unknown> = {}
+      for (const key of keys) {
+        if (typeof key === 'string' && key in store) {
+          result[key] = clone(store[key])
+        }
+      }
+      return result
+    }
+
+    const result: Record<string, unknown> = {}
+    for (const [key, defaultValue] of Object.entries(keys)) {
+      result[key] = key in store ? clone(store[key]) : clone(defaultValue)
+    }
+    return result
+  }
+
+  const get = ((keys?: unknown, callback?: (items: unknown) => void) => {
+    const promise = resolveGet(keys as string | string[] | Record<string, unknown> | null | undefined)
+    if (callback) {
+      void promise.then((items) => callback(items))
+      return
+    }
+    return promise
+  }) as chrome.storage.StorageArea['get']
+
+  const getBytesInUse = ((keys?: unknown, callback?: (bytesInUse: number) => void) => {
+    const promise = (async () => {
+      if (keys === null || keys === undefined) {
+        return JSON.stringify(store).length
+      }
+
+      const keyList = typeof keys === 'string'
+        ? [keys]
+        : Array.isArray(keys)
+          ? keys.filter((key): key is string => typeof key === 'string')
+          : []
+      const subset: Record<string, unknown> = {}
+      for (const key of keyList) {
+        if (key in store) {
+          subset[key] = store[key]
+        }
+      }
+      return JSON.stringify(subset).length
+    })()
+
+    if (callback) {
+      void promise.then((bytesInUse) => callback(bytesInUse))
+      return
+    }
+    return promise
+  }) as chrome.storage.StorageArea['getBytesInUse']
+
+  const area: chrome.storage.StorageArea & { _reset: () => void } = {
+    get,
+    getBytesInUse,
+    async getKeys() {
+      return Object.keys(store)
+    },
+    async set(items: Record<string, unknown>) {
+      const changes: Record<string, chrome.storage.StorageChange> = {}
+      for (const [key, value] of Object.entries(items)) {
+        const oldValue = key in store ? clone(store[key]) : undefined
+        store[key] = clone(value)
+        changes[key] = {
+          oldValue,
+          newValue: clone(value),
+        }
+      }
+
+      if (Object.keys(changes).length > 0) {
+        emitStorageChange(changes, areaName)
+      }
+    },
+    async remove(keys: string | string[]) {
+      const keyList = typeof keys === 'string' ? [keys] : keys
+      const changes: Record<string, chrome.storage.StorageChange> = {}
+
+      for (const key of keyList) {
+        if (!(key in store)) continue
+        changes[key] = {
+          oldValue: clone(store[key]),
+          newValue: undefined,
+        }
+        delete store[key]
+      }
+
+      if (Object.keys(changes).length > 0) {
+        emitStorageChange(changes, areaName)
+      }
+    },
+    async clear() {
+      const changes: Record<string, chrome.storage.StorageChange> = {}
+      for (const [key, value] of Object.entries(store)) {
+        changes[key] = {
+          oldValue: clone(value),
+          newValue: undefined,
+        }
+      }
+      store = {}
+
+      if (Object.keys(changes).length > 0) {
+        emitStorageChange(changes, areaName)
+      }
+    },
+    async setAccessLevel() {
+      return
+    },
+    onChanged: storageOnChanged.event,
     _reset() {
       store = {}
     },
-  } as chrome.storage.StorageArea & { _reset: () => void }
+  }
+
+  return area
 }
 
-// Chrome API mocks
-const localStorageArea = createStorageArea()
-const sessionStorageArea = createStorageArea()
+const localStorageArea = createStorageArea('local')
+const sessionStorageArea = createStorageArea('session')
+const syncStorageArea = createStorageArea('sync')
+const managedStorageArea = createStorageArea('managed')
+
+const tabsQueryMock = vi.fn(() => Promise.resolve([]))
+const tabsGetMock = vi.fn(() => Promise.resolve({}))
+const tabsCreateMock = vi.fn(() => Promise.resolve({}))
+const tabsSendMessageMock = vi.fn(() => Promise.resolve())
+
+const runtimeSendMessageMock = vi.fn(async (message: unknown) => {
+  for (const listener of runtimeOnMessage.listeners) {
+    const response = await new Promise<unknown>((resolve) => {
+      let resolved = false
+      const sendResponse = (value?: unknown) => {
+        resolved = true
+        resolve(value)
+      }
+
+      const result = listener(
+        message,
+        {} as chrome.runtime.MessageSender,
+        sendResponse,
+      ) as unknown
+
+      if (result !== true && !resolved) {
+        resolve(undefined)
+      }
+    })
+
+    if (response !== undefined) {
+      return response
+    }
+  }
+
+  return undefined
+})
 
 const chromeMock = {
   storage: {
     local: localStorageArea,
     session: sessionStorageArea,
-    sync: createStorageArea(),
-    managed: createStorageArea(),
-    onChanged: {
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      hasListener: vi.fn(() => false),
-      hasListeners: vi.fn(() => false),
-    },
+    sync: syncStorageArea,
+    managed: managedStorageArea,
+    onChanged: storageOnChanged.event,
   },
   tabs: {
-    query: vi.fn(() => Promise.resolve([])),
-    get: vi.fn(() => Promise.resolve({})),
-    create: vi.fn(() => Promise.resolve({})),
-    sendMessage: vi.fn(() => Promise.resolve()),
-    onActivated: {
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      hasListener: vi.fn(() => false),
-      hasListeners: vi.fn(() => false),
-    },
-    onUpdated: {
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      hasListener: vi.fn(() => false),
-      hasListeners: vi.fn(() => false),
-    },
+    query: tabsQueryMock,
+    get: tabsGetMock,
+    create: tabsCreateMock,
+    sendMessage: tabsSendMessageMock,
+    onActivated: tabsOnActivated.event,
+    onUpdated: tabsOnUpdated.event,
   },
   windows: {
-    onFocusChanged: {
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      hasListener: vi.fn(() => false),
-      hasListeners: vi.fn(() => false),
-    },
+    onFocusChanged: windowsOnFocusChanged.event,
     WINDOW_ID_NONE: -1,
   },
   alarms: {
@@ -123,43 +244,38 @@ const chromeMock = {
     clear: vi.fn(),
     get: vi.fn(),
     getAll: vi.fn(() => Promise.resolve([])),
-    onAlarm: {
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      hasListener: vi.fn(() => false),
-      hasListeners: vi.fn(() => false),
-    },
+    onAlarm: alarmsOnAlarm.event,
   },
   runtime: {
-    sendMessage: vi.fn(() => Promise.resolve()),
+    sendMessage: runtimeSendMessageMock,
     getURL: vi.fn((path: string) => `chrome-extension://mock-id/${path}`),
-    onMessage: {
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      hasListener: vi.fn(() => false),
-      hasListeners: vi.fn(() => false),
-    },
+    onMessage: runtimeOnMessage.event,
   },
   notifications: {
-    create: vi.fn((_id: string, _opts: unknown, cb?: () => void) => {
-      cb?.()
+    create: vi.fn((_id: string, _options: unknown, callback?: () => void) => {
+      callback?.()
     }),
     clear: vi.fn(),
-    onClicked: {
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      hasListener: vi.fn(() => false),
-      hasListeners: vi.fn(() => false),
-    },
+    onClicked: notificationsOnClicked.event,
   },
 }
 
-// @ts-expect-error — assigning mock to global
+// @ts-expect-error test environment mock
 globalThis.chrome = chromeMock
 
-// Reset all storage between tests
 beforeEach(() => {
-  (localStorageArea as ReturnType<typeof createStorageArea> & { _reset: () => void })._reset()
-  ;(sessionStorageArea as ReturnType<typeof createStorageArea> & { _reset: () => void })._reset()
+  localStorageArea._reset()
+  sessionStorageArea._reset()
+  syncStorageArea._reset()
+  managedStorageArea._reset()
+
+  storageOnChanged.reset()
+  runtimeOnMessage.reset()
+  tabsOnActivated.reset()
+  tabsOnUpdated.reset()
+  windowsOnFocusChanged.reset()
+  alarmsOnAlarm.reset()
+  notificationsOnClicked.reset()
+
   vi.clearAllMocks()
 })

@@ -1,8 +1,8 @@
-import { timeAccumulator } from './shared-instances'
-import { getLocal } from '@ext/lib/storage'
 import { buildCacheKey } from '@ext/lib/cache-key'
+import { getLocal } from '@ext/lib/storage'
+import { OTHER_BROWSING_CATEGORY, type ClassificationResult } from '@ext/types/browsing'
 import type { ExtensionSettings } from '@ext/types/settings'
-import type { ClassificationResult } from '@ext/types/browsing'
+import { timeAccumulator } from './shared-instances'
 
 /** Extract hostname from a URL or strip www. from a domain */
 function normalizeDomain(input: string): string {
@@ -29,9 +29,7 @@ export async function recordElapsed(
   if (info.elapsedSeconds <= 0 || !info.domain) return
 
   const isGrowth = classification?.isGrowth ?? false
-
   const settings = await getLocal<ExtensionSettings>('extensionSettings')
-  // Don't count as blocklisted until classification is confirmed
   const domain = normalizeDomain(info.domain)
   const isBlocklisted = classification
     ? (settings?.blocklist?.some((blocked) => {
@@ -46,6 +44,6 @@ export async function recordElapsed(
     info.elapsedSeconds,
     isGrowth,
     isBlocklisted,
-    classification?.category ?? 'その他',
+    classification?.category ?? OTHER_BROWSING_CATEGORY,
   )
 }

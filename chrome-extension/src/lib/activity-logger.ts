@@ -1,7 +1,7 @@
-import { getLocal, setLocal } from '@ext/lib/storage'
 import type { createApiClient } from '@ext/lib/api-client'
+import { getLocal, mutateLocal } from '@ext/lib/storage'
 
-interface ActivityLogEntry {
+export interface ActivityLogEntry {
   timestamp: string
   source: 'chrome-extension'
   action: string
@@ -23,20 +23,24 @@ function buildJstTimestamp(): string {
   return `${y}-${mo}-${d}T${h}:${mi}:${s}.${ms}+09:00`
 }
 
+function getActivityIdentity(entry: ActivityLogEntry): string {
+  return JSON.stringify([entry.timestamp, entry.action, entry.category, entry.details])
+}
+
 export async function logActivity(
   action: string,
   category: string,
   details: Record<string, unknown> = {},
 ): Promise<void> {
-  const buffer = (await getLocal<ActivityLogEntry[]>(STORAGE_KEY)) ?? []
-  buffer.push({
-    timestamp: buildJstTimestamp(),
-    source: 'chrome-extension',
-    action,
-    category,
-    details,
+  await mutateLocal<ActivityLogEntry[]>(STORAGE_KEY, [], (buffer) => {
+    buffer.push({
+      timestamp: buildJstTimestamp(),
+      source: 'chrome-extension',
+      action,
+      category,
+      details,
+    })
   })
-  await setLocal(STORAGE_KEY, buffer)
 }
 
 export async function logError(
@@ -55,12 +59,16 @@ export async function logError(
 export async function flushActivityLogs(
   apiClient: ReturnType<typeof createApiClient>,
 ): Promise<void> {
-  const buffer = (await getLocal<ActivityLogEntry[]>(STORAGE_KEY)) ?? []
-  if (buffer.length === 0) return
+  const snapshot = (await getLocal<ActivityLogEntry[]>(STORAGE_KEY)) ?? []
+  if (snapshot.length === 0) return
 
   try {
-    await apiClient.postActivityLogs({ entries: buffer })
-    await setLocal(STORAGE_KEY, [])
+    await apiClient.postActivityLogs({ entries: snapshot })
+    const sentIdentities = new Set(snapshot.map(getActivityIdentity))
+
+    await mutateLocal<ActivityLogEntry[]>(STORAGE_KEY, [], (currentBuffer) => (
+      currentBuffer.filter((entry) => !sentIdentities.has(getActivityIdentity(entry)))
+    ))
   } catch (err) {
     console.error('[activity-logger] flush failed:', err)
   }

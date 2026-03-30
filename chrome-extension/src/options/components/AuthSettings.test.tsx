@@ -1,5 +1,5 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { setLocal } from '@ext/lib/storage'
 import { createMockAuthState } from '@ext/test/helpers'
 import { AuthSettings } from './AuthSettings'
@@ -15,13 +15,15 @@ describe('AuthSettings', () => {
   }
 
   beforeEach(() => {
-    fetchMock.mockClear()
+    fetchMock.mockReset()
+    vi.mocked(chrome.runtime.sendMessage).mockResolvedValue({ ok: true })
+    defaultProps.onSave.mockReset()
   })
 
-  describe('疎通確認ボタン', () => {
-    it('疎通確認ボタンが表示される', () => {
+  describe('接続確認', () => {
+    it('接続確認ボタンが表示される', () => {
       render(<AuthSettings {...defaultProps} />)
-      expect(screen.getByText('疎通確認')).toBeDefined()
+      expect(screen.getByText('接続確認')).toBeDefined()
     })
 
     it('サーバーに接続成功したとき成功メッセージを表示する', async () => {
@@ -33,24 +35,24 @@ describe('AuthSettings', () => {
       } as Response)
 
       render(<AuthSettings {...defaultProps} />)
-      fireEvent.click(screen.getByText('疎通確認'))
+      fireEvent.click(screen.getByText('接続確認'))
 
       await waitFor(() => {
-        expect(screen.getByText(/接続OK/)).toBeDefined()
+        expect(screen.getByText(/接続 OK/)).toBeDefined()
       })
     })
 
-    it('401が返ったときサーバー到達可能・未認証メッセージを表示する', async () => {
+    it('401 が返ったとき未認証メッセージを表示する', async () => {
       fetchMock.mockResolvedValueOnce({
         ok: false,
         status: 401,
       } as Response)
 
       render(<AuthSettings {...defaultProps} />)
-      fireEvent.click(screen.getByText('疎通確認'))
+      fireEvent.click(screen.getByText('接続確認'))
 
       await waitFor(() => {
-        expect(screen.getByText(/サーバーには接続できていますが、ログインが必要です/)).toBeDefined()
+        expect(screen.getByText(/ログイン情報が有効ではありません/)).toBeDefined()
       })
     })
 
@@ -58,31 +60,64 @@ describe('AuthSettings', () => {
       fetchMock.mockRejectedValueOnce(new Error('Network Error'))
 
       render(<AuthSettings {...defaultProps} />)
-      fireEvent.click(screen.getByText('疎通確認'))
+      fireEvent.click(screen.getByText('接続確認'))
 
       await waitFor(() => {
         expect(screen.getByText(/サーバーに接続できません/)).toBeDefined()
       })
     })
 
-    it('serverBaseUrlが空のとき確認せずエラーメッセージを表示する', async () => {
+    it('serverBaseUrl が空のとき確認せずエラーメッセージを表示する', () => {
       render(<AuthSettings {...defaultProps} serverBaseUrl="" />)
-      fireEvent.click(screen.getByText('疎通確認'))
+      fireEvent.click(screen.getByText('接続確認'))
 
       expect(fetchMock).not.toHaveBeenCalled()
-      expect(screen.getByText(/サーバーURLを入力してください/)).toBeDefined()
+      expect(screen.getByText('サーバー URL を入力してください')).toBeDefined()
     })
 
     it('確認中はボタンが無効になる', async () => {
-      fetchMock.mockImplementationOnce(() => new Promise(() => {})) // 永遠にpending
+      fetchMock.mockImplementationOnce(() => new Promise(() => {}))
 
       render(<AuthSettings {...defaultProps} />)
-      const button = screen.getByText('疎通確認')
+      const button = screen.getByText('接続確認')
       fireEvent.click(button)
 
       await waitFor(() => {
-        expect(screen.getByText('確認中...')).toBeDefined()
+        expect(screen.getByText('接続確認中...')).toBeDefined()
       })
+    })
+  })
+
+  describe('同期状態クリア', () => {
+    it('URL 変更保存時に CLEAR_SYNC_STATE を送ってから保存する', async () => {
+      render(<AuthSettings {...defaultProps} />)
+
+      fireEvent.change(screen.getByPlaceholderText('https://api.example.com'), {
+        target: { value: 'https://new.example.com' },
+      })
+      fireEvent.click(screen.getByText('URL 保存'))
+
+      await waitFor(() => {
+        expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'CLEAR_SYNC_STATE' })
+      })
+      expect(defaultProps.onSave).toHaveBeenCalledWith('https://new.example.com', '')
+    })
+
+    it('ログアウト時に CLEAR_SYNC_STATE を送り authToken を空で保存する', async () => {
+      await setLocal('authState', createMockAuthState())
+
+      render(<AuthSettings {...defaultProps} />)
+
+      await waitFor(() => {
+        expect(screen.getByText('ログアウト')).toBeDefined()
+      })
+
+      fireEvent.click(screen.getByText('ログアウト'))
+
+      await waitFor(() => {
+        expect(chrome.runtime.sendMessage).toHaveBeenCalledWith({ type: 'CLEAR_SYNC_STATE' })
+      })
+      expect(defaultProps.onSave).toHaveBeenCalledWith('https://api.example.com', '')
     })
   })
 })

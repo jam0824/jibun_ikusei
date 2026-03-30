@@ -1,18 +1,18 @@
 import { useState } from 'react'
 
-const KEYS_TO_CLEAR = [
-  'dailyProgress',
-  'dailyProgressHistory',
-  'classificationCache',
-  'weeklyReport',
-]
+async function resetExtensionData(): Promise<void> {
+  const response = await chrome.runtime.sendMessage({ type: 'RESET_EXTENSION_DATA' })
+  if (!response?.ok) {
+    throw new Error(response?.error ?? 'Failed to reset extension data.')
+  }
+}
 
 export function DataReset() {
   const [confirming, setConfirming] = useState(false)
   const [done, setDone] = useState(false)
 
   const handleReset = async () => {
-    await chrome.storage.local.remove(KEYS_TO_CLEAR)
+    await resetExtensionData()
     setConfirming(false)
     setDone(true)
     setTimeout(() => setDone(false), 3000)
@@ -22,11 +22,20 @@ export function DataReset() {
     <div>
       <h2 style={{ fontSize: 16, marginBottom: 12 }}>データリセット</h2>
       <p style={{ fontSize: 13, color: '#666', marginBottom: 8 }}>
-        今日の進捗・閲覧履歴・分類キャッシュ・週間レポートをすべて削除します。設定（APIキー・ブロックリスト）は保持されます。
+        日次の進捗・閲覧履歴・キャッシュ・分類履歴レポートをすべて削除します。設定した API キーやブロックリストは削除されません。
       </p>
 
       {done && (
-        <div style={{ padding: 8, background: '#e8f5e9', color: '#2e7d32', borderRadius: 4, marginBottom: 8, fontSize: 13 }}>
+        <div
+          style={{
+            padding: 8,
+            background: '#e8f5e9',
+            color: '#2e7d32',
+            borderRadius: 4,
+            marginBottom: 8,
+            fontSize: 13,
+          }}
+        >
           リセットが完了しました
         </div>
       )}
@@ -50,7 +59,7 @@ export function DataReset() {
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <span style={{ fontSize: 13, color: '#d32f2f' }}>本当にリセットしますか？</span>
           <button
-            onClick={handleReset}
+            onClick={() => void handleReset()}
             style={{
               fontSize: 13,
               padding: '6px 16px',

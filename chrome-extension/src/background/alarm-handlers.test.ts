@@ -4,9 +4,9 @@ import { createMockDailyProgress, createMockAuthState } from '@ext/test/helpers'
 import { BROWSING_XP } from '@ext/types/browsing'
 
 // Mock fetch for API calls — track request bodies
-const fetchMock = vi.fn(() =>
-  Promise.resolve({ ok: true, json: () => Promise.resolve({}) } as Response),
-)
+const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => (
+  { ok: true, json: () => Promise.resolve({}) } as Response
+))
 globalThis.fetch = fetchMock
 
 describe('alarm-handlers', () => {
@@ -426,6 +426,86 @@ describe('alarm-handlers', () => {
       await setupAlarms()
 
       expect(chrome.alarms.create).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('browsing time sync backlog', () => {
+    it('7日を超える未同期データもバックログからすべて送信し、成功後に消す', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date(2026, 2, 30, 12, 0, 0))
+
+      try {
+        await setLocal('dailyProgress', createMockDailyProgress({
+          date: '2026-03-30',
+          goodBrowsingSeconds: 600,
+          domainTimes: {
+            'today.example:/': {
+              domain: 'today.example',
+              cacheKey: 'today.example:/',
+              category: '学習',
+              isGrowth: true,
+              isBlocklisted: false,
+              totalSeconds: 600,
+              lastUpdated: '',
+            },
+          },
+        }))
+        await setLocal('browsingTimeSyncBacklog', Object.fromEntries(
+          Array.from({ length: 8 }, (_, index) => {
+            const day = 22 + index
+            const date = `2026-03-${String(day).padStart(2, '0')}`
+            return [date, {
+              date,
+              domains: {
+                [`history${index}.example`]: {
+                  totalSeconds: 300 + index,
+                  category: '学習',
+                  isGrowth: true,
+                },
+              },
+              totalSeconds: 300 + index,
+            }]
+          }),
+        ))
+        await setLocal('browsingTimeSyncedDates', ['2026-03-22'])
+        await setLocal('extensionSettings', {
+          serverBaseUrl: 'https://test.example.com',
+          syncEnabled: true,
+        })
+        await setLocal('authState', createMockAuthState())
+
+        const { syncBrowsingTimes } = await import('./alarm-handlers')
+        await syncBrowsingTimes()
+
+        const browsingTimesCall = fetchMock.mock.calls.find((call) => String(call[0]).includes('/browsing-times'))
+        expect(browsingTimesCall).toBeDefined()
+        const init = browsingTimesCall?.[1]
+        expect(init?.method).toBe('POST')
+
+        const payload = JSON.parse(String(init?.body)) as {
+          entries: Array<{ date: string }>
+        }
+        expect(payload.entries).toHaveLength(9)
+        expect(payload.entries.map((entry) => entry.date)).toEqual([
+          '2026-03-22',
+          '2026-03-23',
+          '2026-03-24',
+          '2026-03-25',
+          '2026-03-26',
+          '2026-03-27',
+          '2026-03-28',
+          '2026-03-29',
+          '2026-03-30',
+        ])
+
+        const backlog = await chrome.storage.local.get('browsingTimeSyncBacklog')
+        expect(backlog.browsingTimeSyncBacklog).toEqual({})
+
+        const legacySyncedDates = await chrome.storage.local.get('browsingTimeSyncedDates')
+        expect(legacySyncedDates.browsingTimeSyncedDates).toBeUndefined()
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 

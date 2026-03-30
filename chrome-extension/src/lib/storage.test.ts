@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { getLocal, getSession, removeLocal, setLocal, setSession } from '@ext/lib/storage'
+import {
+  getLocal,
+  getSession,
+  mutateLocal,
+  removeLocal,
+  setLocal,
+  setSession,
+  transactLocal,
+} from '@ext/lib/storage'
 
 describe('storage', () => {
   describe('local storage', () => {
@@ -31,6 +39,39 @@ describe('storage', () => {
       await removeLocal('key')
       const result = await getLocal<string>('key')
       expect(result).toBeUndefined()
+    })
+
+    it('mutateLocal serializes concurrent updates to the same key', async () => {
+      await setLocal('counter', { value: 0 })
+
+      await Promise.all([
+        mutateLocal('counter', { value: 0 }, (current) => {
+          current.value += 1
+        }),
+        mutateLocal('counter', { value: 0 }, (current) => {
+          current.value += 2
+        }),
+      ])
+
+      expect(await getLocal<{ value: number }>('counter')).toEqual({ value: 3 })
+    })
+
+    it('transactLocal updates multiple keys atomically', async () => {
+      const result = await transactLocal(
+        {
+          first: { value: 1 },
+          second: { value: 2 },
+        },
+        (values) => {
+          values.first.value += 10
+          values.second.value += 20
+          return values.first.value + values.second.value
+        },
+      )
+
+      expect(result).toBe(33)
+      expect(await getLocal<{ value: number }>('first')).toEqual({ value: 11 })
+      expect(await getLocal<{ value: number }>('second')).toEqual({ value: 22 })
     })
   })
 

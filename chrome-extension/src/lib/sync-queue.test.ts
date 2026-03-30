@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { SyncQueue } from '@ext/lib/sync-queue'
+import { NonRetryableError, SyncQueue } from '@ext/lib/sync-queue'
 
 describe('SyncQueue', () => {
   afterEach(() => {
@@ -30,8 +30,7 @@ describe('SyncQueue', () => {
     await queue.replay(executor)
 
     expect(calls).toEqual(['PUT /user', 'POST /completions'])
-    const remaining = await queue.getPending()
-    expect(remaining).toHaveLength(0)
+    expect(await queue.getPending()).toHaveLength(0)
   })
 
   it('keeps failed requests in the queue for retry', async () => {
@@ -41,7 +40,7 @@ describe('SyncQueue', () => {
 
     let callCount = 0
     const executor = async (req: { path: string; method: string; body: unknown }) => {
-      callCount++
+      callCount += 1
       if (req.path === '/completions') {
         throw new Error('Network error')
       }
@@ -50,13 +49,12 @@ describe('SyncQueue', () => {
     await queue.replay(executor)
 
     expect(callCount).toBe(2)
-    // First request succeeded, second failed — only second remains
     const remaining = await queue.getPending()
     expect(remaining).toHaveLength(1)
     expect(remaining[0].path).toBe('/completions')
   })
 
-  it('MAX_RETRIES回失敗したリクエストをキューから削除する', async () => {
+  it('drops a request after MAX_RETRIES failures', async () => {
     const queue = new SyncQueue()
     await queue.enqueue({ path: '/fail', method: 'POST', body: {} })
 
@@ -64,17 +62,14 @@ describe('SyncQueue', () => {
       throw new Error('Server error')
     }
 
-    // 10回リプレイ（MAX_RETRIES = 10）
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 10; i += 1) {
       await queue.replay(executor)
     }
 
-    const remaining = await queue.getPending()
-    expect(remaining).toHaveLength(0)
+    expect(await queue.getPending()).toHaveLength(0)
   })
 
-  it('NonRetryableErrorの場合は即座にキューから削除する', async () => {
-    const { NonRetryableError } = await import('@ext/lib/sync-queue')
+  it('drops NonRetryableError requests immediately', async () => {
     const queue = new SyncQueue()
     await queue.enqueue({ path: '/bad-request', method: 'POST', body: {} })
 
@@ -84,13 +79,11 @@ describe('SyncQueue', () => {
 
     await queue.replay(executor)
 
-    const remaining = await queue.getPending()
-    expect(remaining).toHaveLength(0)
+    expect(await queue.getPending()).toHaveLength(0)
   })
 
-  it('retryCountが未定義の既存データでも正しく動作する', async () => {
+  it('increments retryCount for existing queued data', async () => {
     const queue = new SyncQueue()
-    // 既存データを直接ストレージに書き込み（retryCountなし）
     await chrome.storage.local.set({
       syncQueue: [{ path: '/old', method: 'POST', body: {}, enqueuedAt: '2026-01-01' }],
     })
@@ -110,10 +103,29 @@ describe('SyncQueue', () => {
     const queue1 = new SyncQueue()
     await queue1.enqueue({ path: '/test', method: 'POST', body: {} })
 
-    // New instance should load from storage
     const queue2 = new SyncQueue()
     const pending = await queue2.getPending()
     expect(pending).toHaveLength(1)
     expect(pending[0].path).toBe('/test')
+  })
+
+  it('preserves requests enqueued while replay is in progress', async () => {
+    const queue = new SyncQueue()
+    await queue.enqueue({ path: '/first', method: 'POST', body: { id: 1 } })
+
+    let releaseReplay!: () => void
+    const executor = vi.fn(() => new Promise<void>((resolve) => {
+      releaseReplay = resolve
+    }))
+
+    const replayPromise = queue.replay(executor)
+    await Promise.resolve()
+    await queue.enqueue({ path: '/second', method: 'POST', body: { id: 2 } })
+    releaseReplay()
+    await replayPromise
+
+    const remaining = await queue.getPending()
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].path).toBe('/second')
   })
 })
