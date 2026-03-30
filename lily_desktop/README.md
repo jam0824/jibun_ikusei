@@ -36,6 +36,7 @@ openai:
 display:
   lily_scale: 0.3    # リリィの表示サイズ（1.0 = 元サイズ）
   haruka_scale: 0.7  # 葉留佳の表示サイズ
+  user_balloon_display_seconds: 8.0  # 手入力/音声認識の表示秒数（再起動後に反映）
 ```
 
 ### 4. 起動する

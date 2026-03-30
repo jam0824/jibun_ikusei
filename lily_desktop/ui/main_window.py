@@ -80,7 +80,10 @@ class MainWindow(QWidget):
         # テキスト入力（レイアウト外でキャラクターに重ねて表示）
         self.input_widget = InputWidget(self)
         # ユーザー発言の吹き出し（入力ボックスの上に表示）
-        self.user_balloon = UserBalloonWidget(self)
+        self.user_balloon = UserBalloonWidget(
+            self,
+            display_seconds=self._config.display.user_balloon_display_seconds,
+        )
         # マイクON/OFFボタン（キャラクター付近に常時表示）
         self.mic_button = MicButton(self)
 

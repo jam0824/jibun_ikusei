@@ -10,6 +10,7 @@ _PROJECT_ROOT = _BASE_DIR.parent  # 自分育成アプリ/
 _CONFIG_PATH = _BASE_DIR / "config.yaml"
 _ENV_PATH = _PROJECT_ROOT / ".env"
 SYS_DIR = _BASE_DIR / "sys"
+DEFAULT_USER_BALLOON_DISPLAY_SECONDS = 8.0
 
 
 def _load_dotenv(path: Path = _ENV_PATH) -> dict[str, str]:
@@ -26,6 +27,17 @@ def _load_dotenv(path: Path = _ENV_PATH) -> dict[str, str]:
         key, _, value = line.partition("=")
         env[key.strip()] = value.strip().strip('"').strip("'")
     return env
+
+
+def normalize_user_balloon_display_seconds(value: object) -> float:
+    """ユーザー吹き出し表示秒数を正の float に正規化する。"""
+    try:
+        seconds = float(value)
+    except (TypeError, ValueError):
+        return DEFAULT_USER_BALLOON_DISPLAY_SECONDS
+    if seconds <= 0:
+        return DEFAULT_USER_BALLOON_DISPLAY_SECONDS
+    return seconds
 
 
 @dataclass
@@ -105,6 +117,7 @@ class CameraConfig:
 class DisplayConfig:
     lily_scale: float = 0.3
     haruka_scale: float = 0.7
+    user_balloon_display_seconds: float = DEFAULT_USER_BALLOON_DISPLAY_SECONDS
     window_x: int | None = None  # ウィンドウ位置X（Noneならデフォルト位置）
     window_y: int | None = None  # ウィンドウ位置Y
 
@@ -134,6 +147,15 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         with open(path, encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
 
+    display_raw = raw.get("display", {}) or {}
+    if not isinstance(display_raw, dict):
+        display_raw = {}
+    else:
+        display_raw = dict(display_raw)
+    display_raw["user_balloon_display_seconds"] = normalize_user_balloon_display_seconds(
+        display_raw.get("user_balloon_display_seconds", DEFAULT_USER_BALLOON_DISPLAY_SECONDS)
+    )
+
     config = AppConfig(
         openai=OpenAIConfig(**raw.get("openai", {})),
         cognito=CognitoConfig(**raw.get("cognito", {})),
@@ -142,7 +164,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         voice=VoiceConfig(**{k: v for k, v in raw.get("voice", {}).items() if k != "google_api_key"}),
         tts=TTSConfig(**{k: v for k, v in raw.get("tts", {}).items() if k != "gemini_api_key"}),
         camera=CameraConfig(**raw.get("camera", {})),
-        display=DisplayConfig(**raw.get("display", {})),
+        display=DisplayConfig(**display_raw),
         talk_seeds=TalkSeedsConfig(**raw.get("talk_seeds", {})),
     )
 
