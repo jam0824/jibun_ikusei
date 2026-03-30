@@ -35,7 +35,7 @@ class VoicePipeline:
             start_threshold=config.vad_start_frames,
             end_threshold=config.vad_end_frames,
             max_speech_seconds=config.max_speech_seconds,
-            volume_threshold=config.volume_threshold,
+            volume_threshold=config.volume_threshold if config.volume_threshold_enabled else 0,
         )
         self._recognizer = SpeechRecognizer(
             api_key=config.google_api_key,
