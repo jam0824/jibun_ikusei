@@ -1,4 +1,10 @@
 import { getDayKey } from '@/lib/date'
+
+function toJst(isoUtc: string): string {
+  const d = new Date(isoUtc)
+  const jst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
+  return jst.toISOString().slice(0, 16).replace('T', ' ')
+}
 import { subDays, startOfDay } from 'date-fns'
 import { getBrowsingTimes, getActivityLogs, getSituationLogs } from '@/lib/api-client'
 import type { ActivityLogEntry } from '@/lib/api-client'
@@ -601,7 +607,7 @@ async function executeGetMessagesAndLogs(args: Record<string, unknown>, context:
     lines.push('')
 
     for (const s of sessions.slice(0, 20)) {
-      lines.push(`- ${s.title}（${s.createdAt.slice(0, 10)}）ID: ${s.id}`)
+      lines.push(`- ${s.title}（${toJst(s.createdAt)}）ID: ${s.id}`)
     }
     if (sessions.length > 20) lines.push(`  ...他${sessions.length - 20}件`)
 
@@ -623,7 +629,7 @@ async function executeGetMessagesAndLogs(args: Record<string, unknown>, context:
 
     for (const m of messages.slice(0, 30)) {
       const label = m.role === 'user' ? 'ユーザー' : 'リリィ'
-      lines.push(`- [${label}] ${m.content.slice(0, 100)}（${m.createdAt.slice(0, 16)}）`)
+      lines.push(`- [${label}] ${m.content.slice(0, 100)}（${toJst(m.createdAt)}）`)
     }
     if (messages.length > 30) lines.push(`  ...他${messages.length - 30}件`)
 

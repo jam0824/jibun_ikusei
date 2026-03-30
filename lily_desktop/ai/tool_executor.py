@@ -18,6 +18,15 @@ JST = timezone(timedelta(hours=9))
 _PERIOD_LABELS = {"today": "今日", "week": "直近7日間", "month": "直近30日間"}
 
 
+def to_jst(iso_utc: str) -> str:
+    """UTC ISO文字列を JST の 'YYYY-MM-DD HH:MM' 形式に変換する"""
+    try:
+        d = datetime.fromisoformat(iso_utc.replace("Z", "+00:00"))
+        return d.astimezone(JST).strftime("%Y-%m-%d %H:%M")
+    except (ValueError, AttributeError):
+        return iso_utc[:16]
+
+
 def _get_date_range(period: str) -> tuple[str, str]:
     now = datetime.now(JST)
     to_date = now.strftime("%Y-%m-%d")
@@ -309,7 +318,7 @@ class ToolExecutor:
                 return "チャットセッションがありません。"
             lines = ["【チャットセッション一覧】", f"合計: {len(sessions)}件", ""]
             for s in sessions[:20]:
-                lines.append(f"- {s.get('title', '')}（{str(s.get('createdAt', ''))[:10]}）ID: {s.get('id', '')}")
+                lines.append(f"- {s.get('title', '')}（{to_jst(str(s.get('createdAt', '')))}）ID: {s.get('id', '')}")
             if len(sessions) > 20:
                 lines.append(f"  ...他{len(sessions) - 20}件")
             return "\n".join(lines)
@@ -325,7 +334,7 @@ class ToolExecutor:
             for m in messages[:30]:
                 label = "ユーザー" if m.get("role") == "user" else "リリィ"
                 content = str(m.get("content", ""))[:100]
-                lines.append(f"- [{label}] {content}（{str(m.get('createdAt', ''))[:16]}）")
+                lines.append(f"- [{label}] {content}（{to_jst(str(m.get('createdAt', '')))}）")
             if len(messages) > 30:
                 lines.append(f"  ...他{len(messages) - 30}件")
             return "\n".join(lines)
