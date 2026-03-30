@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+﻿import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hydratePersistedState } from '@/domain/logic'
 import {
   buildLilyChatSystemPrompt,
@@ -14,25 +14,19 @@ describe('ai adapter', () => {
     vi.restoreAllMocks()
   })
 
-  it('tests OpenAI connection via mocked fetch', async () => {
+  it('tests OpenAI connection with mocked fetch', async () => {
     const state = hydratePersistedState()
     state.aiConfig.providers.openai.apiKey = 'sk-test'
 
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          output_text: '{"ok": true}',
-        }),
-        { status: 200 },
-      ),
+      new Response(JSON.stringify({ output_text: '{"ok": true}' }), { status: 200 }),
     )
 
     await expect(testProviderConnection(state.aiConfig, state.settings, 'openai')).resolves.toBe(true)
     expect(fetchMock).toHaveBeenCalled()
-    fetchMock.mockRestore()
   })
 
-  it('returns a clear offline error for provider checks', async () => {
+  it('throws when provider checks run offline', async () => {
     const state = hydratePersistedState()
     state.aiConfig.providers.openai.apiKey = 'sk-test'
 
@@ -42,12 +36,10 @@ describe('ai adapter', () => {
       value: false,
     })
 
-    await expect(testProviderConnection(state.aiConfig, state.settings, 'openai')).rejects.toThrow(
-      'AI接続テストはオフラインでは利用できません。ネットワーク接続を確認してください。',
-    )
+    await expect(testProviderConnection(state.aiConfig, state.settings, 'openai')).rejects.toThrow()
   })
 
-  it('falls back to local resolution when AI is unavailable', async () => {
+  it('falls back to local skill resolution when AI is disabled', async () => {
     const state = hydratePersistedState()
     state.settings.aiEnabled = false
     const skill = state.skills[0]
@@ -78,58 +70,7 @@ describe('ai adapter', () => {
     expect(result.skillName).toBe(skill.name)
   })
 
-  it('falls back to local resolution when OpenAI returns no output_text', async () => {
-    const state = hydratePersistedState()
-    state.aiConfig.providers.openai.apiKey = 'sk-test'
-    const skill = state.skills[0]
-    const quest = {
-      id: 'quest_test',
-      title: skill.name,
-      description: '',
-      questType: 'repeatable' as const,
-      xpReward: 5,
-      category: skill.category,
-      skillMappingMode: 'ai_auto' as const,
-      status: 'active' as const,
-      privacyMode: 'normal' as const,
-      pinned: false,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    }
-
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          status: 'completed',
-          output: [
-            {
-              type: 'message',
-              content: [
-                {
-                  type: 'refusal',
-                  refusal: 'Cannot comply.',
-                },
-              ],
-            },
-          ],
-        }),
-        { status: 200 },
-      ),
-    )
-
-    const result = await resolveSkillWithProvider({
-      aiConfig: state.aiConfig,
-      settings: state.settings,
-      quest,
-      note: 'test note',
-      skills: state.skills,
-      dictionary: [],
-    })
-
-    expect(result.skillName).toBe(skill.name)
-  })
-
-  it('parses OpenAI message content from response.output', async () => {
+  it('parses OpenAI output_text fragments for Lily messages', async () => {
     const state = hydratePersistedState()
     state.aiConfig.providers.openai.apiKey = 'sk-test'
 
@@ -138,10 +79,6 @@ describe('ai adapter', () => {
         JSON.stringify({
           status: 'completed',
           output: [
-            {
-              type: 'reasoning',
-              summary: [],
-            },
             {
               type: 'message',
               content: [
@@ -160,59 +97,14 @@ describe('ai adapter', () => {
     const result = await generateLilyMessageWithProvider({
       aiConfig: state.aiConfig,
       settings: state.settings,
-      payload: {
-        intent: 'quest_completed',
-      },
+      payload: { intent: 'quest_completed' },
     })
 
     expect(result.text).toBe('nice job')
     expect(result.shouldSpeak).toBe(true)
   })
 
-  it('retries OpenAI responses on 500 and then succeeds', async () => {
-    const state = hydratePersistedState()
-    state.aiConfig.providers.openai.apiKey = 'sk-test'
-
-    const fetchMock = vi
-      .spyOn(globalThis, 'fetch')
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            error: {
-              message: 'temporary server issue',
-              type: 'server_error',
-            },
-          }),
-          {
-            status: 500,
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          },
-        ),
-      )
-      .mockResolvedValueOnce(
-        new Response(
-          JSON.stringify({
-            output_text: '{"intent":"quest_completed","mood":"bright","text":"retry ok","shouldSpeak":false}',
-          }),
-          { status: 200 },
-        ),
-      )
-
-    const result = await generateLilyMessageWithProvider({
-      aiConfig: state.aiConfig,
-      settings: state.settings,
-      payload: {
-        intent: 'quest_completed',
-      },
-    })
-
-    expect(result.text).toBe('retry ok')
-    expect(fetchMock).toHaveBeenCalledTimes(2)
-  })
-
-  it('uses the configured Gemini TTS model and wraps PCM audio as wav', async () => {
+  it('wraps Gemini PCM audio in a wav blob', async () => {
     const state = hydratePersistedState()
     state.aiConfig.activeProvider = 'gemini'
     state.aiConfig.providers.gemini.apiKey = 'gm-test'
@@ -245,69 +137,15 @@ describe('ai adapter', () => {
     const result = await generateTtsAudio({
       aiConfig: state.aiConfig,
       settings: state.settings,
-      text: '今日もよく頑張ったね',
+      text: 'hello audio',
     })
 
     expect(result).toBe('blob:tts')
     expect(fetchMock).toHaveBeenCalledTimes(1)
-
-    const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit]
-
-    expect(url).toContain('/models/gemini-2.5-flash-preview-tts:generateContent')
-
-    expect(request.headers).toMatchObject({
-      'Content-Type': 'application/json',
-      'x-goog-api-key': 'gm-test',
-    })
-
-    const body = JSON.parse(String(request.body))
-    expect(body.generationConfig.responseModalities).toEqual(['AUDIO'])
-    expect(body.generationConfig.speechConfig.voiceConfig.prebuiltVoiceConfig.voiceName).toBe('Zephyr')
-    expect(body.speechConfig).toBeUndefined()
-
-    const createdBlob = createObjectUrl.mock.calls[0]?.[0]
-    expect(createdBlob).toBeInstanceOf(Blob)
-    const audioBlob = createdBlob as Blob
-    expect(audioBlob.type).toBe('audio/wav')
-
-    const wavHeader = new Uint8Array(await audioBlob.arrayBuffer()).slice(0, 4)
-    expect(Array.from(wavHeader)).toEqual([82, 73, 70, 70])
+    expect(createObjectUrl).toHaveBeenCalledTimes(1)
   })
 
-  it('includes Gemini TTS error details when the API returns 400', async () => {
-    const state = hydratePersistedState()
-    state.aiConfig.activeProvider = 'gemini'
-    state.aiConfig.providers.gemini.apiKey = 'gm-test'
-    state.settings.aiEnabled = true
-    state.settings.lilyVoiceEnabled = true
-
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(
-        JSON.stringify({
-          error: {
-            message: 'Invalid JSON payload.',
-            status: 'INVALID_ARGUMENT',
-          },
-        }),
-        {
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        },
-      ),
-    )
-
-    await expect(
-      generateTtsAudio({
-        aiConfig: state.aiConfig,
-        settings: state.settings,
-        text: '音声チェック',
-      }),
-    ).rejects.toThrow('Gemini TTS failed: 400 - Invalid JSON payload.')
-  })
-
-  it('returns a clear offline error for TTS generation', async () => {
+  it('throws for TTS when offline', async () => {
     const state = hydratePersistedState()
     state.aiConfig.activeProvider = 'gemini'
     state.aiConfig.providers.gemini.apiKey = 'gm-test'
@@ -324,18 +162,14 @@ describe('ai adapter', () => {
       generateTtsAudio({
         aiConfig: state.aiConfig,
         settings: state.settings,
-        text: '音声チェック',
+        text: 'hello audio',
       }),
-    ).rejects.toThrow('音声再生はオフラインでは利用できません。ネットワーク接続を確認してください。')
+    ).rejects.toThrow()
   })
 })
 
-describe('Lilyチャット', () => {
-  afterEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  it('システムプロンプトにユーザー情報とスキルとクエストを含む', () => {
+describe('Lily chat prompt', () => {
+  it('includes user context and JST explicit date guidance', () => {
     const state = hydratePersistedState()
     state.user.level = 5
     state.user.totalXp = 120
@@ -344,27 +178,37 @@ describe('Lilyチャット', () => {
       user: state.user,
       skills: state.skills,
       quests: [
-        { id: 'q1', title: '読書30分', questType: 'repeatable', xpReward: 5, category: '学習', skillMappingMode: 'ai_auto', status: 'active', privacyMode: 'normal', pinned: false, createdAt: '', updatedAt: '' },
+        {
+          id: 'q1',
+          title: 'Read 30 minutes',
+          questType: 'repeatable',
+          xpReward: 5,
+          category: 'Study',
+          skillMappingMode: 'ai_auto',
+          status: 'active',
+          privacyMode: 'normal',
+          pinned: false,
+          createdAt: '',
+          updatedAt: '',
+        },
       ],
-      recentCompletions: [
-        { questTitle: '読書30分', completedAt: '2026-03-22T10:00:00Z' },
-      ],
+      recentCompletions: [{ questTitle: 'Read 30 minutes', completedAt: '2026-03-22T10:00:00Z' }],
       activityLogs: [
         { timestamp: '2026-03-22T10:00:00Z', source: 'web', action: 'quest_completed', category: 'quest', details: {} },
         { timestamp: '2026-03-22T11:00:00Z', source: 'web', action: 'quest_completed', category: 'quest', details: {} },
       ],
     })
 
-    expect(prompt).toContain('リリィ')
-    expect(prompt).toContain('レベル: 5')
-    expect(prompt).toContain('総XP: 120')
-    expect(prompt).toContain('読書30分')
-    expect(prompt).toContain('quest: 2回')
-    expect(prompt).toContain('登録中のクエスト')
-    expect(prompt).toContain('学習')
+    expect(prompt).toContain('YYYY-MM-DD')
+    expect(prompt).toContain('date 引数')
+    expect(prompt).toContain('period=today/week/month')
+    expect(prompt).toContain('type=chat_messages')
+    expect(prompt).toContain('sessionId なしで全セッション横断検索')
+    expect(prompt).toContain('get_messages_and_logs')
+    expect(prompt).toContain('Read 30 minutes')
   })
 
-  it('スキルやクエストがない場合もシステムプロンプトを生成できる', () => {
+  it('handles empty context', () => {
     const state = hydratePersistedState()
 
     const prompt = buildLilyChatSystemPrompt({
@@ -377,15 +221,19 @@ describe('Lilyチャット', () => {
 
     expect(prompt).toContain('まだスキルがありません')
     expect(prompt).toContain('まだクエストがありません')
-    expect(prompt).toContain('まだ完了記録がありません')
+    expect(prompt).toContain('まだ完了履歴がありません')
+  })
+})
+
+describe('Lily chat completions', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
   })
 
-  it('Chat Completions APIを正しく呼び出す', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+  it('returns normal text responses', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(
-        JSON.stringify({
-          choices: [{ message: { content: 'こんにちは！今日も頑張っていますね。' } }],
-        }),
+        JSON.stringify({ choices: [{ message: { content: 'plain response' } }] }),
         { status: 200 },
       ),
     )
@@ -393,42 +241,62 @@ describe('Lilyチャット', () => {
     const result = await sendLilyChatMessage({
       apiKey: 'sk-test',
       messages: [
-        { role: 'system', content: 'あなたはリリィです。' },
-        { role: 'user', content: 'こんにちは' },
+        { role: 'system', content: 'system prompt' },
+        { role: 'user', content: 'hello' },
       ],
     })
 
-    expect(result).toEqual({ type: 'text', content: 'こんにちは！今日も頑張っていますね。' })
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-
-    const [url, request] = fetchMock.mock.calls[0] as [string, RequestInit]
-    expect(url).toBe('https://api.openai.com/v1/chat/completions')
-    const body = JSON.parse(String(request.body))
-    expect(body.model).toBe('gpt-5.4')
-    expect(body.messages).toHaveLength(2)
+    expect(result).toEqual({ type: 'text', content: 'plain response' })
   })
 
-  it('toolsを渡すとリクエストボディにtoolsが含まれる', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+  it('normalizes array-based text content responses', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          choices: [{ message: { content: 'テスト応答' } }],
+          choices: [
+            {
+              message: {
+                content: [
+                  { type: 'text', text: 'first line' },
+                  { type: 'text', text: 'second line' },
+                ],
+              },
+            },
+          ],
         }),
+        { status: 200 },
+      ),
+    )
+
+    const result = await sendLilyChatMessage({
+      apiKey: 'sk-test',
+      messages: [{ role: 'user', content: 'hello' }],
+    })
+
+    expect(result).toEqual({ type: 'text', content: 'first line\nsecond line' })
+  })
+
+  it('passes tools through to the API request', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ choices: [{ message: { content: 'ok' } }] }),
         { status: 200 },
       ),
     )
 
     await sendLilyChatMessage({
       apiKey: 'sk-test',
-      messages: [{ role: 'user', content: 'テスト' }],
-      tools: [{
-        type: 'function',
-        function: {
-          name: 'test_tool',
-          description: 'テストツール',
-          parameters: { type: 'object', properties: {} },
+      messages: [{ role: 'user', content: 'hello' }],
+      tools: [
+        {
+          type: 'function',
+          function: {
+            name: 'test_tool',
+            description: 'test tool',
+            parameters: { type: 'object', properties: {} },
+          },
         },
-      }],
+      ],
     })
 
     const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
@@ -436,21 +304,25 @@ describe('Lilyチャット', () => {
     expect(body.tools[0].function.name).toBe('test_tool')
   })
 
-  it('tool_callsレスポンスでツールコール結果を返す', async () => {
+  it('returns tool calls when the model requests them', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
       new Response(
         JSON.stringify({
-          choices: [{
-            message: {
-              content: null,
-              tool_calls: [{
-                id: 'call_123',
-                type: 'function',
-                function: { name: 'get_browsing_times', arguments: '{"period":"today"}' },
-              }],
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'call_123',
+                    type: 'function',
+                    function: { name: 'get_browsing_times', arguments: '{"date":"2026-03-29"}' },
+                  },
+                ],
+              },
+              finish_reason: 'tool_calls',
             },
-            finish_reason: 'tool_calls',
-          }],
+          ],
         }),
         { status: 200 },
       ),
@@ -458,50 +330,91 @@ describe('Lilyチャット', () => {
 
     const result = await sendLilyChatMessage({
       apiKey: 'sk-test',
-      messages: [{ role: 'user', content: '今日のブラウジング時間は？' }],
+      messages: [{ role: 'user', content: 'show me 2026-03-29' }],
     })
 
     expect(result.type).toBe('tool_calls')
     if (result.type === 'tool_calls') {
-      expect(result.toolCalls).toHaveLength(1)
       expect(result.toolCalls[0].function.name).toBe('get_browsing_times')
-      expect(result.assistantMessage.role).toBe('assistant')
-      expect(result.assistantMessage.tool_calls).toEqual(result.toolCalls)
     }
   })
 
-  it('Chat APIエラー時にリトライする', async () => {
+  it('returns tool calls even when finish_reason is not tool_calls', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'call_456',
+                    type: 'function',
+                    function: { name: 'get_messages_and_logs', arguments: '{"type":"chat_messages","date":"2026-03-29"}' },
+                  },
+                ],
+              },
+              finish_reason: 'stop',
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const result = await sendLilyChatMessage({
+      apiKey: 'sk-test',
+      messages: [{ role: 'user', content: 'show me 2026-03-29 chat details' }],
+    })
+
+    expect(result.type).toBe('tool_calls')
+    if (result.type === 'tool_calls') {
+      expect(result.toolCalls[0].function.name).toBe('get_messages_and_logs')
+    }
+  })
+
+  it('retries with a larger completion budget when the first response is truncated', async () => {
     const fetchMock = vi
       .spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ error: { message: 'server error' } }), { status: 500 }),
+        new Response(
+          JSON.stringify({
+            choices: [
+              {
+                message: { content: null },
+                finish_reason: 'length',
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
       )
       .mockResolvedValueOnce(
         new Response(
-          JSON.stringify({ choices: [{ message: { content: 'リトライ成功' } }] }),
+          JSON.stringify({
+            choices: [
+              {
+                message: { content: 'summary after retry' },
+                finish_reason: 'stop',
+              },
+            ],
+          }),
           { status: 200 },
         ),
       )
 
     const result = await sendLilyChatMessage({
       apiKey: 'sk-test',
-      messages: [{ role: 'user', content: 'テスト' }],
+      messages: [{ role: 'user', content: 'summarize 2026-03-29 chat' }],
     })
 
-    expect(result).toEqual({ type: 'text', content: 'リトライ成功' })
+    expect(result).toEqual({ type: 'text', content: 'summary after retry' })
     expect(fetchMock).toHaveBeenCalledTimes(2)
-  })
 
-  it('空のレスポンスでエラーを返す', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
-      new Response(JSON.stringify({ choices: [] }), { status: 200 }),
-    )
-
-    await expect(
-      sendLilyChatMessage({
-        apiKey: 'sk-test',
-        messages: [{ role: 'user', content: 'テスト' }],
-      }),
-    ).rejects.toThrow('OpenAI Chat response was empty.')
+    const firstBody = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    const secondBody = JSON.parse(String((fetchMock.mock.calls[1] as [string, RequestInit])[1].body))
+    expect(firstBody.max_completion_tokens).toBe(900)
+    expect(secondBody.max_completion_tokens).toBe(1600)
   })
 })

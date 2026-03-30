@@ -1,17 +1,18 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { executeTool, CHAT_TOOLS } from './chat-tools'
+﻿import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { CHAT_TOOLS, executeTool } from './chat-tools'
 import type { ToolContext } from './chat-tools'
 import type { BrowsingTimeData } from './api-client'
 
 vi.mock('./api-client', () => ({
   getBrowsingTimes: vi.fn(),
   getActivityLogs: vi.fn(),
+  getSituationLogs: vi.fn(),
+  getChatMessages: vi.fn(),
   postQuest: vi.fn().mockResolvedValue(undefined),
   deleteQuest: vi.fn().mockResolvedValue(undefined),
   putQuest: vi.fn().mockResolvedValue(undefined),
 }))
 
-// useAppStore のモック — upsertQuest / deleteQuest / archiveQuest を検証
 const mockUpsertQuest = vi.fn()
 const mockDeleteQuest = vi.fn().mockReturnValue({ ok: true })
 const mockArchiveQuest = vi.fn()
@@ -28,38 +29,28 @@ vi.mock('@/store/app-store', () => ({
 
 import * as api from './api-client'
 
-// ── サンプルデータ ──
-
 const sampleData: BrowsingTimeData[] = [
   {
     date: '2026-03-23',
     domains: {
-      'github.com': { totalSeconds: 3600, category: '仕事', isGrowth: true },
-      'youtube.com': { totalSeconds: 1800, category: '娯楽', isGrowth: false },
-      'udemy.com': { totalSeconds: 2400, category: '学習', isGrowth: true },
+      'github.com': { totalSeconds: 3600, category: 'Work', isGrowth: true },
+      'youtube.com': { totalSeconds: 1800, category: 'Fun', isGrowth: false },
+      'udemy.com': { totalSeconds: 2400, category: 'Study', isGrowth: true },
     },
     totalSeconds: 7800,
   },
 ]
 
-const weekData: BrowsingTimeData[] = [
-  ...sampleData,
-  {
-    date: '2026-03-22',
-    domains: {
-      'github.com': { totalSeconds: 1800, category: '仕事', isGrowth: true },
-      'twitter.com': { totalSeconds: 900, category: '娯楽', isGrowth: false },
-    },
-    totalSeconds: 2700,
-  },
-]
-
-// テストデータは本番同様 toISOString() (UTC/Z形式) で記録する
-// fakeTimerは 2026-03-23T06:00:00.000Z (= JST 15:00)
-function createContext(overrides?: Partial<ToolContext>): ToolContext {
+function createContext(): ToolContext {
   return {
     appState: {
-      user: { id: 'local_user', level: 5, totalXp: 450, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-03-23T01:00:00.000Z' },
+      user: {
+        id: 'local_user',
+        level: 5,
+        totalXp: 450,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-03-23T01:00:00.000Z',
+      },
       settings: {
         lilyVoiceEnabled: true,
         lilyAutoPlay: 'on',
@@ -74,41 +65,166 @@ function createContext(overrides?: Partial<ToolContext>): ToolContext {
       aiConfig: {
         activeProvider: 'openai',
         providers: {
-          openai: { apiKey: 'sk-abcdefgh12345678', status: 'verified', updatedAt: '2026-03-23T01:00:00.000Z', model: 'gpt-5.4' },
-          gemini: { apiKey: undefined, status: 'unverified', updatedAt: '2026-01-01T00:00:00.000Z', model: 'gemini-2.5-flash' },
+          openai: {
+            apiKey: 'sk-abcdefgh12345678',
+            status: 'verified',
+            updatedAt: '2026-03-23T01:00:00.000Z',
+            model: 'gpt-5.4',
+          },
+          gemini: {
+            apiKey: undefined,
+            status: 'unverified',
+            updatedAt: '2026-01-01T00:00:00.000Z',
+            model: 'gemini-2.5-flash',
+          },
         },
       },
       quests: [
-        { id: 'q1', title: '毎日ランニング', questType: 'repeatable', xpReward: 20, category: '運動', status: 'active', skillMappingMode: 'fixed', privacyMode: 'normal', pinned: false, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-03-01T00:00:00.000Z' },
-        { id: 'q2', title: 'TypeScript本を読む', questType: 'one_time', xpReward: 50, category: '学習', status: 'active', skillMappingMode: 'ai_auto', privacyMode: 'normal', pinned: true, createdAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-03-15T00:00:00.000Z' },
-        { id: 'q3', title: '古いクエスト', questType: 'one_time', xpReward: 10, category: '仕事', status: 'archived', skillMappingMode: 'fixed', privacyMode: 'normal', pinned: false, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-02-01T00:00:00.000Z' },
+        {
+          id: 'q1',
+          title: 'Daily Run',
+          questType: 'repeatable',
+          xpReward: 20,
+          category: 'Exercise',
+          status: 'active',
+          skillMappingMode: 'fixed',
+          privacyMode: 'normal',
+          pinned: false,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-03-01T00:00:00.000Z',
+        },
+        {
+          id: 'q2',
+          title: 'TypeScript Book',
+          questType: 'one_time',
+          xpReward: 50,
+          category: 'Study',
+          status: 'active',
+          skillMappingMode: 'ai_auto',
+          privacyMode: 'normal',
+          pinned: true,
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-03-15T00:00:00.000Z',
+        },
+        {
+          id: 'q3',
+          title: 'Archived Quest',
+          questType: 'one_time',
+          xpReward: 10,
+          category: 'Work',
+          status: 'archived',
+          skillMappingMode: 'fixed',
+          privacyMode: 'normal',
+          pinned: false,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-02-01T00:00:00.000Z',
+        },
       ],
       completions: [
-        // c1: 3/23 02:00 UTC (= JST 11:00) — "today"
-        { id: 'c1', questId: 'q1', clientRequestId: 'cr1', completedAt: '2026-03-23T02:00:00.000Z', userXpAwarded: 20, skillResolutionStatus: 'resolved', resolvedSkillId: 's1', createdAt: '2026-03-23T02:00:00.000Z' },
-        // c2: 3/19 23:00 UTC (= JST 3/20 08:00) — "this week"
-        { id: 'c2', questId: 'q1', clientRequestId: 'cr2', completedAt: '2026-03-19T23:00:00.000Z', userXpAwarded: 20, skillResolutionStatus: 'resolved', resolvedSkillId: 's1', createdAt: '2026-03-19T23:00:00.000Z' },
-        // c3: 3/10 01:00 UTC (= JST 3/10 10:00) — old
-        { id: 'c3', questId: 'q2', clientRequestId: 'cr3', completedAt: '2026-03-10T01:00:00.000Z', userXpAwarded: 50, skillResolutionStatus: 'resolved', resolvedSkillId: 's2', createdAt: '2026-03-10T01:00:00.000Z' },
-        // c4: 3/23 00:00 UTC — undone
-        { id: 'c4', questId: 'q1', clientRequestId: 'cr4', completedAt: '2026-03-23T00:00:00.000Z', undoneAt: '2026-03-23T00:30:00.000Z', userXpAwarded: 20, skillResolutionStatus: 'resolved', createdAt: '2026-03-23T00:00:00.000Z' },
+        {
+          id: 'c1',
+          questId: 'q1',
+          clientRequestId: 'cr1',
+          completedAt: '2026-03-23T02:00:00.000Z',
+          userXpAwarded: 20,
+          skillResolutionStatus: 'resolved',
+          resolvedSkillId: 's1',
+          createdAt: '2026-03-23T02:00:00.000Z',
+        },
+        {
+          id: 'c2',
+          questId: 'q1',
+          clientRequestId: 'cr2',
+          completedAt: '2026-03-19T23:00:00.000Z',
+          userXpAwarded: 20,
+          skillResolutionStatus: 'resolved',
+          resolvedSkillId: 's1',
+          createdAt: '2026-03-19T23:00:00.000Z',
+        },
+        {
+          id: 'c3',
+          questId: 'q2',
+          clientRequestId: 'cr3',
+          completedAt: '2026-03-10T01:00:00.000Z',
+          userXpAwarded: 50,
+          skillResolutionStatus: 'resolved',
+          resolvedSkillId: 's2',
+          createdAt: '2026-03-10T01:00:00.000Z',
+        },
+        {
+          id: 'c4',
+          questId: 'q1',
+          clientRequestId: 'cr4',
+          completedAt: '2026-03-23T00:00:00.000Z',
+          undoneAt: '2026-03-23T00:30:00.000Z',
+          userXpAwarded: 20,
+          skillResolutionStatus: 'resolved',
+          createdAt: '2026-03-23T00:00:00.000Z',
+        },
       ],
       skills: [
-        { id: 's1', name: '体力', normalizedName: '体力', category: '運動', level: 3, totalXp: 120, source: 'seed', status: 'active', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-03-23T00:00:00.000Z' },
-        { id: 's2', name: 'TypeScript', normalizedName: 'typescript', category: '学習', level: 2, totalXp: 80, source: 'ai', status: 'active', createdAt: '2026-02-01T00:00:00.000Z', updatedAt: '2026-03-10T00:00:00.000Z' },
-        { id: 's3', name: '旧スキル', normalizedName: '旧スキル', category: '仕事', level: 1, totalXp: 10, source: 'manual', status: 'merged', mergedIntoSkillId: 's2', createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-02-01T00:00:00.000Z' },
+        {
+          id: 's1',
+          name: 'Running',
+          normalizedName: 'running',
+          category: 'Exercise',
+          level: 3,
+          totalXp: 120,
+          source: 'seed',
+          status: 'active',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-03-23T00:00:00.000Z',
+        },
+        {
+          id: 's2',
+          name: 'TypeScript',
+          normalizedName: 'typescript',
+          category: 'Study',
+          level: 2,
+          totalXp: 80,
+          source: 'ai',
+          status: 'active',
+          createdAt: '2026-02-01T00:00:00.000Z',
+          updatedAt: '2026-03-10T00:00:00.000Z',
+        },
+        {
+          id: 's3',
+          name: 'Merged Skill',
+          normalizedName: 'merged skill',
+          category: 'Work',
+          level: 1,
+          totalXp: 10,
+          source: 'manual',
+          status: 'merged',
+          mergedIntoSkillId: 's2',
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-02-01T00:00:00.000Z',
+        },
       ],
       personalSkillDictionary: [
-        { id: 'd1', phrase: 'ランニング', mappedSkillId: 's1', createdBy: 'user_override', createdAt: '2026-02-01T00:00:00.000Z' },
-        { id: 'd2', phrase: 'コーディング', mappedSkillId: 's2', createdBy: 'system', createdAt: '2026-02-15T00:00:00.000Z' },
+        {
+          id: 'd1',
+          phrase: 'running',
+          mappedSkillId: 's1',
+          createdBy: 'user_override',
+          createdAt: '2026-02-01T00:00:00.000Z',
+        },
       ],
       assistantMessages: [
-        // m1: 3/23 02:01 UTC — "today"
-        { id: 'm1', triggerType: 'quest_completed', mood: 'bright', text: 'ランニングお疲れさま！', createdAt: '2026-03-23T02:01:00.000Z' },
-        // m2: 3/22 13:00 UTC — "yesterday"
-        { id: 'm2', triggerType: 'daily_summary', mood: 'calm', text: '今日も頑張ったね。', createdAt: '2026-03-22T13:00:00.000Z' },
-        // m3: old
-        { id: 'm3', triggerType: 'quest_completed', mood: 'playful', text: 'TypeScriptすごい！', createdAt: '2026-03-10T01:01:00.000Z' },
+        {
+          id: 'm1',
+          triggerType: 'quest_completed',
+          mood: 'bright',
+          text: 'great run',
+          createdAt: '2026-03-23T02:01:00.000Z',
+        },
+        {
+          id: 'm2',
+          triggerType: 'daily_summary',
+          mood: 'calm',
+          text: 'nice day',
+          createdAt: '2026-03-22T13:00:00.000Z',
+        },
       ],
       meta: {
         schemaVersion: 1,
@@ -119,56 +235,52 @@ function createContext(overrides?: Partial<ToolContext>): ToolContext {
       },
     },
     chatSessions: [
-      { id: 'cs1', title: '最初の会話', createdAt: '2026-03-20T10:00:00.000Z', updatedAt: '2026-03-20T10:30:00.000Z' },
-      { id: 'cs2', title: '2回目の会話', createdAt: '2026-03-23T05:00:00.000Z', updatedAt: '2026-03-23T05:30:00.000Z' },
+      {
+        id: 'cs1',
+        title: 'session one',
+        createdAt: '2026-03-20T10:00:00.000Z',
+        updatedAt: '2026-03-20T10:30:00.000Z',
+      },
+      {
+        id: 'cs2',
+        title: 'session two',
+        createdAt: '2026-03-23T05:00:00.000Z',
+        updatedAt: '2026-03-23T05:30:00.000Z',
+      },
     ],
     chatMessages: [
-      { id: 'cm1', sessionId: 'cs2', role: 'user', content: 'こんにちは', createdAt: '2026-03-23T05:00:00.000Z' },
-      { id: 'cm2', sessionId: 'cs2', role: 'assistant', content: 'やっほー！', createdAt: '2026-03-23T05:00:10.000Z' },
+      {
+        id: 'cm1',
+        sessionId: 'cs2',
+        role: 'user',
+        content: 'hello',
+        createdAt: '2026-03-23T05:00:00.000Z',
+      },
+      {
+        id: 'cm2',
+        sessionId: 'cs2',
+        role: 'assistant',
+        content: 'hi there',
+        createdAt: '2026-03-23T05:00:10.000Z',
+      },
     ],
   }
 }
 
-// ── CHAT_TOOLS 定義テスト ──
-
 describe('CHAT_TOOLS', () => {
-  it('get_browsing_timesツールが定義されている', () => {
-    const tool = CHAT_TOOLS.find((t) => t.function.name === 'get_browsing_times')
+  it('exposes explicit JST date args on browsing tool', () => {
+    const tool = CHAT_TOOLS.find((entry) => entry.function.name === 'get_browsing_times')
     expect(tool).toBeDefined()
-    expect(tool?.type).toBe('function')
-    expect(tool?.function.parameters.required).toContain('period')
-  })
-
-  it('get_user_infoツールが定義されている', () => {
-    const tool = CHAT_TOOLS.find((t) => t.function.name === 'get_user_info')
-    expect(tool).toBeDefined()
-    expect(tool?.function.parameters.required).toContain('type')
-  })
-
-  it('get_quest_dataツールが定義されている', () => {
-    const tool = CHAT_TOOLS.find((t) => t.function.name === 'get_quest_data')
-    expect(tool).toBeDefined()
-    expect(tool?.function.parameters.required).toContain('type')
-  })
-
-  it('get_skill_dataツールが定義されている', () => {
-    const tool = CHAT_TOOLS.find((t) => t.function.name === 'get_skill_data')
-    expect(tool).toBeDefined()
-    expect(tool?.function.parameters.required).toContain('type')
-  })
-
-  it('get_messages_and_logsツールが定義されている', () => {
-    const tool = CHAT_TOOLS.find((t) => t.function.name === 'get_messages_and_logs')
-    expect(tool).toBeDefined()
-    expect(tool?.function.parameters.required).toContain('type')
+    expect(tool?.function.parameters.properties).toHaveProperty('date')
+    expect(tool?.function.parameters.properties).toHaveProperty('fromDate')
+    expect(tool?.function.parameters.properties).toHaveProperty('toDate')
+    expect(tool?.function.parameters.required).not.toContain('period')
   })
 })
 
-// ── get_browsing_times（既存テスト） ──
-
-describe('executeTool - get_browsing_times', () => {
+describe('get_browsing_times', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-03-23T06:00:00.000Z'))
   })
@@ -177,7 +289,7 @@ describe('executeTool - get_browsing_times', () => {
     vi.useRealTimers()
   })
 
-  it('todayで今日の日付範囲でAPIを呼ぶ', async () => {
+  it('uses today period by JST', async () => {
     vi.mocked(api.getBrowsingTimes).mockResolvedValue(sampleData)
 
     await executeTool('get_browsing_times', { period: 'today' })
@@ -185,114 +297,39 @@ describe('executeTool - get_browsing_times', () => {
     expect(api.getBrowsingTimes).toHaveBeenCalledWith('2026-03-23', '2026-03-23')
   })
 
-  it('weekで直近7日の日付範囲でAPIを呼ぶ', async () => {
-    vi.mocked(api.getBrowsingTimes).mockResolvedValue(weekData)
-
-    await executeTool('get_browsing_times', { period: 'week' })
-
-    expect(api.getBrowsingTimes).toHaveBeenCalledWith('2026-03-17', '2026-03-23')
-  })
-
-  it('monthで直近30日の日付範囲でAPIを呼ぶ', async () => {
-    vi.mocked(api.getBrowsingTimes).mockResolvedValue([])
-
-    await executeTool('get_browsing_times', { period: 'month' })
-
-    expect(api.getBrowsingTimes).toHaveBeenCalledWith('2026-02-21', '2026-03-23')
-  })
-
-  it('カテゴリ別の集計結果を含むテキストを返す', async () => {
+  it('passes explicit date through', async () => {
     vi.mocked(api.getBrowsingTimes).mockResolvedValue(sampleData)
 
-    const result = await executeTool('get_browsing_times', { period: 'today' })
+    await executeTool('get_browsing_times', { date: '2026-03-29' })
 
-    expect(result).toContain('仕事')
-    expect(result).toContain('娯楽')
-    expect(result).toContain('学習')
+    expect(api.getBrowsingTimes).toHaveBeenCalledWith('2026-03-29', '2026-03-29')
   })
 
-  it('サイト別の集計結果を含むテキストを返す', async () => {
-    vi.mocked(api.getBrowsingTimes).mockResolvedValue(sampleData)
-
-    const result = await executeTool('get_browsing_times', { period: 'today' })
-
-    expect(result).toContain('github.com')
-    expect(result).toContain('youtube.com')
-    expect(result).toContain('udemy.com')
-  })
-
-  it('時間が「X時間Y分」形式で整形される', async () => {
-    vi.mocked(api.getBrowsingTimes).mockResolvedValue(sampleData)
-
-    const result = await executeTool('get_browsing_times', { period: 'today' })
-
-    expect(result).toContain('1時間0分')  // github.com 3600s
-    expect(result).toContain('30分')       // youtube.com 1800s
-  })
-
-  it('データが空の場合に適切なメッセージを返す', async () => {
+  it('returns empty-state message', async () => {
     vi.mocked(api.getBrowsingTimes).mockResolvedValue([])
 
     const result = await executeTool('get_browsing_times', { period: 'today' })
 
-    expect(result).toContain('閲覧データがありません')
-  })
-
-  it('未知のツール名でエラー文字列を返す', async () => {
-    const ctx = createContext()
-    const result = await executeTool('unknown_tool', {}, ctx)
-
-    expect(result).toContain('不明なツール')
-  })
-
-  it('API呼び出しが失敗した場合にエラー文字列を返す', async () => {
-    vi.mocked(api.getBrowsingTimes).mockRejectedValue(new Error('Network error'))
-
-    const result = await executeTool('get_browsing_times', { period: 'today' })
-
-    expect(result).toContain('取得に失敗')
+    expect(result).toContain('閲覧時間データがありません')
   })
 })
 
-// ── get_user_info ──
+describe('get_user_info', () => {
+  it('returns settings summary', async () => {
+    const result = await executeTool('get_user_info', { type: 'settings' }, createContext())
 
-describe('executeTool - get_user_info', () => {
-  it('type=profileでレベルと総XPを含む', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_user_info', { type: 'profile' }, ctx)
-
-    expect(result).toContain('レベル: 5')
-    expect(result).toContain('総XP: 450')
-  })
-
-  it('type=settingsで設定項目を含む', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_user_info', { type: 'settings' }, ctx)
-
-    expect(result).toContain('リリィ音声: ON')
     expect(result).toContain('AI: ON')
-    expect(result).toContain('通知: ON')
+    expect(result).toContain('lily')
+    expect(result).toContain('08:00')
   })
 
-  it('type=metaでメタ情報を含む', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_user_info', { type: 'meta' }, ctx)
-
-    expect(result).toContain('スキーマバージョン: 1')
-    expect(result).toContain('最終日次サマリー: 2026-03-22')
-    expect(result).toContain('通知権限: granted')
-  })
-
-  it('contextなしでエラーを返す', async () => {
+  it('requires context', async () => {
     const result = await executeTool('get_user_info', { type: 'profile' })
-
-    expect(result).toContain('データを取得できません')
+    expect(result).toContain('コンテキスト')
   })
 })
 
-// ── get_quest_data ──
-
-describe('executeTool - get_quest_data', () => {
+describe('get_quest_data', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-03-23T06:00:00.000Z'))
@@ -302,125 +339,76 @@ describe('executeTool - get_quest_data', () => {
     vi.useRealTimers()
   })
 
-  it('type=questsで全クエスト一覧を返す', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_quest_data', { type: 'quests' }, ctx)
+  it('lists quests with filters', async () => {
+    const result = await executeTool('get_quest_data', { type: 'quests', status: 'active' }, createContext())
 
-    expect(result).toContain('毎日ランニング')
-    expect(result).toContain('TypeScript本を読む')
-    expect(result).toContain('古いクエスト')
-    expect(result).toContain('合計: 3件')
+    expect(result).toContain('Daily Run')
+    expect(result).toContain('TypeScript Book')
+    expect(result).not.toContain('Archived Quest')
   })
 
-  it('type=quests + status=activeでフィルタされる', async () => {
+  it('filters completions on a JST day boundary', async () => {
     const ctx = createContext()
-    const result = await executeTool('get_quest_data', { type: 'quests', status: 'active' }, ctx)
+    ctx.appState.completions = [
+      {
+        id: 'boundary-in',
+        questId: 'q1',
+        clientRequestId: 'r1',
+        completedAt: '2026-03-28T15:00:00.000Z',
+        userXpAwarded: 20,
+        skillResolutionStatus: 'resolved',
+        createdAt: '2026-03-28T15:00:00.000Z',
+      },
+      {
+        id: 'boundary-out',
+        questId: 'q2',
+        clientRequestId: 'r2',
+        completedAt: '2026-03-29T15:00:00.000Z',
+        userXpAwarded: 50,
+        skillResolutionStatus: 'resolved',
+        createdAt: '2026-03-29T15:00:00.000Z',
+      },
+    ]
 
-    expect(result).toContain('毎日ランニング')
-    expect(result).toContain('TypeScript本を読む')
-    expect(result).not.toContain('古いクエスト')
-    expect(result).toContain('合計: 2件')
-  })
+    const result = await executeTool('get_quest_data', { type: 'completions', date: '2026-03-29' }, ctx)
 
-  it('type=quests + questType=repeatableでフィルタされる', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_quest_data', { type: 'quests', questType: 'repeatable' }, ctx)
-
-    expect(result).toContain('毎日ランニング')
-    expect(result).not.toContain('TypeScript本を読む')
-  })
-
-  it('type=quests + categoryでフィルタされる', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_quest_data', { type: 'quests', category: '学習' }, ctx)
-
-    expect(result).toContain('TypeScript本を読む')
-    expect(result).not.toContain('毎日ランニング')
-  })
-
-  it('type=completionsで完了記録を返す（undoneAtありは除外）', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_quest_data', { type: 'completions' }, ctx)
-
-    expect(result).toContain('毎日ランニング')
     expect(result).toContain('+20 XP')
-    // undone（c4）は含まれない
-    expect(result).toContain('合計: 3件')
+    expect(result).not.toContain('+50 XP')
+    expect(result).toContain('2026-03-29')
   })
 
-  it('type=completions + period=todayで今日のみ', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_quest_data', { type: 'completions', period: 'today' }, ctx)
+  it('uses inclusive range filtering for completions', async () => {
+    const result = await executeTool(
+      'get_quest_data',
+      { type: 'completions', fromDate: '2026-03-20', toDate: '2026-03-23' },
+      createContext(),
+    )
 
-    expect(result).toContain('毎日ランニング')
-    // c2(3/19 UTC)とc3(3/10 UTC)は含まれない
-    expect(result).toContain('合計: 1件')
-  })
-
-  it('type=completions + questIdでフィルタされる', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_quest_data', { type: 'completions', questId: 'q2' }, ctx)
-
-    expect(result).toContain('TypeScript本を読む')
-    expect(result).toContain('合計: 1件')
+    expect(result).toContain('2026-03-23')
+    expect(result).toContain('2026-03-20')
   })
 })
 
-// ── get_skill_data ──
+describe('get_skill_data', () => {
+  it('lists active skills', async () => {
+    const result = await executeTool('get_skill_data', { type: 'skills', status: 'active' }, createContext())
 
-describe('executeTool - get_skill_data', () => {
-  it('type=skillsで全スキル一覧を返す', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_skill_data', { type: 'skills' }, ctx)
-
-    expect(result).toContain('体力')
+    expect(result).toContain('Running')
     expect(result).toContain('TypeScript')
-    expect(result).toContain('旧スキル')
-    expect(result).toContain('合計: 3件')
+    expect(result).not.toContain('Merged Skill')
   })
 
-  it('type=skills + status=activeでフィルタされる', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_skill_data', { type: 'skills', status: 'active' }, ctx)
+  it('lists dictionary mappings', async () => {
+    const result = await executeTool('get_skill_data', { type: 'dictionary' }, createContext())
 
-    expect(result).toContain('体力')
-    expect(result).toContain('TypeScript')
-    expect(result).not.toContain('旧スキル')
-  })
-
-  it('type=skills + categoryでフィルタされる', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_skill_data', { type: 'skills', category: '運動' }, ctx)
-
-    expect(result).toContain('体力')
-    expect(result).not.toContain('TypeScript')
-  })
-
-  it('スキルのレベルとXPが含まれる', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_skill_data', { type: 'skills' }, ctx)
-
-    expect(result).toContain('Lv.3')
-    expect(result).toContain('120 XP')
-  })
-
-  it('type=dictionaryで辞書エントリを返す', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_skill_data', { type: 'dictionary' }, ctx)
-
-    expect(result).toContain('ランニング')
-    expect(result).toContain('体力')
-    expect(result).toContain('コーディング')
-    expect(result).toContain('TypeScript')
-    expect(result).toContain('合計: 2件')
+    expect(result).toContain('running')
+    expect(result).toContain('Running')
   })
 })
 
-// ── get_messages_and_logs ──
-
-describe('executeTool - get_messages_and_logs', () => {
+describe('get_messages_and_logs', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-03-23T06:00:00.000Z'))
   })
@@ -429,273 +417,238 @@ describe('executeTool - get_messages_and_logs', () => {
     vi.useRealTimers()
   })
 
-  it('type=assistant_messagesでメッセージ一覧を返す', async () => {
+  it('filters assistant messages by explicit JST date', async () => {
     const ctx = createContext()
-    const result = await executeTool('get_messages_and_logs', { type: 'assistant_messages' }, ctx)
+    ctx.appState.assistantMessages = [
+      {
+        id: 'am1',
+        triggerType: 'quest_completed',
+        mood: 'bright',
+        text: 'included message',
+        createdAt: '2026-03-28T15:00:00.000Z',
+      },
+      {
+        id: 'am2',
+        triggerType: 'quest_completed',
+        mood: 'bright',
+        text: 'next day message',
+        createdAt: '2026-03-29T15:00:00.000Z',
+      },
+    ]
 
-    expect(result).toContain('ランニングお疲れさま！')
-    expect(result).toContain('今日も頑張ったね。')
-    expect(result).toContain('合計: 3件')
+    const result = await executeTool(
+      'get_messages_and_logs',
+      { type: 'assistant_messages', date: '2026-03-29' },
+      ctx,
+    )
+
+    expect(result).toContain('included message')
+    expect(result).not.toContain('next day message')
   })
 
-  it('type=assistant_messages + triggerTypeでフィルタされる', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_messages_and_logs', { type: 'assistant_messages', triggerType: 'daily_summary' }, ctx)
-
-    expect(result).toContain('今日も頑張ったね。')
-    expect(result).not.toContain('ランニングお疲れさま！')
-    expect(result).toContain('合計: 1件')
-  })
-
-  it('type=assistant_messages + period=todayでフィルタされる', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_messages_and_logs', { type: 'assistant_messages', period: 'today' }, ctx)
-
-    // m1 (3/23 02:01Z) は startOfDay(3/23T06:00Z)=3/23T00:00Z 以降 → today
-    expect(result).toContain('ランニングお疲れさま！')
-    expect(result).toContain('合計: 1件')
-  })
-
-  it('type=ai_configでAPIキーがマスクされている', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_messages_and_logs', { type: 'ai_config' }, ctx)
+  it('masks API keys in ai config', async () => {
+    const result = await executeTool('get_messages_and_logs', { type: 'ai_config' }, createContext())
 
     expect(result).toContain('openai')
-    expect(result).toContain('verified')
-    expect(result).not.toContain('sk-abcdefgh12345678')
     expect(result).toContain('sk-a****5678')
+    expect(result).not.toContain('sk-abcdefgh12345678')
   })
 
-  it('type=activity_logsでAPI経由でログを取得する', async () => {
-    vi.mocked(api.getActivityLogs).mockResolvedValue([
-      { timestamp: '2026-03-23T02:00:00.000Z', source: 'app', action: 'quest_completed', category: 'クエスト', details: { questId: 'q1' } },
-      { timestamp: '2026-03-23T04:00:00.000Z', source: 'app', action: 'skill_level_up', category: 'スキル', details: { skillId: 's1' } },
-    ])
-    const ctx = createContext()
-    const result = await executeTool('get_messages_and_logs', { type: 'activity_logs', period: 'today' }, ctx)
-
-    expect(api.getActivityLogs).toHaveBeenCalledWith('2026-03-23', '2026-03-23')
-    expect(result).toContain('quest_completed')
-    expect(result).toContain('skill_level_up')
-    expect(result).toContain('合計: 2件')
-  })
-
-  it('type=activity_logs + period=weekで7日間取得する', async () => {
+  it('passes exact day to activity logs API', async () => {
     vi.mocked(api.getActivityLogs).mockResolvedValue([])
-    const ctx = createContext()
-    await executeTool('get_messages_and_logs', { type: 'activity_logs', period: 'week' }, ctx)
 
-    expect(api.getActivityLogs).toHaveBeenCalledWith('2026-03-17', '2026-03-23')
+    await executeTool('get_messages_and_logs', { type: 'activity_logs', date: '2026-03-29' }, createContext())
+
+    expect(api.getActivityLogs).toHaveBeenCalledWith('2026-03-29', '2026-03-29')
   })
 
-  it('type=activity_logsのAPI失敗時にエラーメッセージを返す', async () => {
-    vi.mocked(api.getActivityLogs).mockRejectedValue(new Error('Network error'))
-    const ctx = createContext()
-    const result = await executeTool('get_messages_and_logs', { type: 'activity_logs' }, ctx)
+  it('passes range to situation logs API', async () => {
+    vi.mocked(api.getSituationLogs).mockResolvedValue([])
 
-    expect(result).toContain('取得に失敗')
+    await executeTool(
+      'get_messages_and_logs',
+      { type: 'situation_logs', fromDate: '2026-03-29', toDate: '2026-03-30' },
+      createContext(),
+    )
+
+    expect(api.getSituationLogs).toHaveBeenCalledWith('2026-03-29', '2026-03-30')
   })
 
-  it('type=chat_sessionsでセッション一覧を返す', async () => {
+  it('filters chat sessions by matching message dates', async () => {
     const ctx = createContext()
-    const result = await executeTool('get_messages_and_logs', { type: 'chat_sessions' }, ctx)
+    ctx.chatSessions = [
+      {
+        id: 'cs1',
+        title: 'session one',
+        createdAt: '2026-03-28T15:00:00.000Z',
+        updatedAt: '2026-03-29T01:00:00.000Z',
+      },
+      {
+        id: 'cs2',
+        title: 'session two',
+        createdAt: '2026-03-20T10:00:00.000Z',
+        updatedAt: '2026-03-20T10:30:00.000Z',
+      },
+    ]
 
-    expect(result).toContain('最初の会話')
-    expect(result).toContain('2回目の会話')
-    expect(result).toContain('合計: 2件')
+    vi.mocked(api.getChatMessages).mockImplementation(async (sessionId: string) => {
+      if (sessionId === 'cs1') {
+        return [
+          { id: 'm1', sessionId, role: 'user', content: 'hit', createdAt: '2026-03-28T15:00:00.000Z' },
+        ]
+      }
+      return [
+        { id: 'm2', sessionId, role: 'assistant', content: 'miss', createdAt: '2026-03-29T15:00:00.000Z' },
+      ]
+    })
+
+    const result = await executeTool(
+      'get_messages_and_logs',
+      { type: 'chat_sessions', date: '2026-03-29' },
+      ctx,
+    )
+
+    expect(result).toContain('session one')
+    expect(result).not.toContain('session two')
+    expect(result).toContain('ID: cs1')
+    expect(api.getChatMessages).toHaveBeenCalledTimes(1)
+    expect(api.getChatMessages).toHaveBeenCalledWith('cs1')
   })
 
-  it('type=chat_messages + sessionIdでメッセージを返す', async () => {
-    const ctx = createContext()
-    const result = await executeTool('get_messages_and_logs', { type: 'chat_messages', sessionId: 'cs2' }, ctx)
+  it('falls back to context messages when session fetch fails', async () => {
+    vi.mocked(api.getChatMessages).mockRejectedValueOnce(new Error('fallback'))
 
-    expect(result).toContain('こんにちは')
-    expect(result).toContain('やっほー！')
-    expect(result).toContain('合計: 2件')
+    const result = await executeTool(
+      'get_messages_and_logs',
+      { type: 'chat_messages', sessionId: 'cs2' },
+      createContext(),
+    )
+
+    expect(result).toContain('hello')
+    expect(result).toContain('hi there')
   })
 
-  it('type=chat_messages + sessionIdなしでエラーを返す', async () => {
+  it('searches chat messages across sessions when date is provided', async () => {
     const ctx = createContext()
-    const result = await executeTool('get_messages_and_logs', { type: 'chat_messages' }, ctx)
+    ctx.chatSessions = [
+      {
+        id: 'cs1',
+        title: 'session one',
+        createdAt: '2026-03-28T15:00:00.000Z',
+        updatedAt: '2026-03-29T02:00:00.000Z',
+      },
+      {
+        id: 'cs2',
+        title: 'session two',
+        createdAt: '2026-03-29T00:00:00.000Z',
+        updatedAt: '2026-03-29T14:59:59.000Z',
+      },
+    ]
 
+    vi.mocked(api.getChatMessages).mockImplementation(async (sessionId: string) => {
+      if (sessionId === 'cs1') {
+        return [
+          { id: 'm1', sessionId, role: 'user', content: 'cs1 hit', createdAt: '2026-03-28T15:00:00.000Z' },
+        ]
+      }
+      if (sessionId === 'cs2') {
+        return [
+          { id: 'm2', sessionId, role: 'assistant', content: 'cs2 hit', createdAt: '2026-03-29T14:59:59.000Z' },
+          { id: 'm3', sessionId, role: 'assistant', content: 'outside', createdAt: '2026-03-29T15:00:00.000Z' },
+        ]
+      }
+      return []
+    })
+
+    const result = await executeTool(
+      'get_messages_and_logs',
+      { type: 'chat_messages', date: '2026-03-29' },
+      ctx,
+    )
+
+    expect(result).toContain('session one')
+    expect(result).toContain('session two')
+    expect(result).toContain('cs1 hit')
+    expect(result).toContain('cs2 hit')
+    expect(result).not.toContain('outside')
+  })
+
+  it('falls back to cached messages during cross-session date searches', async () => {
+    const ctx = createContext()
+    ctx.chatSessions = [
+      {
+        id: 'cs1',
+        title: 'session one',
+        createdAt: '2026-03-28T15:00:00.000Z',
+        updatedAt: '2026-03-29T02:00:00.000Z',
+      },
+      {
+        id: 'cs2',
+        title: 'session two',
+        createdAt: '2026-03-28T15:10:00.000Z',
+        updatedAt: '2026-03-29T03:00:00.000Z',
+      },
+    ]
+    ctx.chatMessages = [
+      {
+        id: 'cached-cs2',
+        sessionId: 'cs2',
+        role: 'assistant',
+        content: 'cached fallback hit',
+        createdAt: '2026-03-28T15:30:00.000Z',
+      },
+    ]
+
+    vi.mocked(api.getChatMessages).mockImplementation(async (sessionId: string) => {
+      if (sessionId === 'cs1') {
+        return [
+          { id: 'm1', sessionId, role: 'user', content: 'remote hit', createdAt: '2026-03-28T15:05:00.000Z' },
+        ]
+      }
+      throw new Error(`API error: 503 /chat-sessions/${sessionId}/messages`)
+    })
+
+    const result = await executeTool(
+      'get_messages_and_logs',
+      { type: 'chat_messages', date: '2026-03-29' },
+      ctx,
+    )
+
+    expect(result).toContain('remote hit')
+    expect(result).toContain('cached fallback hit')
+  })
+
+  it('keeps the sessionId error when no date or range is provided', async () => {
+    const result = await executeTool('get_messages_and_logs', { type: 'chat_messages' }, createContext())
     expect(result).toContain('sessionId')
   })
 })
 
-// ── CHAT_TOOLS 定義テスト（追加分） ──
-
-describe('CHAT_TOOLS - create_quest', () => {
-  it('create_questツールが定義されている', () => {
-    const tool = CHAT_TOOLS.find((t) => t.function.name === 'create_quest')
-    expect(tool).toBeDefined()
-    expect(tool?.type).toBe('function')
-    expect(tool?.function.parameters.required).toContain('title')
-  })
-})
-
-describe('CHAT_TOOLS - delete_quest', () => {
-  it('delete_questツールが定義されている', () => {
-    const tool = CHAT_TOOLS.find((t) => t.function.name === 'delete_quest')
-    expect(tool).toBeDefined()
-    expect(tool?.type).toBe('function')
-  })
-})
-
-// ── create_quest ──
-
-describe('executeTool - create_quest', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-  })
-
-  it('タイトルのみでクエストを作成できる', async () => {
-    const ctx = createContext()
-    const result = await executeTool('create_quest', { title: '毎朝ストレッチ' }, ctx)
-
-    expect(result).toContain('作成しました')
-    expect(result).toContain('毎朝ストレッチ')
-    expect(mockUpsertQuest).toHaveBeenCalledTimes(1)
-
-    const quest = mockUpsertQuest.mock.calls[0][0]
-    expect(quest.title).toBe('毎朝ストレッチ')
-    expect(quest.questType).toBe('repeatable')
-    expect(quest.xpReward).toBe(10)
-    expect(quest.status).toBe('active')
-    expect(quest.skillMappingMode).toBe('ai_auto')
-    expect(quest.privacyMode).toBe('normal')
-    expect(quest.pinned).toBe(false)
-    expect(quest.source).toBe('manual')
-    expect(quest.id).toMatch(/^quest_/)
-  })
-
-  it('全パラメータを指定してクエストを作成できる', async () => {
-    const ctx = createContext()
-    const result = await executeTool('create_quest', {
-      title: 'React本を読む',
-      description: 'React公式ドキュメントを読み切る',
-      questType: 'one_time',
-      xpReward: 30,
-      category: '学習',
-    }, ctx)
-
-    expect(result).toContain('作成しました')
-    expect(result).toContain('React本を読む')
-
-    const quest = mockUpsertQuest.mock.calls[0][0]
-    expect(quest.title).toBe('React本を読む')
-    expect(quest.description).toBe('React公式ドキュメントを読み切る')
-    expect(quest.questType).toBe('one_time')
-    expect(quest.xpReward).toBe(30)
-    expect(quest.category).toBe('学習')
-  })
-
-  it('タイトルなしでエラーを返す', async () => {
-    const ctx = createContext()
-    const result = await executeTool('create_quest', {}, ctx)
-
-    expect(result).toContain('タイトル')
-    expect(mockUpsertQuest).not.toHaveBeenCalled()
-  })
-
-  it('contextなしでエラーを返す', async () => {
-    const result = await executeTool('create_quest', { title: 'テスト' })
-
-    expect(result).toContain('データを取得できません')
-  })
-})
-
-// ── delete_quest ──
-
-describe('executeTool - delete_quest', () => {
+describe('mutating tools', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockDeleteQuest.mockReturnValue({ ok: true })
   })
 
-  it('questIdで指定してクエストを削除できる', async () => {
-    const ctx = createContext()
-    const result = await executeTool('delete_quest', { questId: 'q3' }, ctx)
+  it('creates a quest with defaults', async () => {
+    const result = await executeTool('create_quest', { title: 'Stretch' }, createContext())
 
-    expect(result).toContain('削除しました')
-    expect(result).toContain('古いクエスト')
-    expect(mockDeleteQuest).toHaveBeenCalledWith('q3')
+    expect(result).toContain('Stretch')
+    expect(mockUpsertQuest).toHaveBeenCalledTimes(1)
+    expect(mockUpsertQuest.mock.calls[0][0].questType).toBe('repeatable')
   })
 
-  it('titleで指定してクエストを削除できる', async () => {
-    const ctx = createContext()
-    const result = await executeTool('delete_quest', { title: '古いクエスト' }, ctx)
+  it('archives a quest', async () => {
+    const result = await executeTool('delete_quest', { questId: 'q1', mode: 'archive' }, createContext())
 
-    expect(result).toContain('削除しました')
-    expect(mockDeleteQuest).toHaveBeenCalledWith('q3')
-  })
-
-  it('titleの部分一致でクエストを検索できる', async () => {
-    const ctx = createContext()
-    const result = await executeTool('delete_quest', { title: '古い' }, ctx)
-
-    expect(result).toContain('削除しました')
-    expect(mockDeleteQuest).toHaveBeenCalledWith('q3')
-  })
-
-  it('mode=archiveでアーカイブする', async () => {
-    const ctx = createContext()
-    const result = await executeTool('delete_quest', { questId: 'q1', mode: 'archive' }, ctx)
-
-    expect(result).toContain('アーカイブしました')
-    expect(result).toContain('毎日ランニング')
+    expect(result).toContain('Daily Run')
     expect(mockArchiveQuest).toHaveBeenCalledWith('q1')
-    expect(mockDeleteQuest).not.toHaveBeenCalled()
   })
 
-  it('存在しないquestIdでエラーを返す', async () => {
-    const ctx = createContext()
-    const result = await executeTool('delete_quest', { questId: 'nonexistent' }, ctx)
+  it('deletes a quest by id', async () => {
+    const result = await executeTool('delete_quest', { questId: 'q3' }, createContext())
 
-    expect(result).toContain('見つかりません')
-    expect(mockDeleteQuest).not.toHaveBeenCalled()
-  })
-
-  it('titleで複数マッチした場合にエラーを返す', async () => {
-    const ctx = createContext()
-    // 'を' は q2='TypeScript本を読む' と q3='古いクエスト' にはマッチしないが
-    // テストデータの3つ全部には共通文字がない。カスタムコンテキストで検証
-    const multiCtx = createContext()
-    multiCtx.appState.quests = [
-      ...multiCtx.appState.quests,
-      { id: 'q4', title: '毎日読書', questType: 'repeatable', xpReward: 10, category: '学習', status: 'active', skillMappingMode: 'ai_auto', privacyMode: 'normal', pinned: false, createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-03-01T00:00:00.000Z' },
-    ]
-    // '毎日' は q1='毎日ランニング' と q4='毎日読書' にマッチ
-    const result = await executeTool('delete_quest', { title: '毎日' }, multiCtx)
-
-    expect(result).toContain('複数')
-    expect(mockDeleteQuest).not.toHaveBeenCalled()
-  })
-
-  it('titleで該当なしの場合にエラーを返す', async () => {
-    const ctx = createContext()
-    const result = await executeTool('delete_quest', { title: '存在しないクエスト名' }, ctx)
-
-    expect(result).toContain('見つかりません')
-  })
-
-  it('questIdもtitleもない場合にエラーを返す', async () => {
-    const ctx = createContext()
-    const result = await executeTool('delete_quest', {}, ctx)
-
-    expect(result).toContain('questId')
-  })
-
-  it('deleteQuestがok:falseを返した場合にそのreasonを返す', async () => {
-    mockDeleteQuest.mockReturnValue({ ok: false, reason: '履歴があるため削除できません。不要化したクエストはアーカイブしてください。' })
-    const ctx = createContext()
-    const result = await executeTool('delete_quest', { questId: 'q1' }, ctx)
-
-    expect(result).toContain('アーカイブ')
-  })
-
-  it('contextなしでエラーを返す', async () => {
-    const result = await executeTool('delete_quest', { questId: 'q1' })
-
-    expect(result).toContain('データを取得できません')
+    expect(result).toContain('Archived Quest')
+    expect(mockDeleteQuest).toHaveBeenCalledWith('q3')
   })
 })

@@ -1,26 +1,47 @@
-import { getDayKey } from '@/lib/date'
-
-function toJst(isoUtc: string): string {
-  const d = new Date(isoUtc)
-  const jst = new Date(d.getTime() + 9 * 60 * 60 * 1000)
-  return jst.toISOString().slice(0, 16).replace('T', ' ')
-}
-import { subDays, startOfDay } from 'date-fns'
-import { getBrowsingTimes, getActivityLogs, getSituationLogs } from '@/lib/api-client'
-import type { ActivityLogEntry } from '@/lib/api-client'
-import { aggregateDomains, aggregateByCategory } from '@/lib/browsing-aggregator'
+import {
+  getActivityLogs,
+  getBrowsingTimes,
+  getChatMessages,
+  getSituationLogs,
+} from '@/lib/api-client'
+import type {
+  ActivityLogEntry,
+  SituationLogEntry,
+} from '@/lib/api-client'
+import { aggregateByCategory, aggregateDomains } from '@/lib/browsing-aggregator'
 import { formatSeconds } from '@/lib/time-format'
 import { maskApiKey } from '@/domain/logic'
 import { createId } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
 import type {
+  ChatMessage,
+  ChatSession,
   PersistedAppState,
   Quest,
-  ChatSession,
-  ChatMessage,
 } from '@/domain/types'
 
-// ── ToolContext ──
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000
+const DAY_MS = 24 * 60 * 60 * 1000
+const CHAT_MESSAGE_FETCH_CONCURRENCY = 4
+
+type Period = 'today' | 'week' | 'month'
+type ToolArgs = Record<string, unknown>
+type DateFilterResult = ResolvedDateFilter | { error: string }
+type OptionalDateFilterResult = ResolvedDateFilter | null | { error: string }
+
+type ResolvedDateFilter = {
+  from: string
+  to: string
+  fromIndex: number
+  toIndex: number
+  label: string
+  kind: 'date' | 'range' | 'period'
+}
+
+type LoadedSessionMessages = {
+  session: ChatSession
+  messages: ChatMessage[]
+}
 
 export type ToolContext = {
   appState: PersistedAppState
@@ -28,24 +49,328 @@ export type ToolContext = {
   chatMessages: ChatMessage[]
 }
 
-// ── ツール定義 ──
+const PERIOD_LABELS: Record<Period, string> = {
+  today: '今日',
+  week: '直近7日',
+  month: '直近30日',
+}
+
+const PERIOD_PROPERTY = {
+  type: 'string',
+  enum: ['today', 'week', 'month'],
+  description: 'today=今日、week=直近7日、month=直近30日。明示日付がないときだけ使う。',
+} as const
+
+const JST_DATE_PROPERTIES = {
+  date: {
+    type: 'string',
+    description: 'JSTの日付。YYYY-MM-DD 形式。',
+  },
+  fromDate: {
+    type: 'string',
+    description: 'JSTの開始日。YYYY-MM-DD 形式。',
+  },
+  toDate: {
+    type: 'string',
+    description: 'JSTの終了日。YYYY-MM-DD 形式。',
+  },
+} as const
+
+function toJst(isoValue: string): string {
+  const date = new Date(isoValue)
+  if (Number.isNaN(date.getTime())) {
+    return isoValue
+  }
+
+  const jst = new Date(date.getTime() + JST_OFFSET_MS)
+  return jst.toISOString().slice(0, 16).replace('T', ' ')
+}
+
+function isPeriod(value: unknown): value is Period {
+  return value === 'today' || value === 'week' || value === 'month'
+}
+
+function getTextArg(args: ToolArgs, key: string): string | undefined {
+  const value = args[key]
+  if (typeof value !== 'string') {
+    return undefined
+  }
+
+  const trimmed = value.trim()
+  return trimmed.length > 0 ? trimmed : undefined
+}
+
+function parseJstDate(dateKey: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey)
+  if (!match) {
+    return null
+  }
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const probe = new Date(Date.UTC(year, month - 1, day))
+
+  if (
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() !== month - 1 ||
+    probe.getUTCDate() !== day
+  ) {
+    return null
+  }
+
+  return { year, month, day }
+}
+
+function getJstDateKey(value: string | Date): string {
+  if (typeof value === 'string' && parseJstDate(value)) {
+    return value
+  }
+
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return typeof value === 'string' ? value : ''
+  }
+
+  const jst = new Date(date.getTime() + JST_OFFSET_MS)
+  return jst.toISOString().slice(0, 10)
+}
+
+function getJstDayIndex(dateKey: string): number | null {
+  const parsed = parseJstDate(dateKey)
+  if (!parsed) {
+    return null
+  }
+
+  return Math.floor(Date.UTC(parsed.year, parsed.month - 1, parsed.day) / DAY_MS)
+}
+
+function formatJstDayIndex(dayIndex: number): string {
+  return new Date(dayIndex * DAY_MS).toISOString().slice(0, 10)
+}
+
+function resolvePeriodFilter(period: Period): ResolvedDateFilter {
+  const todayKey = getJstDateKey(new Date())
+  const todayIndex = getJstDayIndex(todayKey)
+
+  if (todayIndex === null) {
+    throw new Error('Failed to resolve JST date')
+  }
+
+  const fromIndex =
+    period === 'month' ? todayIndex - 30 : period === 'week' ? todayIndex - 6 : todayIndex
+
+  return {
+    from: formatJstDayIndex(fromIndex),
+    to: todayKey,
+    fromIndex,
+    toIndex: todayIndex,
+    label: PERIOD_LABELS[period],
+    kind: 'period',
+  }
+}
+
+function resolveOptionalJstDateFilter(args: ToolArgs): OptionalDateFilterResult {
+  const date = getTextArg(args, 'date')
+  const fromDate = getTextArg(args, 'fromDate')
+  const toDate = getTextArg(args, 'toDate')
+
+  if (date) {
+    const dateIndex = getJstDayIndex(date)
+    if (dateIndex === null) {
+      return { error: 'date は YYYY-MM-DD 形式の JST 日付で指定してください。' }
+    }
+
+    return {
+      from: date,
+      to: date,
+      fromIndex: dateIndex,
+      toIndex: dateIndex,
+      label: `${date} (JST)`,
+      kind: 'date',
+    }
+  }
+
+  if (fromDate || toDate) {
+    if (!fromDate || !toDate) {
+      return { error: 'fromDate と toDate はセットで指定してください。' }
+    }
+
+    const fromIndex = getJstDayIndex(fromDate)
+    const toIndex = getJstDayIndex(toDate)
+    if (fromIndex === null || toIndex === null) {
+      return { error: 'fromDate / toDate は YYYY-MM-DD 形式の JST 日付で指定してください。' }
+    }
+
+    if (fromIndex > toIndex) {
+      return { error: 'fromDate は toDate 以下にしてください。' }
+    }
+
+    return {
+      from: fromDate,
+      to: toDate,
+      fromIndex,
+      toIndex,
+      label: `${fromDate}〜${toDate} (JST)`,
+      kind: 'range',
+    }
+  }
+
+  const period = args.period
+  if (period === undefined || period === null || period === '') {
+    return null
+  }
+
+  if (!isPeriod(period)) {
+    return { error: 'period は today / week / month のいずれかで指定してください。' }
+  }
+
+  return resolvePeriodFilter(period)
+}
+
+function resolveJstDateFilter(args: ToolArgs, defaultPeriod: Period): DateFilterResult {
+  const explicit = resolveOptionalJstDateFilter(args)
+  if (explicit && 'error' in explicit) {
+    return explicit
+  }
+  if (explicit) {
+    return explicit
+  }
+  return resolvePeriodFilter(defaultPeriod)
+}
+
+function isInJstDateRange(timestamp: string, filter: ResolvedDateFilter): boolean {
+  const dayIndex = getJstDayIndex(getJstDateKey(timestamp))
+  return dayIndex !== null && dayIndex >= filter.fromIndex && dayIndex <= filter.toIndex
+}
+
+function sessionMayContainMessagesInRange(session: ChatSession, filter: ResolvedDateFilter): boolean {
+  const createdIndex = getJstDayIndex(getJstDateKey(session.createdAt))
+  const updatedIndex = getJstDayIndex(getJstDateKey(session.updatedAt))
+
+  if (createdIndex === null || updatedIndex === null) {
+    return true
+  }
+
+  return createdIndex <= filter.toIndex && updatedIndex >= filter.fromIndex
+}
+
+function buildContextMessagesBySession(messages: ChatMessage[]): Map<string, ChatMessage[]> {
+  const grouped = new Map<string, ChatMessage[]>()
+  for (const message of messages) {
+    const existing = grouped.get(message.sessionId)
+    if (existing) {
+      existing.push(message)
+    } else {
+      grouped.set(message.sessionId, [message])
+    }
+  }
+  return grouped
+}
+
+function isRetryableMessageFetchError(error: unknown): boolean {
+  return error instanceof Error && /\b(502|503|504)\b/.test(error.message)
+}
+
+async function getChatMessagesWithRetry(sessionId: string): Promise<ChatMessage[]> {
+  let lastError: unknown
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      return await getChatMessages(sessionId)
+    } catch (error) {
+      lastError = error
+      if (!isRetryableMessageFetchError(error) || attempt === 1) {
+        break
+      }
+    }
+  }
+
+  throw lastError
+}
+
+function describeFilter(filter: ResolvedDateFilter | null, fallback = '全件'): string {
+  return filter?.label ?? fallback
+}
+
+function sliceWithOverflow(items: string[], totalCount: number): string[] {
+  if (totalCount > items.length) {
+    return [...items, `  ...他${totalCount - items.length}件`]
+  }
+  return items
+}
+
+async function loadMessagesForSessions(
+  sessions: ChatSession[],
+  fallbackMessages: ChatMessage[] = [],
+): Promise<{ loaded: LoadedSessionMessages[]; failedCount: number }> {
+  if (sessions.length === 0) {
+    return { loaded: [], failedCount: 0 }
+  }
+
+  const loaded: LoadedSessionMessages[] = []
+  let failedCount = 0
+  const fallbackBySession = buildContextMessagesBySession(fallbackMessages)
+
+  for (let index = 0; index < sessions.length; index += CHAT_MESSAGE_FETCH_CONCURRENCY) {
+    const chunk = sessions.slice(index, index + CHAT_MESSAGE_FETCH_CONCURRENCY)
+    const settled = await Promise.allSettled(
+      chunk.map(async (session) => ({
+        session,
+        messages: await getChatMessagesWithRetry(session.id),
+      })),
+    )
+
+    settled.forEach((result, chunkIndex) => {
+      const session = chunk[chunkIndex]
+      if (result.status === 'fulfilled') {
+        loaded.push(result.value)
+        return
+      }
+
+      const fallback = fallbackBySession.get(session.id)
+      if (fallback && fallback.length > 0) {
+        loaded.push({ session, messages: fallback })
+        return
+      }
+
+      failedCount += 1
+    })
+  }
+
+  return { loaded, failedCount }
+}
+
+function getCandidateSessionsForDateFilter(
+  sessions: ChatSession[],
+  dateFilter: ResolvedDateFilter,
+): ChatSession[] {
+  return sessions.filter((session) => sessionMayContainMessagesInRange(session, dateFilter))
+}
+
+async function loadMessagesForCandidateSessions(
+  sessions: ChatSession[],
+  dateFilter: ResolvedDateFilter,
+  context: ToolContext,
+): Promise<{ candidates: ChatSession[]; loaded: LoadedSessionMessages[]; failedCount: number }> {
+  const candidates = getCandidateSessionsForDateFilter(sessions, dateFilter)
+  const { loaded, failedCount } = await loadMessagesForSessions(candidates, context.chatMessages)
+  return { candidates, loaded, failedCount }
+}
 
 export const CHAT_TOOLS = [
   {
     type: 'function' as const,
     function: {
       name: 'get_browsing_times',
-      description: 'ユーザーのWeb閲覧時間データを取得する。カテゴリ別・サイト別の内訳を確認できる。',
+      description: 'ユーザーのWeb閲覧時間データを取得する。date / fromDate / toDate は JST の YYYY-MM-DD 形式。',
       parameters: {
         type: 'object',
         properties: {
-          period: {
-            type: 'string',
-            enum: ['today', 'week', 'month'],
-            description: '取得する期間。today=今日、week=直近7日、month=直近30日',
-          },
+          period: PERIOD_PROPERTY,
+          ...JST_DATE_PROPERTIES,
         },
-        required: ['period'],
+        required: [],
       },
     },
   },
@@ -71,7 +396,7 @@ export const CHAT_TOOLS = [
     type: 'function' as const,
     function: {
       name: 'get_quest_data',
-      description: 'クエスト一覧やクエスト完了記録を取得する。「今日何をやった？」「アクティブなクエストは？」などに対応。',
+      description: 'クエスト一覧や完了記録を取得する。completions では date / fromDate / toDate を JST の YYYY-MM-DD 形式で指定できる。',
       parameters: {
         type: 'object',
         properties: {
@@ -94,11 +419,8 @@ export const CHAT_TOOLS = [
             type: 'string',
             description: 'カテゴリフィルタ（type=questsの場合）',
           },
-          period: {
-            type: 'string',
-            enum: ['today', 'week', 'month'],
-            description: '期間フィルタ（type=completionsの場合。未指定=直近7日）',
-          },
+          period: PERIOD_PROPERTY,
+          ...JST_DATE_PROPERTIES,
           questId: {
             type: 'string',
             description: '特定クエストの完了記録のみ取得（type=completionsの場合）',
@@ -139,7 +461,7 @@ export const CHAT_TOOLS = [
     type: 'function' as const,
     function: {
       name: 'get_messages_and_logs',
-      description: 'アシスタントメッセージ、AI設定、アクティビティログ、チャット履歴を取得する。過去の発言やログを確認したいときに使う。',
+      description: 'アシスタントメッセージ、AI設定、アクティビティログ、チャット履歴を取得する。明示日付は date / fromDate / toDate に JST の YYYY-MM-DD で指定する。',
       parameters: {
         type: 'object',
         properties: {
@@ -154,13 +476,13 @@ export const CHAT_TOOLS = [
             description: 'メッセージのトリガー種別フィルタ（type=assistant_messagesの場合）',
           },
           period: {
-            type: 'string',
-            enum: ['today', 'week', 'month'],
-            description: '期間フィルタ（type=assistant_messages/activity_logsの場合。未指定=直近7日）',
+            ...PERIOD_PROPERTY,
+            description: '期間フィルタ。明示日付がないときだけ使う。',
           },
+          ...JST_DATE_PROPERTIES,
           sessionId: {
             type: 'string',
-            description: 'チャットセッションID（type=chat_messagesの場合、必須）',
+            description: 'チャットセッションID（type=chat_messages で単一セッションを指定したい場合）',
           },
         },
         required: ['type'],
@@ -252,73 +574,37 @@ export const CHAT_TOOLS = [
 
 // ── 共通ユーティリティ ──
 
-function getDateRange(period: string): { from: string; to: string } {
-  const now = new Date()
-  const to = getDayKey(now)
-
-  if (period === 'week') {
-    return { from: getDayKey(subDays(now, 6)), to }
+async function executeGetBrowsingTimes(args: ToolArgs): Promise<string> {
+  const filter = resolveJstDateFilter(args, 'today')
+  if ('error' in filter) {
+    return filter.error
   }
-
-  if (period === 'month') {
-    return { from: getDayKey(subDays(now, 30)), to }
-  }
-
-  // today
-  return { from: to, to }
-}
-
-const PERIOD_LABELS: Record<string, string> = {
-  today: '今日',
-  week: '直近7日間',
-  month: '直近30日間',
-}
-
-/** ISO文字列同士の比較に使う開始日時を返す（ローカル日の00:00:00をISO形式で） */
-function getPeriodStartIso(period: string): string {
-  const now = new Date()
-  if (period === 'month') return startOfDay(subDays(now, 30)).toISOString()
-  if (period === 'week') return startOfDay(subDays(now, 6)).toISOString()
-  // today
-  return startOfDay(now).toISOString()
-}
-
-// ── get_browsing_times（既存） ──
-
-async function executeGetBrowsingTimes(args: Record<string, unknown>): Promise<string> {
-  const period = (args.period as string) ?? 'today'
-  const { from, to } = getDateRange(period)
 
   let entries
   try {
-    entries = await getBrowsingTimes(from, to)
+    entries = await getBrowsingTimes(filter.from, filter.to)
   } catch {
     return '閲覧時間データの取得に失敗しました。'
   }
 
   if (entries.length === 0) {
-    return `${PERIOD_LABELS[period] ?? period}の閲覧データがありません。`
+    return `${filter.label} の閲覧時間データがありません。`
   }
 
-  const totalSeconds = entries.reduce((sum, e) => sum + e.totalSeconds, 0)
+  const totalSeconds = entries.reduce((sum, entry) => sum + entry.totalSeconds, 0)
   const categories = aggregateByCategory(entries)
   const domains = aggregateDomains(entries, 10)
 
-  const lines: string[] = []
-  lines.push(`【${PERIOD_LABELS[period] ?? period}のブラウジング時間】`)
-  lines.push(`合計: ${formatSeconds(totalSeconds)}`)
-  lines.push('')
-
+  const lines = [`【${filter.label} のブラウジング時間】`, `合計: ${formatSeconds(totalSeconds)}`, '']
   lines.push('■ カテゴリ別')
-  for (const cat of categories) {
-    const growth = cat.isGrowth ? '（成長系）' : ''
-    lines.push(`- ${cat.category}: ${formatSeconds(cat.totalSeconds)}${growth}`)
+  for (const category of categories) {
+    const growth = category.isGrowth ? '（成長系）' : ''
+    lines.push(`- ${category.category}: ${formatSeconds(category.totalSeconds)}${growth}`)
   }
   lines.push('')
-
   lines.push('■ サイト別')
-  for (const d of domains) {
-    lines.push(`- ${d.domain}: ${formatSeconds(d.totalSeconds)}（${d.category}）`)
+  for (const domain of domains) {
+    lines.push(`- ${domain.domain}: ${formatSeconds(domain.totalSeconds)}（${domain.category}）`)
   }
 
   return lines.join('\n')
@@ -371,7 +657,7 @@ function executeGetUserInfo(args: Record<string, unknown>, context: ToolContext)
 
 // ── get_quest_data ──
 
-function executeGetQuestData(args: Record<string, unknown>, context: ToolContext): string {
+function executeGetQuestData(args: ToolArgs, context: ToolContext): string {
   const type = args.type as string
 
   if (type === 'quests') {
@@ -402,14 +688,18 @@ function executeGetQuestData(args: Record<string, unknown>, context: ToolContext
   }
 
   if (type === 'completions') {
+    const dateFilter = resolveOptionalJstDateFilter(args)
+    if (dateFilter && 'error' in dateFilter) {
+      return dateFilter.error
+    }
+
     const { completions, quests } = context.appState
     let filtered = completions.filter((c) => !c.undoneAt)
 
     if (args.questId) filtered = filtered.filter((c) => c.questId === args.questId)
 
-    if (args.period) {
-      const fromIso = getPeriodStartIso(args.period as string)
-      filtered = filtered.filter((c) => c.completedAt >= fromIso)
+    if (dateFilter) {
+      filtered = filtered.filter((c) => isInJstDateRange(c.completedAt, dateFilter))
     }
 
     // Sort newest first
@@ -418,14 +708,13 @@ function executeGetQuestData(args: Record<string, unknown>, context: ToolContext
     if (filtered.length === 0) return '該当する完了記録がありません。'
 
     const lines: string[] = []
-    const periodLabel = args.period ? (PERIOD_LABELS[args.period as string] ?? '') : '全件'
-    lines.push(`【クエスト完了記録（${periodLabel}）】`)
+    lines.push(`【クエスト完了記録（${describeFilter(dateFilter)}）】`)
     lines.push(`合計: ${filtered.length}件`)
     lines.push('')
 
     for (const c of filtered.slice(0, 20)) {
       const questTitle = quests.find((q) => q.id === c.questId)?.title ?? '不明なクエスト'
-      lines.push(`- ${questTitle} +${c.userXpAwarded} XP（${c.completedAt.slice(0, 10)}）`)
+      lines.push(`- ${questTitle} +${c.userXpAwarded} XP（${getJstDateKey(c.completedAt)}）`)
     }
     if (filtered.length > 20) lines.push(`  ...他${filtered.length - 20}件`)
 
@@ -489,36 +778,38 @@ function executeGetSkillData(args: Record<string, unknown>, context: ToolContext
 
 // ── get_messages_and_logs ──
 
-async function executeGetMessagesAndLogs(args: Record<string, unknown>, context: ToolContext): Promise<string> {
+async function executeGetMessagesAndLogs(args: ToolArgs, context: ToolContext): Promise<string> {
   const type = args.type as string
 
   if (type === 'assistant_messages') {
-    let messages = [...context.appState.assistantMessages]
-
-    if (args.triggerType) messages = messages.filter((m) => m.triggerType === args.triggerType)
-
-    if (args.period) {
-      const fromIso = getPeriodStartIso(args.period as string)
-      messages = messages.filter((m) => m.createdAt >= fromIso)
+    const dateFilter = resolveOptionalJstDateFilter(args)
+    if (dateFilter && 'error' in dateFilter) {
+      return dateFilter.error
     }
 
-    // Sort newest first
-    messages.sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    let messages = [...context.appState.assistantMessages]
+    const triggerType = getTextArg(args, 'triggerType')
+    if (triggerType) {
+      messages = messages.filter((message) => message.triggerType === triggerType)
+    }
+    if (dateFilter) {
+      messages = messages.filter((message) => isInJstDateRange(message.createdAt, dateFilter))
+    }
+
+    messages.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
 
     if (messages.length === 0) return '該当するメッセージがありません。'
 
-    const lines: string[] = []
-    const periodLabel = args.period ? PERIOD_LABELS[args.period as string] ?? '' : '全件'
-    lines.push(`【アシスタントメッセージ（${periodLabel}）】`)
-    lines.push(`合計: ${messages.length}件`)
-    lines.push('')
+    const lines = [
+      `【アシスタントメッセージ（${describeFilter(dateFilter)}）】`,
+      `合計: ${messages.length}件`,
+      '',
+    ]
+    const items = messages
+      .slice(0, 20)
+      .map((message) => `- [${message.triggerType}] ${message.text}（${getJstDateKey(message.createdAt)}）`)
 
-    for (const m of messages.slice(0, 20)) {
-      lines.push(`- [${m.triggerType}] ${m.text}（${m.createdAt.slice(0, 10)}）`)
-    }
-    if (messages.length > 20) lines.push(`  ...他${messages.length - 20}件`)
-
-    return lines.join('\n')
+    return [...lines, ...sliceWithOverflow(items, messages.length)].join('\n')
   }
 
   if (type === 'ai_config') {
@@ -541,99 +832,192 @@ async function executeGetMessagesAndLogs(args: Record<string, unknown>, context:
   }
 
   if (type === 'activity_logs') {
-    const period = (args.period as string) ?? 'week'
-    const { from, to } = getDateRange(period)
+    const filter = resolveJstDateFilter(args, 'week')
+    if ('error' in filter) {
+      return filter.error
+    }
 
     let logs: ActivityLogEntry[]
     try {
-      logs = await getActivityLogs(from, to)
+      logs = await getActivityLogs(filter.from, filter.to)
     } catch {
       return 'アクティビティログの取得に失敗しました。'
     }
 
-    if (logs.length === 0) return `${PERIOD_LABELS[period] ?? period}のアクティビティログがありません。`
+    if (logs.length === 0) return `${filter.label} のアクティビティログがありません。`
 
-    const lines: string[] = []
-    lines.push(`【アクティビティログ（${PERIOD_LABELS[period] ?? period}）】`)
-    lines.push(`合計: ${logs.length}件`)
-    lines.push('')
+    const lines = [`【アクティビティログ（${filter.label}）】`, `合計: ${logs.length}件`, '']
+    const items = logs
+      .slice(0, 20)
+      .map((log) => `- [${log.category}] ${log.action}（${toJst(log.timestamp)}）`)
 
-    for (const log of logs.slice(0, 20)) {
-      lines.push(`- [${log.category}] ${log.action}（${log.timestamp.slice(0, 16)}）`)
-    }
-    if (logs.length > 20) lines.push(`  ...他${logs.length - 20}件`)
-
-    return lines.join('\n')
+    return [...lines, ...sliceWithOverflow(items, logs.length)].join('\n')
   }
 
   if (type === 'situation_logs') {
-    const period = (args.period as string) ?? 'week'
-    const { from, to } = getDateRange(period)
+    const filter = resolveJstDateFilter(args, 'week')
+    if ('error' in filter) {
+      return filter.error
+    }
 
-    let logs: { summary: string; timestamp: string; details?: { active_apps?: string[] } }[]
+    let logs: SituationLogEntry[]
     try {
-      logs = await getSituationLogs(from, to)
+      logs = await getSituationLogs(filter.from, filter.to)
     } catch {
       return '状況ログの取得に失敗しました。'
     }
 
-    if (logs.length === 0) return `${PERIOD_LABELS[period] ?? period}の状況ログがありません。`
+    if (logs.length === 0) return `${filter.label} の状況ログがありません。`
 
-    const lines: string[] = []
-    lines.push(`【状況ログ（${PERIOD_LABELS[period] ?? period}）】`)
-    lines.push(`合計: ${logs.length}件`)
-    lines.push('')
+    const lines = [`【状況ログ（${filter.label}）】`, `合計: ${logs.length}件`, '']
+    const items = logs.slice(0, 20).map((log) => {
+      const apps = log.details.active_apps?.join(', ')
+      const suffix = apps ? `（アプリ: ${apps}）` : ''
+      return `- [${toJst(log.timestamp)}] ${log.summary}${suffix}`
+    })
 
-    for (const log of logs.slice(0, 20)) {
-      const ts = log.timestamp.slice(0, 16)
-      const apps = log.details?.active_apps?.join(', ') ?? ''
-      let line = `- [${ts}] ${log.summary}`
-      if (apps) line += `（アプリ: ${apps}）`
-      lines.push(line)
-    }
-    if (logs.length > 20) lines.push(`  ...他${logs.length - 20}件`)
-
-    return lines.join('\n')
+    return [...lines, ...sliceWithOverflow(items, logs.length)].join('\n')
   }
 
   if (type === 'chat_sessions') {
-    const sessions = context.chatSessions
-
-    if (sessions.length === 0) return 'チャットセッションがありません。'
-
-    const lines: string[] = []
-    lines.push('【チャットセッション一覧】')
-    lines.push(`合計: ${sessions.length}件`)
-    lines.push('')
-
-    for (const s of sessions.slice(0, 20)) {
-      lines.push(`- ${s.title}（${toJst(s.createdAt)}）ID: ${s.id}`)
+    const dateFilter = resolveOptionalJstDateFilter(args)
+    if (dateFilter && 'error' in dateFilter) {
+      return dateFilter.error
     }
-    if (sessions.length > 20) lines.push(`  ...他${sessions.length - 20}件`)
 
-    return lines.join('\n')
+    if (context.chatSessions.length === 0) return 'チャットセッションがありません。'
+
+    if (!dateFilter) {
+      const sessions = [...context.chatSessions].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+      const lines = ['【チャットセッション一覧】', `合計: ${sessions.length}件`, '']
+      const items = sessions
+        .slice(0, 20)
+        .map((session) => `- ${session.title}（${toJst(session.createdAt)}）ID: ${session.id}`)
+
+      return [...lines, ...sliceWithOverflow(items, sessions.length)].join('\n')
+    }
+
+    const { candidates, loaded, failedCount } = await loadMessagesForCandidateSessions(
+      context.chatSessions,
+      dateFilter,
+      context,
+    )
+
+    if (loaded.length === 0 && failedCount > 0) {
+      return 'チャットセッションの取得に失敗しました。'
+    }
+
+    if (candidates.length === 0) {
+      return `${dateFilter.label} に該当するチャットセッションがありません。`
+    }
+
+    const matched = loaded
+      .map(({ session, messages }) => {
+        const filteredMessages = messages.filter((message) => isInJstDateRange(message.createdAt, dateFilter))
+        const latestAt = filteredMessages
+          .map((message) => message.createdAt)
+          .sort((left, right) => right.localeCompare(left))[0]
+
+        return {
+          session,
+          count: filteredMessages.length,
+          latestAt,
+        }
+      })
+      .filter((entry) => entry.count > 0)
+      .sort((left, right) => (right.latestAt ?? '').localeCompare(left.latestAt ?? ''))
+
+    if (matched.length === 0) {
+      return `${dateFilter.label} に該当するチャットセッションがありません。`
+    }
+
+    const lines = [`【チャットセッション一覧（${dateFilter.label}）】`, `合計: ${matched.length}件`, '']
+    const items = matched
+      .slice(0, 20)
+      .map(
+        (entry) =>
+          `- ${entry.session.title}（${toJst(entry.session.createdAt)}）ID: ${entry.session.id} / 該当: ${entry.count}件`,
+      )
+
+    return [...lines, ...sliceWithOverflow(items, matched.length)].join('\n')
   }
 
   if (type === 'chat_messages') {
-    const sessionId = args.sessionId as string | undefined
-    if (!sessionId) return 'sessionIdを指定してください。'
-
-    const messages = context.chatMessages.filter((m) => m.sessionId === sessionId)
-
-    if (messages.length === 0) return '該当するメッセージがありません。'
-
-    const lines: string[] = []
-    lines.push(`【チャットメッセージ（セッション: ${sessionId}）】`)
-    lines.push(`合計: ${messages.length}件`)
-    lines.push('')
-
-    for (const m of messages.slice(0, 30)) {
-      const label = m.role === 'user' ? 'ユーザー' : 'リリィ'
-      lines.push(`- [${label}] ${m.content.slice(0, 100)}（${toJst(m.createdAt)}）`)
+    const dateFilter = resolveOptionalJstDateFilter(args)
+    if (dateFilter && 'error' in dateFilter) {
+      return dateFilter.error
     }
-    if (messages.length > 30) lines.push(`  ...他${messages.length - 30}件`)
 
-    return lines.join('\n')
+    const sessionId = getTextArg(args, 'sessionId')
+
+    if (sessionId) {
+      let messages: ChatMessage[] = []
+      try {
+        messages = await getChatMessagesWithRetry(sessionId)
+      } catch {
+        messages = context.chatMessages.filter((message) => message.sessionId === sessionId)
+      }
+
+      if (dateFilter) {
+        messages = messages.filter((message) => isInJstDateRange(message.createdAt, dateFilter))
+      }
+
+      messages.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+      if (messages.length === 0) return '該当するメッセージがありません。'
+
+      const sessionTitle = context.chatSessions.find((session) => session.id === sessionId)?.title ?? sessionId
+      const lines = [
+        `【チャットメッセージ（セッション: ${sessionTitle} / ${describeFilter(dateFilter)}）】`,
+        `合計: ${messages.length}件`,
+        '',
+      ]
+      const items = messages.slice(0, 30).map((message) => {
+        const label = message.role === 'user' ? 'ユーザー' : 'リリー'
+        return `- [${label}] ${message.content.slice(0, 100)}（${toJst(message.createdAt)}）`
+      })
+
+      return [...lines, ...sliceWithOverflow(items, messages.length)].join('\n')
+    }
+
+    if (!dateFilter) {
+      return 'sessionId を指定するか、date / fromDate / toDate を指定してください。'
+    }
+
+    const { candidates, loaded, failedCount } = await loadMessagesForCandidateSessions(
+      context.chatSessions,
+      dateFilter,
+      context,
+    )
+
+    if (loaded.length === 0 && failedCount > 0) {
+      return 'チャットメッセージの取得に失敗しました。'
+    }
+
+    if (candidates.length === 0) {
+      return `${dateFilter.label} に該当するチャットメッセージがありません。`
+    }
+
+    const messages = loaded
+      .flatMap(({ session, messages }) =>
+        messages.map((message) => ({
+          message,
+          session,
+        })),
+      )
+      .filter(({ message }) => isInJstDateRange(message.createdAt, dateFilter))
+      .sort((left, right) => right.message.createdAt.localeCompare(left.message.createdAt))
+
+    if (messages.length === 0) {
+      return `${dateFilter.label} に該当するチャットメッセージがありません。`
+    }
+
+    const lines = [`【チャットメッセージ（${dateFilter.label}）】`, `合計: ${messages.length}件`, '']
+    const items = messages.slice(0, 30).map(({ message, session }) => {
+      const label = message.role === 'user' ? 'ユーザー' : 'リリー'
+      return `- [${session.title} / ${label}] ${message.content.slice(0, 100)}（${toJst(message.createdAt)}）`
+    })
+
+    return [...lines, ...sliceWithOverflow(items, messages.length)].join('\n')
   }
 
   return `不明なtype: ${type}`
