@@ -6,7 +6,7 @@ if not errorlevel 1 (
     echo VOICEVOX は既に起動しています
 ) else (
     echo VOICEVOX を起動中...
-    start "" "C:\Users\aku_s\AppData\Local\Programs\VOICEVOX\VOICEVOX.exe"
+    start "" "C:\Users\aku_s\AppData\Local\Programs\VOICEVOX\vv-engine\run.exe"
     echo VOICEVOX の起動を待機中...
     :wait_loop
     timeout /t 2 /nobreak >nul
