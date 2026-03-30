@@ -249,14 +249,6 @@ class App:
         try:
             frame_png = capture_camera_frame(self._camera_device_index)
             if frame_png is not None:
-                # デバッグ: カメラ画像を保存
-                debug_dir = Path(__file__).parent / "logs" / "camera_debug"
-                debug_dir.mkdir(parents=True, exist_ok=True)
-                ts = datetime.now(JST).strftime("%Y%m%d_%H%M%S")
-                debug_path = debug_dir / f"camera_{ts}.png"
-                debug_path.write_bytes(frame_png)
-                logger.info("デバッグ: カメラ画像保存 %s (%d bytes)", debug_path, len(frame_png))
-
                 analysis = await analyze_camera_frame(
                     api_key=self.config.openai.api_key,
                     model=self.config.camera.analysis_model,
