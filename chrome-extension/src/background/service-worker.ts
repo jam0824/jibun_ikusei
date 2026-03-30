@@ -4,6 +4,7 @@ import { setupAlarms, handleAlarm } from './alarm-handlers'
 import { getTabClassification, setupMessageListener } from './message-handler'
 import { recordElapsed } from './record-elapsed'
 import { logError } from '@ext/lib/activity-logger'
+import { timeAccumulator } from './shared-instances'
 
 self.addEventListener('error', (event) => {
   logError(event.error ?? event.message, 'service-worker:error').catch(() => {})
@@ -107,7 +108,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   ;(async () => {
     const result = tabTracker.flush()
     await handleElapsed(result)
-    const { timeAccumulator } = await import('./shared-instances')
     await timeAccumulator.getDailyProgress()
     sendResponse({ ok: true })
   })().catch(() => sendResponse({ ok: false }))

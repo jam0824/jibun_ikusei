@@ -1,16 +1,16 @@
-import { ClassificationCache } from '@ext/lib/classification-cache'
 import { classifyPage } from '@ext/lib/ai-classifier'
 import { buildCacheKey } from '@ext/lib/cache-key'
-import { getLocal } from '@ext/lib/storage'
+import { ClassificationCache } from '@ext/lib/classification-cache'
 import { sendClassificationToastToTab } from '@ext/lib/notifications'
-import { createDefaultSettings } from '@ext/types/settings'
-import type { ExtensionSettings } from '@ext/types/settings'
-import type { ClassificationResult, ClassificationCacheEntry, PageInfo } from '@ext/types/browsing'
+import { getLocal } from '@ext/lib/storage'
+import type { ClassificationCacheEntry, ClassificationResult, PageInfo } from '@ext/types/browsing'
+import { createDefaultSettings, type ExtensionSettings } from '@ext/types/settings'
+import { clearSyncState, resetExtensionData } from './reset-state'
+import { timeAccumulator } from './shared-instances'
 
 const classificationCache = new ClassificationCache()
 
-// In-memory map of tab ID → classification result
-// Rebuilt naturally when content scripts send PAGE_INFO after service worker restart
+// Rebuilt naturally when content scripts send PAGE_INFO after service worker restart.
 const tabClassifications = new Map<number, ClassificationResult>()
 
 export function getTabClassification(tabId: number): ClassificationResult | undefined {
@@ -25,7 +25,6 @@ export async function handlePageInfo(tabId: number, pageInfo: PageInfo): Promise
   const settings = (await getLocal<ExtensionSettings>('extensionSettings')) ?? createDefaultSettings()
   const notificationsEnabled = settings.notificationsEnabled ?? true
 
-  // 1. Check classification cache
   const cacheKey = buildCacheKey(pageInfo)
   const cached = await classificationCache.get(cacheKey)
   if (cached) {
@@ -36,16 +35,10 @@ export async function handlePageInfo(tabId: number, pageInfo: PageInfo): Promise
     return
   }
 
-  // 2. Run AI classification (falls back to 'その他' if no API key)
   const result = await classifyPage(pageInfo, settings)
-
-  // 3. Cache the result
   await classificationCache.set(cacheKey, result, 'ai')
-
-  // 4. Store in memory for this tab
   tabClassifications.set(tabId, result)
 
-  // 5. Show classification toast (skip fallback results with confidence 0)
   if (notificationsEnabled && result.confidence > 0) {
     await sendClassificationToastToTab(tabId, result.category, result.isGrowth).catch(() => {})
   }
@@ -54,26 +47,49 @@ export async function handlePageInfo(tabId: number, pageInfo: PageInfo): Promise
 export function setupMessageListener(): void {
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'PAGE_INFO' && sender.tab?.id != null) {
-      handlePageInfo(sender.tab.id, message.payload as PageInfo).catch(() => {
-        // Classification failure is non-fatal — tab will use default (その他)
-      })
-    } else if (message.type === 'OPEN_POPUP') {
+      handlePageInfo(sender.tab.id, message.payload as PageInfo).catch(() => {})
+      return
+    }
+
+    if (message.type === 'OPEN_POPUP') {
       const popupUrl = chrome.runtime.getURL('popup.html')
       chrome.tabs.create({ url: popupUrl }).catch(() => {})
-    } else if (message.type === 'ENSURE_TODAY_PROGRESS') {
-      // Popup requests today's progress — create if not yet initialized
-      import('./shared-instances').then(({ timeAccumulator }) =>
-        timeAccumulator.getDailyProgress().then(() => sendResponse({ ok: true })),
-      ).catch(() => sendResponse({ ok: false }))
-      return true // keep message channel open for async sendResponse
+      return
+    }
+
+    if (message.type === 'ENSURE_TODAY_PROGRESS') {
+      timeAccumulator.getDailyProgress()
+        .then(() => sendResponse({ ok: true }))
+        .catch(() => sendResponse({ ok: false }))
+      return true
+    }
+
+    if (message.type === 'CLEAR_SYNC_STATE') {
+      clearSyncState()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error: unknown) => sendResponse({ ok: false, error: String(error) }))
+      return true
+    }
+
+    if (message.type === 'RESET_EXTENSION_DATA') {
+      resetExtensionData()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error: unknown) => sendResponse({ ok: false, error: String(error) }))
+      return true
     }
   })
 
-  // Sync in-memory tabClassifications when classificationCache is manually corrected
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local' || !changes.classificationCache) return
-    const newStore = changes.classificationCache.newValue as Record<string, ClassificationCacheEntry> | undefined
-    if (!newStore) return
+
+    const newStore = changes.classificationCache.newValue as
+      | Record<string, ClassificationCacheEntry>
+      | undefined
+
+    if (!newStore) {
+      tabClassifications.clear()
+      return
+    }
 
     for (const [tabId, classification] of tabClassifications) {
       const updated = newStore[classification.cacheKey]
@@ -83,4 +99,3 @@ export function setupMessageListener(): void {
     }
   })
 }
-

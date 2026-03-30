@@ -1,9 +1,26 @@
-import { getLocal, setLocal } from '@ext/lib/storage'
-import type { DailyProgress, DomainTimeEntry } from '@ext/types/browsing'
+import {
+  BROWSING_SYNC_BACKLOG_KEY,
+  createEmptyBrowsingSyncBacklog,
+  progressToSyncEntry,
+} from '@ext/lib/browsing-sync'
+import { transactLocal } from '@ext/lib/storage'
+import {
+  OTHER_BROWSING_CATEGORY,
+  type BrowsingCategory,
+  type BrowsingTimeSyncBacklog,
+  type DailyProgress,
+  type DomainTimeEntry,
+} from '@ext/types/browsing'
 
 const STORAGE_KEY = 'dailyProgress'
 const HISTORY_KEY = 'dailyProgressHistory'
 const MAX_HISTORY_DAYS = 7
+
+interface ProgressTransactionStore {
+  [STORAGE_KEY]: DailyProgress | null
+  [HISTORY_KEY]: DailyProgress[]
+  [BROWSING_SYNC_BACKLOG_KEY]: BrowsingTimeSyncBacklog
+}
 
 function getTodayString(): string {
   const now = new Date()
@@ -30,25 +47,52 @@ function createEmptyProgress(date: string): DailyProgress {
   }
 }
 
+function createTransactionDefaults(): ProgressTransactionStore {
+  return {
+    [STORAGE_KEY]: null,
+    [HISTORY_KEY]: [],
+    [BROWSING_SYNC_BACKLOG_KEY]: createEmptyBrowsingSyncBacklog(),
+  }
+}
+
+function archiveProgressHistory(history: DailyProgress[], progress: DailyProgress): DailyProgress[] {
+  const nextHistory = history.filter((entry) => entry.date !== progress.date)
+  nextHistory.push(progress)
+  return nextHistory.slice(-MAX_HISTORY_DAYS)
+}
+
+function archiveProgressBacklog(
+  backlog: BrowsingTimeSyncBacklog,
+  progress: DailyProgress,
+): BrowsingTimeSyncBacklog {
+  return {
+    ...backlog,
+    [progress.date]: progressToSyncEntry(progress),
+  }
+}
+
+function ensureCurrentProgress(store: ProgressTransactionStore): DailyProgress {
+  const today = getTodayString()
+  const stored = store[STORAGE_KEY]
+
+  if (stored && stored.date === today) {
+    return stored
+  }
+
+  if (stored) {
+    store[HISTORY_KEY] = archiveProgressHistory(store[HISTORY_KEY], stored)
+    store[BROWSING_SYNC_BACKLOG_KEY] = archiveProgressBacklog(store[BROWSING_SYNC_BACKLOG_KEY], stored)
+  }
+
+  const fresh = createEmptyProgress(today)
+  store[STORAGE_KEY] = fresh
+  return fresh
+}
+
 export class TimeAccumulator {
   /** Get today's progress, resetting if the date has changed */
   async getDailyProgress(): Promise<DailyProgress> {
-    const today = getTodayString()
-    const stored = await getLocal<DailyProgress>(STORAGE_KEY)
-
-    if (stored && stored.date === today) {
-      return stored
-    }
-
-    // Date changed — archive previous day's data before resetting
-    if (stored) {
-      await this.archiveProgress(stored)
-    }
-
-    // Create fresh progress
-    const fresh = createEmptyProgress(today)
-    await setLocal(STORAGE_KEY, fresh)
-    return fresh
+    return transactLocal(createTransactionDefaults(), (store) => ensureCurrentProgress(store))
   }
 
   /** Add browsing time for a domain */
@@ -58,62 +102,51 @@ export class TimeAccumulator {
     seconds: number,
     isGrowth: boolean,
     isBlocklisted: boolean,
-    category = 'その他',
+    category: BrowsingCategory = OTHER_BROWSING_CATEGORY,
   ): Promise<DailyProgress> {
-    const progress = await this.getDailyProgress()
+    return transactLocal(createTransactionDefaults(), (store) => {
+      const progress = ensureCurrentProgress(store)
+      const existing = progress.domainTimes[cacheKey]
 
-    // Update or create domain time entry
-    const existing = progress.domainTimes[cacheKey]
-    if (existing) {
-      // If category changed (e.g. blocklist updated), move existing seconds
-      if (existing.isGrowth !== isGrowth || existing.isBlocklisted !== isBlocklisted) {
-        adjustAggregate(progress, existing.isGrowth, existing.isBlocklisted, -existing.totalSeconds)
-        existing.isGrowth = isGrowth
-        existing.isBlocklisted = isBlocklisted
-        adjustAggregate(progress, isGrowth, isBlocklisted, existing.totalSeconds)
+      if (existing) {
+        if (existing.isGrowth !== isGrowth || existing.isBlocklisted !== isBlocklisted) {
+          adjustAggregate(progress, existing.isGrowth, existing.isBlocklisted, -existing.totalSeconds)
+          existing.isGrowth = isGrowth
+          existing.isBlocklisted = isBlocklisted
+          adjustAggregate(progress, isGrowth, isBlocklisted, existing.totalSeconds)
+        }
+
+        if (category !== OTHER_BROWSING_CATEGORY) {
+          existing.category = category
+        }
+
+        existing.totalSeconds += seconds
+        existing.lastUpdated = new Date().toISOString()
+      } else {
+        const entry: DomainTimeEntry = {
+          domain,
+          cacheKey,
+          category,
+          isGrowth,
+          isBlocklisted,
+          totalSeconds: seconds,
+          lastUpdated: new Date().toISOString(),
+        }
+        progress.domainTimes[cacheKey] = entry
       }
-      if (category !== 'その他') {
-        existing.category = category
-      }
-      existing.totalSeconds += seconds
-      existing.lastUpdated = new Date().toISOString()
-    } else {
-      const entry: DomainTimeEntry = {
-        domain,
-        cacheKey,
-        category,
-        isGrowth,
-        isBlocklisted,
-        totalSeconds: seconds,
-        lastUpdated: new Date().toISOString(),
-      }
-      progress.domainTimes[cacheKey] = entry
-    }
 
-    // Add new seconds to aggregate
-    adjustAggregate(progress, isGrowth, isBlocklisted, seconds)
-
-    await setLocal(STORAGE_KEY, progress)
-    return progress
-  }
-
-  /** Archive a day's progress into history (max 7 days) */
-  private async archiveProgress(progress: DailyProgress): Promise<void> {
-    const history = (await getLocal<DailyProgress[]>(HISTORY_KEY)) ?? []
-    history.push(progress)
-    // Keep only the most recent MAX_HISTORY_DAYS entries
-    while (history.length > MAX_HISTORY_DAYS) {
-      history.shift()
-    }
-    await setLocal(HISTORY_KEY, history)
+      adjustAggregate(progress, isGrowth, isBlocklisted, seconds)
+      return progress
+    })
   }
 
   /** Update progress fields via a mutation callback */
   async updateProgress(mutator: (progress: DailyProgress) => void): Promise<DailyProgress> {
-    const progress = await this.getDailyProgress()
-    mutator(progress)
-    await setLocal(STORAGE_KEY, progress)
-    return progress
+    return transactLocal(createTransactionDefaults(), (store) => {
+      const progress = ensureCurrentProgress(store)
+      mutator(progress)
+      return progress
+    })
   }
 }
 

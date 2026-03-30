@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite build --watch",
-    "build": "vite build && node -e \"const fs=require('fs');fs.cpSync('manifest.json','dist/manifest.json');fs.cpSync('public/icons','dist/icons',{recursive:true,force:true})\"",
-    "build:quick": "vite build && node -e \"const fs=require('fs');fs.cpSync('manifest.json','dist/manifest.json');fs.cpSync('public/icons','dist/icons',{recursive:true,force:true})\"",
+    "build": "vite build && node -e \"const fs=require('fs');const path=require('path');fs.copyFileSync('manifest.json','dist/manifest.json');fs.mkdirSync('dist/icons',{recursive:true});for(const name of fs.readdirSync('public/icons')){fs.copyFileSync(path.join('public/icons',name),path.join('dist/icons',name));}\"",
+    "build:quick": "vite build && node -e \"const fs=require('fs');const path=require('path');fs.copyFileSync('manifest.json','dist/manifest.json');fs.mkdirSync('dist/icons',{recursive:true});for(const name of fs.readdirSync('public/icons')){fs.copyFileSync(path.join('public/icons',name),path.join('dist/icons',name));}\"",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

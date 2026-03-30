@@ -195,4 +195,38 @@ describe('TimeAccumulator', () => {
     expect(progress.goodQuestsCleared).toBe(3)
     expect(progress.xpGained).toBe(6)
   })
+
+  it('serializes concurrent addTime calls without losing seconds', async () => {
+    await Promise.all([
+      accumulator.addTime('example.com', 'example.com:/', 30, true, false),
+      accumulator.addTime('example.com', 'example.com:/', 45, true, false),
+      accumulator.addTime('example.com', 'example.com:/', 15, true, false),
+    ])
+
+    const progress = await accumulator.getDailyProgress()
+    expect(progress.goodBrowsingSeconds).toBe(90)
+    expect(progress.domainTimes['example.com:/'].totalSeconds).toBe(90)
+  })
+
+  it('archives previous day into browsingTimeSyncBacklog when date changes', async () => {
+    await accumulator.addTime('example.com', 'example.com:/', 120, true, false)
+
+    vi.setSystemTime(new Date(2026, 2, 22, 1, 0, 0))
+    await accumulator.getDailyProgress()
+
+    const stored = await chrome.storage.local.get('browsingTimeSyncBacklog')
+    expect(stored.browsingTimeSyncBacklog).toEqual({
+      '2026-03-21': {
+        date: '2026-03-21',
+        domains: {
+          'example.com': {
+            totalSeconds: 120,
+            category: 'その他',
+            isGrowth: true,
+          },
+        },
+        totalSeconds: 120,
+      },
+    })
+  })
 })

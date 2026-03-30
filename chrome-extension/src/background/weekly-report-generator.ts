@@ -1,6 +1,6 @@
-import type { BrowsingCategory, DailyProgress, WeeklyReport } from '@ext/types/browsing'
+import { BROWSING_CATEGORIES, type BrowsingCategory, type DailyProgress, type WeeklyReport } from '@ext/types/browsing'
 
-const ALL_CATEGORIES: BrowsingCategory[] = ['学習', '仕事', '健康', '生活', '創作', '対人', '娯楽', 'その他']
+const ALL_CATEGORIES: BrowsingCategory[] = [...BROWSING_CATEGORIES]
 
 export function generateWeeklyReport(history: DailyProgress[], weekKey: string): WeeklyReport {
   let totalSeconds = 0
@@ -9,9 +9,9 @@ export function generateWeeklyReport(history: DailyProgress[], weekKey: string):
   let goodQuestsCleared = 0
   let badQuestsTriggered = 0
 
-  const categorySeconds: Record<string, number> = {}
-  for (const cat of ALL_CATEGORIES) {
-    categorySeconds[cat] = 0
+  const categorySeconds: Record<BrowsingCategory, number> = {} as Record<BrowsingCategory, number>
+  for (const category of ALL_CATEGORIES) {
+    categorySeconds[category] = 0
   }
 
   const domainGrowthSeconds: Record<string, number> = {}
@@ -32,16 +32,14 @@ export function generateWeeklyReport(history: DailyProgress[], weekKey: string):
   }
 
   const categoryBreakdown = {} as Record<BrowsingCategory, number>
-  for (const cat of ALL_CATEGORIES) {
-    categoryBreakdown[cat as BrowsingCategory] = Math.floor((categorySeconds[cat] ?? 0) / 60)
+  for (const category of ALL_CATEGORIES) {
+    categoryBreakdown[category] = Math.floor((categorySeconds[category] ?? 0) / 60)
   }
 
   const topGrowthDomains = Object.entries(domainGrowthSeconds)
     .map(([domain, seconds]) => ({ domain, minutes: Math.floor(seconds / 60) }))
-    .sort((a, b) => b.minutes - a.minutes)
+    .sort((left, right) => right.minutes - left.minutes)
     .slice(0, 5)
-
-  const lilyComment = generateLilyComment(goodSeconds, badSeconds)
 
   return {
     weekKey,
@@ -52,7 +50,7 @@ export function generateWeeklyReport(history: DailyProgress[], weekKey: string):
     topGrowthDomains,
     goodQuestsCleared,
     badQuestsTriggered,
-    lilyComment,
+    lilyComment: generateLilyComment(goodSeconds, badSeconds),
     generatedAt: new Date().toISOString(),
   }
 }
@@ -69,9 +67,9 @@ function generateLilyComment(goodSeconds: number, badSeconds: number): string {
 
   if (ratio >= 0.8) {
     return '今週は成長系の閲覧が安定していました。この調子で続けましょう。'
-  } else if (ratio >= 0.5) {
-    return '成長と娯楽のバランスが取れた週でした。もう少し学習時間を増やせるとさらに良いです。'
-  } else {
-    return '娯楽寄りの閲覧が多い週でした。来週は成長に繋がる閲覧を意識してみましょう。'
   }
+  if (ratio >= 0.5) {
+    return '成長と娯楽のバランスが取れた週でした。もう少し学習時間を増やせるとさらに良いです。'
+  }
+  return '娯楽寄りの閲覧が多い週でした。来週は成長につながる閲覧を意識してみましょう。'
 }

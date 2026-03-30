@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { login, logout, getStoredToken } from '@ext/lib/auth'
+import { getStoredToken, login, logout } from '@ext/lib/auth'
 
 type ConnectionStatus =
   | { type: 'ok' }
@@ -11,24 +11,38 @@ interface Props {
   serverBaseUrl: string
   authToken?: string
   syncEnabled: boolean
-  onSave: (serverBaseUrl: string, authToken: string) => void
+  onSave: (serverBaseUrl: string, authToken: string) => void | Promise<void>
 }
 
 function connectionStatusMessage(status: ConnectionStatus): string {
   switch (status.type) {
-    case 'ok': return '接続OK: サーバーと正常に通信できています'
-    case 'unauthorized': return 'サーバーには接続できていますが、ログインが必要です'
-    case 'error': return `サーバーに接続できません (${status.message})`
-    case 'no_url': return 'サーバーURLを入力してください'
+    case 'ok':
+      return '接続 OK: サーバーと正常に通信できています。'
+    case 'unauthorized':
+      return 'サーバーには到達できましたが、ログイン情報が有効ではありません。'
+    case 'error':
+      return `サーバーに接続できません (${status.message})`
+    case 'no_url':
+      return 'サーバー URL を入力してください'
   }
 }
 
 function connectionStatusStyle(status: ConnectionStatus): React.CSSProperties {
   switch (status.type) {
-    case 'ok': return { color: '#2e7d32' }
-    case 'unauthorized': return { color: '#e65100' }
+    case 'ok':
+      return { color: '#2e7d32' }
+    case 'unauthorized':
+      return { color: '#e65100' }
     case 'error':
-    case 'no_url': return { color: '#c62828' }
+    case 'no_url':
+      return { color: '#c62828' }
+  }
+}
+
+async function clearSyncState(): Promise<void> {
+  const response = await chrome.runtime.sendMessage({ type: 'CLEAR_SYNC_STATE' })
+  if (!response?.ok) {
+    throw new Error(response?.error ?? 'Failed to clear sync state.')
   }
 }
 
@@ -44,18 +58,29 @@ export function AuthSettings({ serverBaseUrl, syncEnabled, onSave }: Props) {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus | null>(null)
 
   useEffect(() => {
-    checkLoginState()
+    void checkLoginState()
   }, [])
+
+  useEffect(() => {
+    setUrl(serverBaseUrl)
+  }, [serverBaseUrl])
 
   const checkLoginState = async () => {
     const token = await getStoredToken()
-    if (token) {
-      setLoggedIn(true)
-      const result = await chrome.storage.local.get('authState')
-      if (result.authState?.email) {
-        setLoggedInEmail(result.authState.email)
-      }
+    if (!token) return
+
+    setLoggedIn(true)
+    const result = await chrome.storage.local.get('authState')
+    if (result.authState?.email) {
+      setLoggedInEmail(result.authState.email)
     }
+  }
+
+  const saveUrlIfChanged = async (nextUrl: string, authToken: string) => {
+    if (nextUrl !== serverBaseUrl.trim()) {
+      await clearSyncState()
+    }
+    await onSave(nextUrl, authToken)
   }
 
   const handleLogin = async () => {
@@ -63,30 +88,34 @@ export function AuthSettings({ serverBaseUrl, syncEnabled, onSave }: Props) {
       setError('メールアドレスとパスワードを入力してください')
       return
     }
+
     setLoggingIn(true)
     setError(null)
+
     try {
       const result = await login(email, password)
-      if (result.ok) {
-        setLoggedIn(true)
-        setLoggedInEmail(email)
-        setPassword('')
-        // Save server URL and update auth token
-        const token = await getStoredToken()
-        if (token) {
-          onSave(url.trim(), token)
-        }
-      } else {
+      if (!result.ok) {
         switch (result.error) {
           case 'INVALID_CREDENTIALS':
             setError('メールアドレスまたはパスワードが正しくありません')
             break
           case 'NEW_PASSWORD_REQUIRED':
-            setError('パスワードの変更が必要です。Webアプリからログインしてパスワードを変更してください')
+            setError('パスワードの再設定が必要です。Web アプリからログインして変更してください')
             break
           default:
             setError('ログインに失敗しました')
+            break
         }
+        return
+      }
+
+      setLoggedIn(true)
+      setLoggedInEmail(email)
+      setPassword('')
+
+      const token = await getStoredToken()
+      if (token) {
+        await saveUrlIfChanged(url.trim(), token)
       }
     } catch {
       setError('ログインに失敗しました')
@@ -96,15 +125,27 @@ export function AuthSettings({ serverBaseUrl, syncEnabled, onSave }: Props) {
   }
 
   const handleLogout = async () => {
-    await logout()
-    setLoggedIn(false)
-    setLoggedInEmail('')
-    setEmail('')
-    setError(null)
+    try {
+      await logout()
+      await clearSyncState()
+      await onSave(url.trim(), '')
+      setLoggedIn(false)
+      setLoggedInEmail('')
+      setEmail('')
+      setPassword('')
+      setError(null)
+    } catch {
+      setError('ログアウト処理に失敗しました')
+    }
   }
 
-  const handleSaveUrl = () => {
-    onSave(url.trim(), '')
+  const handleSaveUrl = async () => {
+    try {
+      setError(null)
+      await saveUrlIfChanged(url.trim(), '')
+    } catch {
+      setError('サーバー設定の保存に失敗しました')
+    }
   }
 
   const handleCheckConnection = async () => {
@@ -112,19 +153,24 @@ export function AuthSettings({ serverBaseUrl, syncEnabled, onSave }: Props) {
       setConnectionStatus({ type: 'no_url' })
       return
     }
+
     setChecking(true)
     setConnectionStatus(null)
+
     try {
       const token = await getStoredToken()
       const headers: Record<string, string> = { 'Content-Type': 'application/json' }
-      if (token) headers['Authorization'] = `Bearer ${token}`
-      const res = await fetch(`${url.trim()}/user`, { headers })
-      if (res.ok) {
+      if (token) {
+        headers.Authorization = `Bearer ${token}`
+      }
+
+      const response = await fetch(`${url.trim()}/user`, { headers })
+      if (response.ok) {
         setConnectionStatus({ type: 'ok' })
-      } else if (res.status === 401) {
+      } else if (response.status === 401) {
         setConnectionStatus({ type: 'unauthorized' })
       } else {
-        setConnectionStatus({ type: 'error', message: `HTTP ${res.status}` })
+        setConnectionStatus({ type: 'error', message: `HTTP ${response.status}` })
       }
     } catch {
       setConnectionStatus({ type: 'error', message: 'ネットワークエラー' })
@@ -135,36 +181,42 @@ export function AuthSettings({ serverBaseUrl, syncEnabled, onSave }: Props) {
 
   return (
     <div>
-      <h3>サーバー接続設定</h3>
+      <h3>サーバー設定</h3>
 
       <div style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{
-          display: 'inline-block',
-          width: 10,
-          height: 10,
-          borderRadius: '50%',
-          background: syncEnabled ? '#4caf50' : '#9e9e9e',
-        }} />
+        <span
+          style={{
+            display: 'inline-block',
+            width: 10,
+            height: 10,
+            borderRadius: '50%',
+            background: syncEnabled ? '#4caf50' : '#9e9e9e',
+          }}
+        />
         <span style={{ fontSize: 13, color: syncEnabled ? '#2e7d32' : '#757575' }}>
           同期: {syncEnabled ? 'ON' : 'OFF'}
         </span>
       </div>
 
       <div style={{ marginBottom: 12 }}>
-        <label>サーバーURL:</label>
+        <label>サーバー URL:</label>
         <input
           type="text"
           value={url}
-          onChange={(e) => setUrl(e.target.value)}
+          onChange={(event) => setUrl(event.target.value)}
           style={{ width: '100%', padding: 6, marginTop: 4 }}
           placeholder="https://api.example.com"
         />
         <div style={{ marginTop: 4, display: 'flex', gap: 8 }}>
-          <button onClick={handleSaveUrl} style={{ padding: '4px 12px' }}>
-            URL保存
+          <button onClick={() => void handleSaveUrl()} style={{ padding: '4px 12px' }}>
+            URL 保存
           </button>
-          <button onClick={handleCheckConnection} disabled={checking} style={{ padding: '4px 12px' }}>
-            {checking ? '確認中...' : '疎通確認'}
+          <button
+            onClick={() => void handleCheckConnection()}
+            disabled={checking}
+            style={{ padding: '4px 12px' }}
+          >
+            {checking ? '接続確認中...' : '接続確認'}
           </button>
         </div>
         {connectionStatus && (
@@ -178,10 +230,8 @@ export function AuthSettings({ serverBaseUrl, syncEnabled, onSave }: Props) {
 
       {loggedIn ? (
         <div>
-          <p style={{ color: 'green', marginBottom: 8 }}>
-            ログイン中: {loggedInEmail}
-          </p>
-          <button onClick={handleLogout} style={{ padding: '6px 16px' }}>
+          <p style={{ color: 'green', marginBottom: 8 }}>ログイン中: {loggedInEmail}</p>
+          <button onClick={() => void handleLogout()} style={{ padding: '6px 16px' }}>
             ログアウト
           </button>
         </div>
@@ -192,7 +242,7 @@ export function AuthSettings({ serverBaseUrl, syncEnabled, onSave }: Props) {
             <input
               type="email"
               value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              onChange={(event) => setEmail(event.target.value)}
               style={{ width: '100%', padding: 6, marginTop: 4 }}
               placeholder="user@example.com"
             />
@@ -203,13 +253,13 @@ export function AuthSettings({ serverBaseUrl, syncEnabled, onSave }: Props) {
             <input
               type="password"
               value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              onChange={(event) => setPassword(event.target.value)}
               style={{ width: '100%', padding: 6, marginTop: 4 }}
-              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+              onKeyDown={(event) => event.key === 'Enter' && void handleLogin()}
             />
           </div>
 
-          <button onClick={handleLogin} disabled={loggingIn} style={{ padding: '6px 16px' }}>
+          <button onClick={() => void handleLogin()} disabled={loggingIn} style={{ padding: '6px 16px' }}>
             {loggingIn ? 'ログイン中...' : 'ログイン'}
           </button>
         </div>
