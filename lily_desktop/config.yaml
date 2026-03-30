@@ -29,6 +29,7 @@ voice:
     - リリー
   wake_word_aliases:         # リリィに変換する誤認識パターン
     - DD
+    - D D
     - ギリー
     - 3 D
   ignore_words:              # このワードが含まれていたら返答生成に送らない

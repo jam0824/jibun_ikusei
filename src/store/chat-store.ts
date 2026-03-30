@@ -15,12 +15,18 @@ import * as api from '@/lib/api-client'
 const SESSIONS_KEY = 'app.chatSessions'
 const messagesKey = (sessionId: string) => `app.chatMessages.${sessionId}`
 
+function sortSessionsByUpdatedAt(sessions: ChatSession[]): ChatSession[] {
+  return [...sessions].sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+}
+
 function loadSessions(): ChatSession[] {
-  return safeJsonParse<ChatSession[]>(localStorage.getItem(SESSIONS_KEY), [])
+  return sortSessionsByUpdatedAt(
+    safeJsonParse<ChatSession[]>(localStorage.getItem(SESSIONS_KEY), []),
+  )
 }
 
 function saveSessions(sessions: ChatSession[]) {
-  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sessions))
+  localStorage.setItem(SESSIONS_KEY, JSON.stringify(sortSessionsByUpdatedAt(sessions)))
 }
 
 function sortByCreatedAt(messages: ChatMessage[]): ChatMessage[] {
@@ -37,6 +43,22 @@ function saveMessages(sessionId: string, messages: ChatMessage[]) {
 
 function removeMessages(sessionId: string) {
   localStorage.removeItem(messagesKey(sessionId))
+}
+
+function getLatestSession(sessions: ChatSession[]): ChatSession | null {
+  return sessions[0] ?? null
+}
+
+function updateSessionList(
+  sessions: ChatSession[],
+  sessionId: string,
+  updates: Partial<ChatSession>,
+): ChatSession[] {
+  return sortSessionsByUpdatedAt(
+    sessions.map((session) =>
+      session.id === sessionId ? { ...session, ...updates } : session,
+    ),
+  )
 }
 
 interface ChatStore {
@@ -64,14 +86,68 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   error: null,
 
   initialize: async () => {
-    const sessions = loadSessions()
-    set({ sessions })
+    const localSessions = loadSessions()
+    const localLatestSession = getLatestSession(localSessions)
+    const localLatestSessionId = localLatestSession?.id ?? null
+
+    set({
+      sessions: localSessions,
+      currentSessionId: localLatestSessionId,
+      currentMessages: localLatestSession ? loadMessages(localLatestSession.id) : [],
+      isLoading: false,
+      error: null,
+    })
 
     // Sync from cloud in background
     try {
-      const cloudSessions = await api.getChatSessions()
+      const cloudSessions = sortSessionsByUpdatedAt(await api.getChatSessions())
+      const cloudLatestSession = getLatestSession(cloudSessions)
+      const cloudLatestSessionId = cloudLatestSession?.id ?? null
       saveSessions(cloudSessions)
-      set({ sessions: cloudSessions })
+
+      if (!cloudLatestSession) {
+        set({
+          sessions: cloudSessions,
+          currentSessionId: null,
+          currentMessages: [],
+          isLoading: false,
+        })
+        return
+      }
+
+      const currentSessionId = get().currentSessionId
+      const shouldSwitchToLatest =
+        currentSessionId === null ||
+        currentSessionId === localLatestSessionId ||
+        cloudLatestSessionId !== localLatestSessionId
+
+      if (!shouldSwitchToLatest) {
+        set({ sessions: cloudSessions })
+        return
+      }
+
+      set((state) => ({
+        sessions: cloudSessions,
+        currentSessionId: cloudLatestSession.id,
+        currentMessages:
+          state.currentSessionId === cloudLatestSession.id
+            ? state.currentMessages
+            : loadMessages(cloudLatestSession.id),
+        isLoading: true,
+        error: null,
+      }))
+
+      try {
+        const cloudMessages = sortByCreatedAt(await api.getChatMessages(cloudLatestSession.id))
+        saveMessages(cloudLatestSession.id, cloudMessages)
+        set((state) =>
+          state.currentSessionId === cloudLatestSession.id
+            ? { currentMessages: cloudMessages, isLoading: false }
+            : { isLoading: false },
+        )
+      } catch {
+        set({ isLoading: false })
+      }
     } catch {
       // Use local data on failure
     }
@@ -87,7 +163,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       updatedAt: now,
     }
 
-    const next = [session, ...get().sessions]
+    const next = sortSessionsByUpdatedAt([session, ...get().sessions])
     saveSessions(next)
     saveMessages(id, [])
     set({ sessions: next, currentSessionId: id, currentMessages: [] })
@@ -97,17 +173,23 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   selectSession: async (sessionId: string) => {
-    set({ isLoading: true, currentSessionId: sessionId, error: null })
-
-    // Load from local first
     const localMessages = loadMessages(sessionId)
-    set({ currentMessages: localMessages })
+    set({
+      isLoading: true,
+      currentSessionId: sessionId,
+      currentMessages: localMessages,
+      error: null,
+    })
 
     // Then sync from cloud
     try {
       const cloudMessages = sortByCreatedAt(await api.getChatMessages(sessionId))
       saveMessages(sessionId, cloudMessages)
-      set({ currentMessages: cloudMessages, isLoading: false })
+      set((state) =>
+        state.currentSessionId === sessionId
+          ? { currentMessages: cloudMessages, isLoading: false }
+          : { isLoading: false },
+      )
     } catch {
       set({ isLoading: false })
     }
@@ -129,7 +211,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
   },
 
   sendMessage: async (content: string) => {
-    const { currentSessionId, currentMessages, sessions } = get()
+    const { currentSessionId, currentMessages } = get()
     if (!currentSessionId) return
 
     const appState = useAppStore.getState()
@@ -251,27 +333,15 @@ export const useChatStore = create<ChatStore>((set, get) => ({
 
       api.postChatMessage(currentSessionId, assistantMessage).catch(() => undefined)
 
-      // Update session title if first message
       const isFirstMessage = updatedMessages.filter((m) => m.role === 'user').length === 1
-      if (isFirstMessage) {
-        const title = content.slice(0, 30)
-        const now = nowIso()
-        const updatedSessions = sessions.map((s) =>
-          s.id === currentSessionId ? { ...s, title, updatedAt: now } : s,
-        )
-        saveSessions(updatedSessions)
-        set({ sessions: updatedSessions })
-        api.putChatSession(currentSessionId, { title, updatedAt: now }).catch(() => undefined)
-      } else {
-        // Update session updatedAt
-        const now = nowIso()
-        const updatedSessions = sessions.map((s) =>
-          s.id === currentSessionId ? { ...s, updatedAt: now } : s,
-        )
-        saveSessions(updatedSessions)
-        set({ sessions: updatedSessions })
-        api.putChatSession(currentSessionId, { updatedAt: now }).catch(() => undefined)
-      }
+      const sessionUpdatedAt = nowIso()
+      const sessionUpdates = isFirstMessage
+        ? { title: content.slice(0, 30), updatedAt: sessionUpdatedAt }
+        : { updatedAt: sessionUpdatedAt }
+      const updatedSessions = updateSessionList(get().sessions, currentSessionId, sessionUpdates)
+      saveSessions(updatedSessions)
+      set({ sessions: updatedSessions })
+      api.putChatSession(currentSessionId, sessionUpdates).catch(() => undefined)
     } catch (err) {
       logActivity('chat.error', 'error', { context: 'lily.chat.send', message: err instanceof Error ? err.message : String(err) })
       const message = err instanceof Error ? err.message : 'リリィからの応答に失敗しました。'
