@@ -1,4 +1,4 @@
-"""ユーザー発言の吹き出し — 入力ボックスの上に表示し、5秒後に消える"""
+"""ユーザー発言の吹き出し — 入力ボックスの上に一定時間表示する"""
 
 from __future__ import annotations
 
@@ -6,7 +6,11 @@ from PySide6.QtCore import QRect, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath
 from PySide6.QtWidgets import QWidget
 
-_DISPLAY_MS = 5000
+from core.config import (
+    DEFAULT_USER_BALLOON_DISPLAY_SECONDS,
+    normalize_user_balloon_display_seconds,
+)
+
 _PADDING_X = 16
 _PADDING_Y = 10
 _MAX_WIDTH = 360
@@ -16,12 +20,18 @@ _BORDER_RADIUS = 12
 class UserBalloonWidget(QWidget):
     """ユーザーの発言を吹き出しで表示するウィジェット"""
 
-    def __init__(self, parent=None):
+    def __init__(
+        self,
+        parent=None,
+        *,
+        display_seconds: float = DEFAULT_USER_BALLOON_DISPLAY_SECONDS,
+    ):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setStyleSheet("background: transparent;")
 
         self._text = ""
+        self._display_seconds = normalize_user_balloon_display_seconds(display_seconds)
         self._font = QFont("Yu Gothic UI", 11)
         self._font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
 
@@ -32,13 +42,13 @@ class UserBalloonWidget(QWidget):
         self.hide()
 
     def show_message(self, text: str) -> None:
-        """テキストを表示して5秒後に自動で隠す。"""
+        """テキストを表示して設定秒数後に自動で隠す。"""
         self._hide_timer.stop()
         self._text = text
         self._update_size()
         self.show()
         self.update()
-        self._hide_timer.start(_DISPLAY_MS)
+        self._hide_timer.start(round(self._display_seconds * 1000))
 
     def _update_size(self) -> None:
         fm = QFontMetrics(self._font)
