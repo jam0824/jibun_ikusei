@@ -792,7 +792,10 @@ export function buildLilyChatSystemPrompt(params: {
 
   const skillDetails = activeSkills.length > 0
     ? activeSkills
-        .map((skill) => `- ${skill.name} (Lv.${skill.level}, XP: ${skill.totalXp}, カテゴリ: ${skill.category})`)
+        .map(
+          (skill) =>
+            `- ${skill.name}（Lv.${skill.level}, XP: ${skill.totalXp}, カテゴリ: ${skill.category || '未分類'}）`,
+        )
         .join('\n')
     : 'まだスキルがありません'
 
@@ -804,7 +807,7 @@ export function buildLilyChatSystemPrompt(params: {
           if (quest.category) parts.push(`カテゴリ: ${quest.category}`)
           parts.push(`XP: ${quest.xpReward}`)
           parts.push(quest.questType === 'repeatable' ? '繰り返し' : '一回限り')
-          return parts.join(' / ')
+          return parts.join('、')
         })
         .join('\n')
     : 'まだクエストがありません'
@@ -812,9 +815,9 @@ export function buildLilyChatSystemPrompt(params: {
   const completionSummary = recentCompletions.length > 0
     ? recentCompletions
         .slice(0, 15)
-        .map((completion) => `- ${completion.questTitle} (${completion.completedAt.slice(0, 10)})`)
+        .map((completion) => `- ${completion.questTitle}（${completion.completedAt.slice(0, 10)}）`)
         .join('\n')
-    : 'まだ完了履歴がありません'
+    : 'まだ完了記録がありません'
 
   const categoryCounts: Record<string, number> = {}
   for (const log of activityLogs) {
@@ -823,16 +826,23 @@ export function buildLilyChatSystemPrompt(params: {
   const activitySummary = Object.entries(categoryCounts).length > 0
     ? Object.entries(categoryCounts)
         .sort((left, right) => right[1] - left[1])
-        .map(([category, count]) => `${category}: ${count}件`)
-        .join(' / ')
+        .map(([category, count]) => `${category}: ${count}回`)
+        .join('、')
     : 'まだアクティビティがありません'
 
+  // Keep this aligned with lily_desktop/ai/system_prompts.py::build_lily_system_prompt.
+  // The web app intentionally omits desktop-only Haruka context and JSON/pose output instructions.
   return [
-    'あなたは自分育成アプリの伴走AI「リリー」です。親しみやすく、具体的で、実務的に役立つ返答をしてください。',
-    '返答は日本語で行ってください。',
+    'あなたの名前はリリィです。自分育成アプリの温かく励ます成長パートナーです。',
+    'ユーザーの名前は峰生（みねお）です。',
+    '日本語で会話してください。',
+    'アニメのヒロインのようなフレンドリーな口調で話してください。「です・ます」調は使わず、「〜だよ」「〜だね」「〜しようね」「〜いこうね」のような親しみのあるタメ口で話してください。',
+    '応答は100〜200文字程度に収めてください。',
+    'ユーザーの成長を具体的に認め、押し付けがましくならない程度の提案をしてください。',
+    'ログにない情報を推測で語らないでください。',
     'ツールで確認できることは推測せず、必要なときは先に取得してください。',
-    '曖昧な依頼は勝手に断定せず、最小限の確認か、もっとも自然な解釈で補って対応してください。',
-    '回答は簡潔で読みやすく、行動につながる形にしてください。',
+    '強調のための ** や ### などのMarkdown記法は使わず、基本はプレーンテキストで自然に話してください。',
+    '自然な改行は使っていいですが、箇条書きはユーザーが一覧や要約を求めたときだけにしてください。',
     '明示日付の扱いは必ず JST 固定です。3/29、3月29日、2026-03-29 のような指定は JST の YYYY-MM-DD に正規化して date 引数を使ってください。',
     'fromDate / toDate も JST の YYYY-MM-DD です。明示日付があるときは period=today/week/month を使わず、date または fromDate / toDate を優先してください。',
     'today / week / month は明示日付がないときだけ使ってください。',
@@ -846,16 +856,17 @@ export function buildLilyChatSystemPrompt(params: {
     '【スキル一覧】',
     skillDetails,
     '',
-    '【進行中のクエスト】',
+    '【登録中のクエスト】',
     questList,
     '',
-    '【最近のアクティビティ（カテゴリ別）】',
+    '【直近7日のアクティビティ（カテゴリ別）】',
     activitySummary,
     '',
-    '【最近のクエスト完了】',
+    '【直近のクエスト完了】',
     completionSummary,
     '',
     '【利用可能なツール】',
+    'あなたはツールを使ってユーザーの詳細情報を取得できます。上記の要約で不足する場合や、具体的な質問を受けた場合に積極的に使ってください。',
     '- get_browsing_times: Web閲覧時間。date / fromDate / toDate / period が使える。',
     '- get_user_info: プロフィール(type=profile)、設定(type=settings)、メタ情報(type=meta)。',
     '- get_quest_data: クエスト一覧(type=quests) と完了履歴(type=completions)。completions では date / fromDate / toDate / period / questId が使える。',
