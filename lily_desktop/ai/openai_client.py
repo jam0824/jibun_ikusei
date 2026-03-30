@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,9 +10,8 @@ import httpx
 
 from core.constants import MAX_HISTORY_MESSAGES
 
-logger = logging.getLogger(__name__)
-
 _RETRYABLE = {408, 429, 500, 502, 503, 504}
+_CHAT_COMPLETION_TOKEN_LIMITS = [900, 1600]
 
 
 @dataclass
@@ -40,6 +37,33 @@ class ToolCallsResult:
 ChatCompletionResult = TextResult | ToolCallsResult
 
 
+def _normalize_openai_chat_content(content: Any) -> str | None:
+    if isinstance(content, str):
+        return content
+
+    if not isinstance(content, list):
+        return None
+
+    text = "\n".join(
+        part_text
+        for part in content
+        for part_text in [_extract_chat_content_part_text(part)]
+        if part_text
+    )
+    return text or None
+
+
+def _extract_chat_content_part_text(part: Any) -> str:
+    if isinstance(part, str):
+        return part
+
+    if not isinstance(part, dict):
+        return ""
+
+    text_value = part.get("text")
+    return text_value if isinstance(text_value, str) else ""
+
+
 async def send_chat_message(
     *,
     api_key: str,
@@ -49,77 +73,84 @@ async def send_chat_message(
 ) -> ChatCompletionResult:
     """Chat Completions API を呼び出す。3回までリトライ。"""
 
-    # システムプロンプト + 直近N件に制限
-    system_msgs = [m for m in messages if m.get("role") == "system"]
-    conv_msgs = [m for m in messages if m.get("role") != "system"]
-    trimmed = conv_msgs[-MAX_HISTORY_MESSAGES:]
+    system_msgs = [message for message in messages if message.get("role") == "system"]
+    conversation_msgs = [message for message in messages if message.get("role") != "system"]
+    trimmed = conversation_msgs[-MAX_HISTORY_MESSAGES:]
     final_messages = system_msgs + trimmed
-
-    body: dict[str, Any] = {
-        "model": model,
-        "messages": final_messages,
-        "max_completion_tokens": 500,
-    }
-    if tools:
-        body["tools"] = tools
 
     last_error: Exception | None = None
 
     async with httpx.AsyncClient(timeout=60.0) as client:
-        for attempt in range(1, 4):
-            try:
-                resp = await client.post(
-                    "https://api.openai.com/v1/chat/completions",
-                    headers={
-                        "Content-Type": "application/json",
-                        "Authorization": f"Bearer {api_key}",
-                    },
-                    json=body,
-                )
-            except httpx.RequestError as e:
-                last_error = e
-                if attempt < 3:
-                    await asyncio.sleep(0.3 * attempt)
-                    continue
-                raise
+        for max_completion_tokens in _CHAT_COMPLETION_TOKEN_LIMITS:
+            body: dict[str, Any] = {
+                "model": model,
+                "messages": final_messages,
+                "max_completion_tokens": max_completion_tokens,
+            }
+            if tools:
+                body["tools"] = tools
 
-            if not resp.is_success:
-                detail = resp.text[:200]
-                last_error = Exception(
-                    f"OpenAI Chat request failed: {resp.status_code} - {detail}"
-                )
-                if attempt < 3 and resp.status_code in _RETRYABLE:
-                    await asyncio.sleep(0.3 * attempt)
-                    continue
-                raise last_error
-
-            payload = resp.json()
-            choice = payload.get("choices", [{}])[0]
-            message = choice.get("message", {})
-            finish_reason = choice.get("finish_reason")
-
-            if finish_reason == "tool_calls" and message.get("tool_calls"):
-                tool_calls = [
-                    ToolCall(
-                        id=tc["id"],
-                        function_name=tc["function"]["name"],
-                        function_arguments=tc["function"]["arguments"],
+            for attempt in range(1, 4):
+                try:
+                    resp = await client.post(
+                        "https://api.openai.com/v1/chat/completions",
+                        headers={
+                            "Content-Type": "application/json",
+                            "Authorization": f"Bearer {api_key}",
+                        },
+                        json=body,
                     )
-                    for tc in message["tool_calls"]
-                ]
-                return ToolCallsResult(
-                    type="tool_calls",
-                    tool_calls=tool_calls,
-                    assistant_message={
-                        "role": "assistant",
-                        "content": message.get("content"),
-                        "tool_calls": message["tool_calls"],
-                    },
-                )
+                except httpx.RequestError as exc:
+                    last_error = exc
+                    if attempt < 3:
+                        await asyncio.sleep(0.3 * attempt)
+                        continue
+                    raise
 
-            content = message.get("content")
-            if not content:
-                raise Exception("OpenAI Chat response was empty.")
-            return TextResult(content=content)
+                if not resp.is_success:
+                    detail = resp.text[:200]
+                    last_error = Exception(
+                        f"OpenAI Chat request failed: {resp.status_code} - {detail}"
+                    )
+                    if attempt < 3 and resp.status_code in _RETRYABLE:
+                        await asyncio.sleep(0.3 * attempt)
+                        continue
+                    raise last_error
+
+                payload = resp.json()
+                choice = payload.get("choices", [{}])[0]
+                message = choice.get("message", {})
+                finish_reason = choice.get("finish_reason")
+                raw_tool_calls = message.get("tool_calls") or []
+                content = _normalize_openai_chat_content(message.get("content"))
+
+                if raw_tool_calls:
+                    tool_calls = [
+                        ToolCall(
+                            id=tool_call["id"],
+                            function_name=tool_call["function"]["name"],
+                            function_arguments=tool_call["function"]["arguments"],
+                        )
+                        for tool_call in raw_tool_calls
+                    ]
+                    return ToolCallsResult(
+                        type="tool_calls",
+                        tool_calls=tool_calls,
+                        assistant_message={
+                            "role": "assistant",
+                            "content": content,
+                            "tool_calls": raw_tool_calls,
+                        },
+                    )
+
+                if not content:
+                    if finish_reason == "length":
+                        last_error = Exception(
+                            "OpenAI Chat response was truncated before text was returned."
+                        )
+                        break
+                    raise Exception("OpenAI Chat response was empty.")
+
+                return TextResult(content=content)
 
     raise last_error or Exception("OpenAI Chat request failed.")

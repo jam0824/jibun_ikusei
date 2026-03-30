@@ -1,21 +1,40 @@
 """Tool Search ツール定義 (src/lib/chat-tools.ts CHAT_TOOLS の移植)"""
 
+PERIOD_PROPERTY = {
+    "type": "string",
+    "enum": ["today", "week", "month"],
+    "description": "today=今日、week=直近7日、month=直近30日。明示日付がないときだけ使う。",
+}
+
+JST_DATE_PROPERTIES = {
+    "date": {
+        "type": "string",
+        "description": "JSTの日付。YYYY-MM-DD 形式。",
+    },
+    "fromDate": {
+        "type": "string",
+        "description": "JSTの開始日。YYYY-MM-DD 形式。",
+    },
+    "toDate": {
+        "type": "string",
+        "description": "JSTの終了日。YYYY-MM-DD 形式。",
+    },
+}
+
+
 CHAT_TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
             "name": "get_browsing_times",
-            "description": "ユーザーのWeb閲覧時間データを取得する。カテゴリ別・サイト別の内訳を確認できる。",
+            "description": "ユーザーのWeb閲覧時間データを取得する。date / fromDate / toDate は JST の YYYY-MM-DD 形式。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "period": {
-                        "type": "string",
-                        "enum": ["today", "week", "month"],
-                        "description": "取得する期間。today=今日、week=直近7日、month=直近30日",
-                    },
+                    "period": PERIOD_PROPERTY,
+                    **JST_DATE_PROPERTIES,
                 },
-                "required": ["period"],
+                "required": [],
             },
         },
     },
@@ -41,7 +60,7 @@ CHAT_TOOLS: list[dict] = [
         "type": "function",
         "function": {
             "name": "get_quest_data",
-            "description": "クエスト一覧やクエスト完了記録を取得する。「今日何をやった？」「アクティブなクエストは？」などに対応。",
+            "description": "クエスト一覧や完了記録を取得する。completions では date / fromDate / toDate を JST の YYYY-MM-DD 形式で指定できる。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -64,11 +83,8 @@ CHAT_TOOLS: list[dict] = [
                         "type": "string",
                         "description": "カテゴリフィルタ（type=questsの場合）",
                     },
-                    "period": {
-                        "type": "string",
-                        "enum": ["today", "week", "month"],
-                        "description": "期間フィルタ（type=completionsの場合。未指定=直近7日）",
-                    },
+                    "period": PERIOD_PROPERTY,
+                    **JST_DATE_PROPERTIES,
                     "questId": {
                         "type": "string",
                         "description": "特定クエストの完了記録のみ取得（type=completionsの場合）",
@@ -109,7 +125,7 @@ CHAT_TOOLS: list[dict] = [
         "type": "function",
         "function": {
             "name": "get_messages_and_logs",
-            "description": "アシスタントメッセージ、AI設定、アクティビティログ、チャット履歴を取得する。過去の発言やログを確認したいときに使う。",
+            "description": "アシスタントメッセージ、AI設定、アクティビティログ、チャット履歴を取得する。明示日付は date / fromDate / toDate に JST の YYYY-MM-DD で指定する。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -123,7 +139,7 @@ CHAT_TOOLS: list[dict] = [
                             "chat_sessions",
                             "chat_messages",
                         ],
-                        "description": "assistant_messages=リリィの過去メッセージ、ai_config=AI設定、activity_logs=操作ログ、situation_logs=状況ログ（カメラ・デスクトップ状況の30分要約）、chat_sessions=チャットセッション一覧、chat_messages=特定セッションのメッセージ",
+                        "description": "assistant_messages=リリィの過去メッセージ、ai_config=AI設定、activity_logs=操作ログ、situation_logs=状況ログ（カメラ・デスクトップ状況の30分要約）、chat_sessions=チャットセッション一覧、chat_messages=チャット本文",
                     },
                     "triggerType": {
                         "type": "string",
@@ -138,13 +154,13 @@ CHAT_TOOLS: list[dict] = [
                         "description": "メッセージのトリガー種別フィルタ（type=assistant_messagesの場合）",
                     },
                     "period": {
-                        "type": "string",
-                        "enum": ["today", "week", "month"],
-                        "description": "期間フィルタ（type=assistant_messages/activity_logsの場合。未指定=直近7日）",
+                        **PERIOD_PROPERTY,
+                        "description": "期間フィルタ。明示日付がないときだけ使う。",
                     },
+                    **JST_DATE_PROPERTIES,
                     "sessionId": {
                         "type": "string",
-                        "description": "チャットセッションID（type=chat_messagesの場合、必須）",
+                        "description": "チャットセッションID（type=chat_messages で単一セッションを指定したい場合）",
                     },
                 },
                 "required": ["type"],

@@ -55,6 +55,7 @@ class ChatEngine:
         self._api = api_client
         self._session_mgr = session_mgr
         self._history: list[dict[str, Any]] = []
+        self._current_session_messages: list[dict[str, Any]] = []
         self._tools: list[dict] | None = None
         self._tool_executor = None
 
@@ -62,12 +63,45 @@ class ChatEngine:
         self._tools = tools
         self._tool_executor = executor
 
+        executor_owner = getattr(executor, "__self__", None)
+        set_context_provider = getattr(executor_owner, "set_context_provider", None)
+        if callable(set_context_provider):
+            set_context_provider(self.get_tool_runtime_context)
+
+    def get_tool_runtime_context(self) -> dict[str, Any]:
+        session_id = self._session_mgr.current_session_id
+        chat_messages = []
+        if session_id:
+            chat_messages = [
+                dict(message)
+                for message in self._current_session_messages
+                if message.get("sessionId") == session_id
+            ]
+
+        return {
+            "current_session_id": session_id,
+            "chat_messages": chat_messages,
+        }
+
+    def _append_current_session_message(self, role: str, content: str) -> None:
+        session_id = self._session_mgr.current_session_id
+        if not session_id:
+            return
+
+        self._current_session_messages.append({
+            "sessionId": session_id,
+            "role": role,
+            "content": content,
+            "createdAt": datetime.now(JST).isoformat(),
+        })
+
     async def handle_user_message(self, text: str) -> str | None:
         """ユーザーメッセージを処理し、リリィの応答テキストを返す（掛け合い連携用）"""
         try:
             # ユーザーメッセージをDB保存
             await self._session_mgr.save_message("user", text)
             self._history.append({"role": "user", "content": text})
+            self._append_current_session_message("user", text)
 
             # リリィ応答（JSON形式）
             raw_response = await self._get_lily_response()
@@ -78,6 +112,7 @@ class ChatEngine:
             # リリィ応答をDB保存（テキスト部分のみ）
             await self._session_mgr.save_message("assistant", lily_text)
             self._history.append({"role": "assistant", "content": lily_text})
+            self._append_current_session_message("assistant", lily_text)
 
             return lily_text
 
@@ -200,6 +235,16 @@ class ChatEngine:
                 {"role": m["role"], "content": m["content"]}
                 for m in messages
             ]
+            self._current_session_messages = [
+                {
+                    "sessionId": m.get("sessionId", session_id),
+                    "role": m.get("role", ""),
+                    "content": m.get("content", ""),
+                    "createdAt": m.get("createdAt", ""),
+                }
+                for m in messages
+            ]
         except Exception:
             logger.warning("セッション履歴読み込み失敗")
             self._history = []
+            self._current_session_messages = []
