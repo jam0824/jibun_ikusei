@@ -169,7 +169,7 @@ describe('ai adapter', () => {
 })
 
 describe('Lily chat prompt', () => {
-  it('includes user context and JST explicit date guidance', () => {
+  it('includes desktop-aligned tone, plain-text guidance, and JST date rules', () => {
     const state = hydratePersistedState()
     state.user.level = 5
     state.user.totalXp = 120
@@ -199,6 +199,11 @@ describe('Lily chat prompt', () => {
       ],
     })
 
+    expect(prompt).toContain('あなたの名前はリリィです。')
+    expect(prompt).not.toContain('リリー')
+    expect(prompt).toContain('「です・ます」調は使わず')
+    expect(prompt).toContain('Markdown記法は使わず')
+    expect(prompt).toContain('プレーンテキスト')
     expect(prompt).toContain('YYYY-MM-DD')
     expect(prompt).toContain('date 引数')
     expect(prompt).toContain('period=today/week/month')
@@ -206,6 +211,10 @@ describe('Lily chat prompt', () => {
     expect(prompt).toContain('sessionId なしで全セッション横断検索')
     expect(prompt).toContain('get_messages_and_logs')
     expect(prompt).toContain('Read 30 minutes')
+    expect(prompt).not.toContain('葉留佳')
+    expect(prompt).not.toContain('はるちん')
+    expect(prompt).not.toContain('pose_category')
+    expect(prompt).not.toContain('JSON形式で回答してください')
   })
 
   it('handles empty context', () => {
@@ -221,7 +230,7 @@ describe('Lily chat prompt', () => {
 
     expect(prompt).toContain('まだスキルがありません')
     expect(prompt).toContain('まだクエストがありません')
-    expect(prompt).toContain('まだ完了履歴がありません')
+    expect(prompt).toContain('まだ完了記録がありません')
   })
 })
 
