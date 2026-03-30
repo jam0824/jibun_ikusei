@@ -641,6 +641,7 @@ export async function generateTtsAudio(params: {
 
 const LILY_CHAT_MODEL = 'gpt-5.4'
 const MAX_CHAT_HISTORY = 30
+const CHAT_COMPLETION_TOKEN_LIMITS = [900, 1600]
 
 export type ToolCall = {
   id: string
@@ -666,7 +667,37 @@ export type ChatMessageParam =
   | { role: 'assistant'; content: string | null; tool_calls: ToolCall[] }
   | { role: 'tool'; content: string; tool_call_id: string }
 
-export function buildLilyChatSystemPrompt(params: {
+function normalizeOpenAiChatContent(
+  content: unknown,
+): string | null {
+  if (typeof content === 'string') {
+    return content
+  }
+
+  if (!Array.isArray(content)) {
+    return null
+  }
+
+  const text = content
+    .map((part) => {
+      if (typeof part === 'string') {
+        return part
+      }
+
+      if (!part || typeof part !== 'object') {
+        return ''
+      }
+
+      const textValue = (part as { text?: unknown }).text
+      return typeof textValue === 'string' ? textValue : ''
+    })
+    .filter(Boolean)
+    .join('\n')
+
+  return text.length > 0 ? text : null
+}
+
+export function buildLilyChatSystemPromptLegacy(params: {
   user: LocalUser
   skills: Skill[]
   quests: Quest[]
@@ -746,6 +777,93 @@ export function buildLilyChatSystemPrompt(params: {
   ].join('\n')
 }
 
+export function buildLilyChatSystemPrompt(params: {
+  user: LocalUser
+  skills: Skill[]
+  quests: Quest[]
+  recentCompletions: Array<{ questTitle: string; completedAt: string }>
+  activityLogs: ActivityLogEntry[]
+}): string {
+  const { user, skills, quests, recentCompletions, activityLogs } = params
+
+  const activeSkills = skills
+    .filter((skill) => skill.status === 'active')
+    .sort((left, right) => right.totalXp - left.totalXp)
+
+  const skillDetails = activeSkills.length > 0
+    ? activeSkills
+        .map((skill) => `- ${skill.name} (Lv.${skill.level}, XP: ${skill.totalXp}, カテゴリ: ${skill.category})`)
+        .join('\n')
+    : 'まだスキルがありません'
+
+  const activeQuests = quests.filter((quest) => quest.status === 'active' && quest.source !== 'browsing')
+  const questList = activeQuests.length > 0
+    ? activeQuests
+        .map((quest) => {
+          const parts = [`- ${quest.title}`]
+          if (quest.category) parts.push(`カテゴリ: ${quest.category}`)
+          parts.push(`XP: ${quest.xpReward}`)
+          parts.push(quest.questType === 'repeatable' ? '繰り返し' : '一回限り')
+          return parts.join(' / ')
+        })
+        .join('\n')
+    : 'まだクエストがありません'
+
+  const completionSummary = recentCompletions.length > 0
+    ? recentCompletions
+        .slice(0, 15)
+        .map((completion) => `- ${completion.questTitle} (${completion.completedAt.slice(0, 10)})`)
+        .join('\n')
+    : 'まだ完了履歴がありません'
+
+  const categoryCounts: Record<string, number> = {}
+  for (const log of activityLogs) {
+    categoryCounts[log.category] = (categoryCounts[log.category] ?? 0) + 1
+  }
+  const activitySummary = Object.entries(categoryCounts).length > 0
+    ? Object.entries(categoryCounts)
+        .sort((left, right) => right[1] - left[1])
+        .map(([category, count]) => `${category}: ${count}件`)
+        .join(' / ')
+    : 'まだアクティビティがありません'
+
+  return [
+    'あなたは自分育成アプリの伴走AI「リリー」です。親しみやすく、具体的で、実務的に役立つ返答をしてください。',
+    '返答は日本語で行ってください。',
+    'ツールで確認できることは推測せず、必要なときは先に取得してください。',
+    '曖昧な依頼は勝手に断定せず、最小限の確認か、もっとも自然な解釈で補って対応してください。',
+    '回答は簡潔で読みやすく、行動につながる形にしてください。',
+    '明示日付の扱いは必ず JST 固定です。3/29、3月29日、2026-03-29 のような指定は JST の YYYY-MM-DD に正規化して date 引数を使ってください。',
+    'fromDate / toDate も JST の YYYY-MM-DD です。明示日付があるときは period=today/week/month を使わず、date または fromDate / toDate を優先してください。',
+    'today / week / month は明示日付がないときだけ使ってください。',
+    '特定日の会話内容・本文・要約を聞かれたら、まず get_messages_and_logs の type=chat_messages を date 付きで呼んで本文を取りに行ってください。',
+    'chat_sessions はセッション一覧を知りたいときや追加で絞り込みたいときだけ使ってください。本文が必要な質問で chat_sessions の結果だけを返して止まらないでください。',
+    '',
+    '【ユーザー情報】',
+    `- レベル: ${user.level}`,
+    `- 総XP: ${user.totalXp}`,
+    '',
+    '【スキル一覧】',
+    skillDetails,
+    '',
+    '【進行中のクエスト】',
+    questList,
+    '',
+    '【最近のアクティビティ（カテゴリ別）】',
+    activitySummary,
+    '',
+    '【最近のクエスト完了】',
+    completionSummary,
+    '',
+    '【利用可能なツール】',
+    '- get_browsing_times: Web閲覧時間。date / fromDate / toDate / period が使える。',
+    '- get_user_info: プロフィール(type=profile)、設定(type=settings)、メタ情報(type=meta)。',
+    '- get_quest_data: クエスト一覧(type=quests) と完了履歴(type=completions)。completions では date / fromDate / toDate / period / questId が使える。',
+    '- get_skill_data: スキル一覧(type=skills) と個人スキル辞書(type=dictionary)。',
+    '- get_messages_and_logs: アシスタントメッセージ、AI設定、活動ログ、状況ログ、チャットセッション、チャット本文。date / fromDate / toDate / period が使える。type=chat_messages は date / fromDate / toDate があれば sessionId なしで全セッション横断検索できる。',
+  ].join('\n')
+}
+
 export async function sendLilyChatMessage(params: {
   apiKey: string
   messages: ChatMessageParam[]
@@ -759,69 +877,76 @@ export async function sendLilyChatMessage(params: {
   const trimmedConversation = conversationMessages.slice(-MAX_CHAT_HISTORY)
   const finalMessages = [...systemMessages, ...trimmedConversation]
 
-  const body: Record<string, unknown> = {
-    model: LILY_CHAT_MODEL,
-    messages: finalMessages,
-    max_completion_tokens: 500,
-  }
-  if (tools && tools.length > 0) {
-    body.tools = tools
-  }
-
   let lastError: Error | undefined
 
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    const response = await fetch('https://api.openai.com/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(body),
-    })
-
-    if (!response.ok) {
-      const details = await readErrorResponse(response)
-      lastError = new Error(
-        `OpenAI Chat request failed: ${response.status}${details ? ` - ${details}` : ''}`,
-      )
-
-      if (attempt < 3 && isRetryableStatus(response.status)) {
-        await wait(300 * attempt)
-        continue
-      }
-
-      throw lastError
+  for (const maxCompletionTokens of CHAT_COMPLETION_TOKEN_LIMITS) {
+    const body: Record<string, unknown> = {
+      model: LILY_CHAT_MODEL,
+      messages: finalMessages,
+      max_completion_tokens: maxCompletionTokens,
+    }
+    if (tools && tools.length > 0) {
+      body.tools = tools
     }
 
-    const payload = (await response.json()) as {
-      choices?: Array<{
-        message?: { content?: string | null; tool_calls?: ToolCall[] }
-        finish_reason?: string
-      }>
-    }
-
-    const message = payload.choices?.[0]?.message
-    const finishReason = payload.choices?.[0]?.finish_reason
-
-    if (finishReason === 'tool_calls' && message?.tool_calls && message.tool_calls.length > 0) {
-      return {
-        type: 'tool_calls',
-        toolCalls: message.tool_calls,
-        assistantMessage: {
-          role: 'assistant',
-          content: message.content ?? null,
-          tool_calls: message.tool_calls,
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${apiKey}`,
         },
+        body: JSON.stringify(body),
+      })
+
+      if (!response.ok) {
+        const details = await readErrorResponse(response)
+        lastError = new Error(
+          `OpenAI Chat request failed: ${response.status}${details ? ` - ${details}` : ''}`,
+        )
+
+        if (attempt < 3 && isRetryableStatus(response.status)) {
+          await wait(300 * attempt)
+          continue
+        }
+
+        throw lastError
       }
-    }
 
-    const content = message?.content
-    if (!content) {
-      throw new Error('OpenAI Chat response was empty.')
-    }
+      const payload = (await response.json()) as {
+        choices?: Array<{
+          message?: { content?: unknown; tool_calls?: ToolCall[] }
+          finish_reason?: string
+        }>
+      }
 
-    return { type: 'text', content }
+      const message = payload.choices?.[0]?.message
+      const finishReason = payload.choices?.[0]?.finish_reason
+      const toolCalls = message?.tool_calls
+      const content = normalizeOpenAiChatContent(message?.content)
+
+      if (toolCalls && toolCalls.length > 0) {
+        return {
+          type: 'tool_calls',
+          toolCalls,
+          assistantMessage: {
+            role: 'assistant',
+            content,
+            tool_calls: toolCalls,
+          },
+        }
+      }
+
+      if (!content) {
+        if (finishReason === 'length') {
+          lastError = new Error('OpenAI Chat response was truncated before text was returned.')
+          break
+        }
+        throw new Error('OpenAI Chat response was empty.')
+      }
+
+      return { type: 'text', content }
+    }
   }
 
   throw lastError ?? new Error('OpenAI Chat request failed.')
