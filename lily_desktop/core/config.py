@@ -128,6 +128,14 @@ class TalkSeedsConfig:
 
 
 @dataclass
+class HealthPlanetConfig:
+    client_id: str = ""
+    client_secret: str = ""
+    access_token: str = ""
+    token_expires_at: int = 0  # Unix timestamp (JST)
+
+
+@dataclass
 class AppConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     cognito: CognitoConfig = field(default_factory=CognitoConfig)
@@ -138,6 +146,7 @@ class AppConfig:
     camera: CameraConfig = field(default_factory=CameraConfig)
     display: DisplayConfig = field(default_factory=DisplayConfig)
     talk_seeds: TalkSeedsConfig = field(default_factory=TalkSeedsConfig)
+    healthplanet: HealthPlanetConfig = field(default_factory=HealthPlanetConfig)
 
 
 def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
@@ -182,8 +191,46 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         config.voice.google_api_key = env["GOOGLE_CLOUD_API_KEY"]
     if env.get("GEMINI_API_KEY"):
         config.tts.gemini_api_key = env["GEMINI_API_KEY"]
+    if env.get("HEALTHPLANET_CLIENT_ID"):
+        config.healthplanet.client_id = env["HEALTHPLANET_CLIENT_ID"]
+    if env.get("HEALTHPLANET_CLIENT_SECRET"):
+        config.healthplanet.client_secret = env["HEALTHPLANET_CLIENT_SECRET"]
+    if env.get("HEALTHPLANET_ACCESS_TOKEN"):
+        config.healthplanet.access_token = env["HEALTHPLANET_ACCESS_TOKEN"]
+    if env.get("HEALTHPLANET_TOKEN_EXPIRES_AT"):
+        try:
+            config.healthplanet.token_expires_at = int(env["HEALTHPLANET_TOKEN_EXPIRES_AT"])
+        except ValueError:
+            pass
 
     return config
+
+
+def save_healthplanet_token(access_token: str, expires_at: int, path: Path = _ENV_PATH) -> None:
+    """HEALTHPLANET_ACCESS_TOKEN / HEALTHPLANET_TOKEN_EXPIRES_AT を .env に書き込む（upsert）"""
+    updates = {
+        "HEALTHPLANET_ACCESS_TOKEN": access_token,
+        "HEALTHPLANET_TOKEN_EXPIRES_AT": str(expires_at),
+    }
+    lines: list[str] = []
+    if path.exists():
+        lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
+
+    written: set[str] = set()
+    new_lines: list[str] = []
+    for line in lines:
+        key = line.partition("=")[0].strip()
+        if key in updates:
+            new_lines.append(f"{key}={updates[key]}\n")
+            written.add(key)
+        else:
+            new_lines.append(line)
+
+    for key, value in updates.items():
+        if key not in written:
+            new_lines.append(f"{key}={value}\n")
+
+    path.write_text("".join(new_lines), encoding="utf-8")
 
 
 def save_voice_device(device_name: str, path: Path = _CONFIG_PATH) -> None:

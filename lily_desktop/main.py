@@ -18,7 +18,7 @@ from ai.tool_executor import ToolExecutor
 from api.api_client import ApiClient
 from api.auth import CognitoAuth
 from core.camera import capture_camera_frame, find_camera_index
-from core.config import load_config, save_camera_device, save_voice_device
+from core.config import load_config, save_camera_device, save_voice_device, save_healthplanet_token
 from core.desktop_context import DesktopContext, fetch_desktop_context, format_context_log
 from core.event_bus import bus
 from core.situation_logger import SituationLogger, SituationRecord
@@ -29,6 +29,13 @@ from ui.main_window import MainWindow
 from ui.tray_icon import TrayIcon
 from voice.tts import TTSEngine
 from voice.voice_pipeline import VoicePipeline
+from health.healthplanet_client import (
+    sync_health_data,
+    is_token_valid,
+    build_auth_url,
+    exchange_code_for_token,
+)
+from health.oauth_dialog import HealthPlanetOAuthDialog
 
 logging.basicConfig(
     level=logging.INFO,
@@ -198,6 +205,44 @@ class App:
         save_camera_device(device_name)
         logger.info("カメラを選択・保存: %s (index=%d)", device_name, device_index)
         bus.balloon_show.emit("リリィ", f"カメラを「{device_name}」に切り替えたよ！")
+
+    def start_healthplanet_sync(self) -> None:
+        """Health Planet データ同期を開始する。トークン未取得なら OAuth ダイアログを表示。"""
+        hp = self.config.healthplanet
+        if not hp.client_id or not hp.client_secret:
+            return
+        if not is_token_valid(hp.access_token, hp.token_expires_at):
+            dialog = HealthPlanetOAuthDialog(build_auth_url(hp.client_id))
+            dialog.code_submitted.connect(self._on_healthplanet_code)
+            dialog.show()
+            return
+        asyncio.ensure_future(self._run_healthplanet_sync())
+
+    def _on_healthplanet_code(self, code: str) -> None:
+        asyncio.ensure_future(self._exchange_and_sync(code))
+
+    async def _exchange_and_sync(self, code: str) -> None:
+        hp = self.config.healthplanet
+        try:
+            res = await asyncio.to_thread(
+                exchange_code_for_token, hp.client_id, hp.client_secret, code
+            )
+            access_token = res["access_token"]
+            expires_at = int(datetime.now(JST).timestamp()) + int(res.get("expires_in", 3600))
+            save_healthplanet_token(access_token, expires_at)
+            self.config.healthplanet.access_token = access_token
+            self.config.healthplanet.token_expires_at = expires_at
+            await self._run_healthplanet_sync()
+        except Exception:
+            logger.exception("Health Planet OAuth 失敗")
+
+    async def _run_healthplanet_sync(self) -> None:
+        hp = self.config.healthplanet
+        new_count, error = await sync_health_data(hp.client_id, hp.client_secret, hp.access_token)
+        if error:
+            logger.warning("Health Planet 同期エラー: %s", error)
+        else:
+            logger.info("Health Planet 同期完了: %d 件新規", new_count)
 
     def start_camera_system(self) -> None:
         """カメラシステムを開始する（3分間隔キャプチャ + 30分間隔要約）"""
@@ -428,6 +473,10 @@ async def async_init(app_instance: App) -> None:
     # カメラシステムの自動開始
     if app_instance.config.camera.enabled:
         app_instance.start_camera_system()
+
+    # Health Planet データ同期
+    if app_instance.config.healthplanet.client_id:
+        app_instance.start_healthplanet_sync()
 
 
 def main() -> None:
