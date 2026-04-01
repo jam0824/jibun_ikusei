@@ -46,7 +46,7 @@ class TalkSeedManager:
         screen_analysis_model: str,
         annict_access_token: str = "",
         camera_enabled: bool = False,
-        camera_analysis_model: str = "gpt-5",
+        camera_analysis_model: str = "gpt-5.4",
         camera_device_index: int = 0,
         interest_topics: list[str] | None = None,
     ):
