@@ -108,7 +108,7 @@ class CameraConfig:
     enabled: bool = False
     device_name: str = ""  # 選択されたカメラデバイス名（空=デフォルト）
     interval_seconds: int = 180  # キャプチャ間隔（秒）— デフォルト3分
-    analysis_model: str = "gpt-5"  # カメラ画像分析AIモデル
+    analysis_model: str = "gpt-5.4"  # カメラ画像分析AIモデル
     summary_model: str = "gpt-5.4"  # 30分要約AIモデル
     summary_interval_seconds: int = 1800  # サーバー要約間隔（秒）— デフォルト30分
 

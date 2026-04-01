@@ -43,8 +43,8 @@ voice:
 camera:
   enabled: true
   device_name: USB 2.0 Camera
-  interval_seconds: 180            # カメラキャプチャ間隔（秒）
-  analysis_model: gpt-5            # カメラ画像分析AI
+  interval_seconds: 300            # カメラキャプチャ間隔（秒）
+  analysis_model: gpt-5.4          # カメラ画像分析AI
   summary_model: gpt-5.4           # 30分要約AI
   summary_interval_seconds: 1800   # サーバー要約間隔（秒）
 talk_seeds:
