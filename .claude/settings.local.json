@@ -64,7 +64,10 @@
       "Bash(.venv/Scripts/pytest tests/test_talk_seed_selection.py -v)",
       "Bash(find D:/codes/自分育成アプリ/web -name *.tsx -o -name *.vue)",
       "Bash(find /d/codes/自分育成アプリ/lily_desktop -maxdepth 1 -name *.yaml -o -name *.yml -o -name .env*)",
-      "WebFetch(domain:www.healthplanet.jp)"
+      "WebFetch(domain:www.healthplanet.jp)",
+      "Bash(.venv/Scripts/python.exe -c \"from core.config import load_config, save_healthplanet_token; print\\(''config OK''\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"from health.healthplanet_client import is_token_valid, build_auth_url, sync_health_data; from health.oauth_dialog import HealthPlanetOAuthDialog; print\\(''health OK''\\)\")",
+      "Bash(.venv/Scripts/python.exe -c \"from ai.tool_definitions import CHAT_TOOLS; names=[t[''function''][''name''] for t in CHAT_TOOLS]; print\\(names\\)\")"
     ]
   }
 }

@@ -15,6 +15,7 @@ import httpx
 
 from api.api_client import ApiClient
 from core.skill_resolution import resolve_skill_for_completion
+from health.healthplanet_client import query_health_data
 
 logger = logging.getLogger(__name__)
 
@@ -286,6 +287,8 @@ class ToolExecutor:
                 return await self._create_quest(args)
             if name == "delete_quest":
                 return await self._delete_quest(args)
+            if name == "get_health_data":
+                return await self._health_data(args)
             return f"不明なツール: {name}"
         except Exception as exc:
             logger.exception("ツール実行エラー: %s", name)
@@ -944,3 +947,22 @@ class ToolExecutor:
 
         await self._api.delete_quest(target_id)
         return f"クエスト「{target_title}」を削除しました。"
+
+    async def _health_data(self, args: dict[str, Any]) -> str:
+        try:
+            date_filter = _resolve_jst_date_filter(args, "month")
+        except ValueError as exc:
+            return str(exc)
+
+        records = await asyncio.to_thread(
+            query_health_data, date_filter.from_date, date_filter.to_date
+        )
+        if not records:
+            return f"{date_filter.label} の体重・体脂肪率データがありません。"
+
+        lines = [f"【{date_filter.label} の体重・体脂肪率】", f"取得件数: {len(records)}件", ""]
+        for r in records:
+            weight = f"{r['weight_kg']}kg" if r.get("weight_kg") is not None else "－"
+            fat = f"{r['body_fat_pct']}%" if r.get("body_fat_pct") is not None else "－"
+            lines.append(f"- {r['date']} {r['time']}  体重: {weight}  体脂肪率: {fat}")
+        return "\n".join(lines)

@@ -248,4 +248,19 @@ CHAT_TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_health_data",
+            "description": "ユーザーの体重・体脂肪率データを取得する。Health Planet（タニタ体組成計）から同期したデータ。date / fromDate / toDate は JST の YYYY-MM-DD 形式。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period": PERIOD_PROPERTY,
+                    **JST_DATE_PROPERTIES,
+                },
+                "required": [],
+            },
+        },
+    },
 ]
