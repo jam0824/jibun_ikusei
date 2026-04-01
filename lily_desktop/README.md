@@ -24,6 +24,36 @@ COGNITO_PASSWORD=your-password # 自分育成アプリのパスワード
 
 > Cognito認証情報を設定するとWebアプリのデータ（クエスト・スキル・会話履歴）を参照・共有できる。未設定でも起動は可能だがAI会話のDB保存・Tool Searchは使えない。
 
+#### タニタ体重計（Health Planet）を連携する（任意）
+
+体重・体脂肪率をリリィが参照できるようになる。
+
+**1. Health Planet の開発者登録**
+
+https://www.healthplanet.jp/apis/api.html でアプリを登録し、Client ID と Client Secret を取得する。
+
+**2. `.env` に追記**
+
+```
+HEALTHPLANET_CLIENT_ID=your-client-id
+HEALTHPLANET_CLIENT_SECRET=your-client-secret
+```
+
+**3. 初回認証（トークン取得）**
+
+```bash
+cd lily_desktop
+uv run python setup_healthplanet.py
+```
+
+実行するとブラウザが自動で開くので Health Planet にログイン・許可する。リダイレクト後の URL（`https://jam0824.github.io/?code=XXXX`）をそのままターミナルに貼り付けて Enter。アクセストークンが自動的に `.env` に保存される。
+
+> トークンの有効期限は30日。期限切れ後は同じコマンドを再実行する。
+
+**4. 以降の動作**
+
+lily_desktop 起動時に自動で過去30日分のデータを取得・保存する。データは `lily_desktop/logs/health/YYYY-MM-DD.jsonl` に日別で蓄積される（重複なし）。トークンの有効期限は30日。期限切れ後は手順3を再実行する。
+
 ### 3. モデルや表示設定を変更したい場合
 
 `lily_desktop/config.yaml` を編集する：
@@ -81,6 +111,7 @@ uv run python main.py
 | 音声合成 | VOICEVOX でセリフを読み上げ |
 | 掛け合い | リリィと葉留佳が自動で会話する |
 | Tool Search | 「最近何やった？」などのデータ参照質問に対応 |
+| 体重計連携 | タニタ（Health Planet）の体重・体脂肪率をリリィが参照 |
 | DB連携 | 会話がWebアプリと共有される |
 | ポーズ切り替え | 発言の内容に応じてキャラの表情が変わる |
 | ポーズ自動生成 | 不足ポーズをgpt-image-1.5で自動生成 |
@@ -92,6 +123,7 @@ uv run python main.py
 - スキルの状況（「一番XPが高いスキルは？」）
 - Web閲覧時間（「今日どのサイトを見てた？」）
 - クエストの作成・削除（「筋トレクエスト作って」）
+- 体重・体脂肪率（「最近の体重教えて」「今月の体脂肪率の推移は？」）
 
 ---
 
