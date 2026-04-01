@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-// Use vi.hoisted so mock fns are available inside the vi.mock factory
-const { mockAuthenticateUser, mockGetSession, mockSignOut, mockGetCurrentUser } = vi.hoisted(() => ({
+const {
+  mockAuthenticateUser,
+  mockRefreshSession,
+  mockGetSession,
+  mockSignOut,
+  mockGetCurrentUser,
+} = vi.hoisted(() => ({
   mockAuthenticateUser: vi.fn(),
+  mockRefreshSession: vi.fn(),
   mockGetSession: vi.fn(),
   mockSignOut: vi.fn(),
   mockGetCurrentUser: vi.fn(),
@@ -13,18 +19,22 @@ vi.mock('amazon-cognito-identity-js', () => {
     CognitoUserPool: vi.fn().mockImplementation(() => ({
       getCurrentUser: mockGetCurrentUser,
     })),
-    CognitoUser: vi.fn().mockImplementation(() => ({
+    CognitoUser: vi.fn().mockImplementation((data: { Username: string }) => ({
       authenticateUser: mockAuthenticateUser,
+      refreshSession: mockRefreshSession,
       getSession: mockGetSession,
       signOut: mockSignOut,
+      getUsername: () => data.Username,
     })),
     AuthenticationDetails: vi.fn(),
+    CognitoRefreshToken: vi.fn().mockImplementation(({ RefreshToken }: { RefreshToken: string }) => ({
+      getToken: () => RefreshToken,
+    })),
   }
 })
 
 import { login, logout, getStoredToken, isLoggedIn } from '@ext/lib/auth'
 
-/** Create a mock JWT with the given payload */
 function createMockJwt(payload: Record<string, unknown>): string {
   const header = btoa(JSON.stringify({ alg: 'RS256', typ: 'JWT' }))
   const body = btoa(JSON.stringify(payload))
@@ -37,10 +47,10 @@ describe('auth', () => {
   })
 
   afterEach(() => {
-    // Don't use restoreAllMocks — it strips vi.mock() implementations
+    // keep module mocks intact
   })
 
-  it('stores token in chrome.storage.local on successful login', async () => {
+  it('stores tokens in chrome.storage.local on successful login', async () => {
     mockAuthenticateUser.mockImplementation((_details: unknown, callbacks: { onSuccess: (session: unknown) => void }) => {
       callbacks.onSuccess({
         getIdToken: () => ({
@@ -49,6 +59,9 @@ describe('auth', () => {
         getAccessToken: () => ({
           getJwtToken: () => 'test-access-token',
         }),
+        getRefreshToken: () => ({
+          getToken: () => 'test-refresh-token',
+        }),
       })
     })
 
@@ -56,10 +69,11 @@ describe('auth', () => {
 
     expect(result.ok).toBe(true)
 
-    // Verify token was stored in chrome.storage.local
     const stored = await chrome.storage.local.get('authState')
     expect(stored.authState).toBeDefined()
     expect(stored.authState.idToken).toBe('test-jwt-token')
+    expect(stored.authState.accessToken).toBe('test-access-token')
+    expect(stored.authState.refreshToken).toBe('test-refresh-token')
     expect(stored.authState.email).toBe('test@example.com')
   })
 
@@ -89,7 +103,7 @@ describe('auth', () => {
     }
   })
 
-  it('有効期限内のトークンをそのまま返す', async () => {
+  it('returns the stored token while it is still valid', async () => {
     const validToken = createMockJwt({ exp: Math.floor(Date.now() / 1000) + 3600 })
     await chrome.storage.local.set({
       authState: {
@@ -103,7 +117,40 @@ describe('auth', () => {
     expect(token).toBe(validToken)
   })
 
-  it('期限切れトークンの場合はCognitoセッションでリフレッシュする', async () => {
+  it('refreshes an expired token with the refresh token stored in chrome.storage.local', async () => {
+    const expiredToken = createMockJwt({ exp: Math.floor(Date.now() / 1000) - 60 })
+    const refreshedToken = createMockJwt({ exp: Math.floor(Date.now() / 1000) + 3600 })
+    await chrome.storage.local.set({
+      authState: {
+        idToken: expiredToken,
+        accessToken: 'expired-access-token',
+        refreshToken: 'stored-refresh-token',
+        email: 'user@example.com',
+        loggedInAt: new Date().toISOString(),
+      },
+    })
+
+    mockRefreshSession.mockImplementation((_refreshToken: unknown, cb: (err: null, session: unknown) => void) => {
+      cb(null, {
+        isValid: () => true,
+        getIdToken: () => ({ getJwtToken: () => refreshedToken }),
+        getAccessToken: () => ({ getJwtToken: () => 'refreshed-access-token' }),
+        getRefreshToken: () => ({ getToken: () => 'stored-refresh-token' }),
+      })
+    })
+    mockGetCurrentUser.mockReturnValue(null)
+
+    const token = await getStoredToken()
+    expect(token).toBe(refreshedToken)
+    expect(mockRefreshSession).toHaveBeenCalledTimes(1)
+
+    const stored = await chrome.storage.local.get('authState')
+    expect(stored.authState.idToken).toBe(refreshedToken)
+    expect(stored.authState.accessToken).toBe('refreshed-access-token')
+    expect(stored.authState.refreshToken).toBe('stored-refresh-token')
+  })
+
+  it('falls back to the Cognito cached session when no refresh token is stored', async () => {
     const expiredToken = createMockJwt({ exp: Math.floor(Date.now() / 1000) - 60 })
     const refreshedToken = createMockJwt({ exp: Math.floor(Date.now() / 1000) + 3600 })
     await chrome.storage.local.set({
@@ -119,6 +166,8 @@ describe('auth', () => {
         cb(null, {
           isValid: () => true,
           getIdToken: () => ({ getJwtToken: () => refreshedToken }),
+          getAccessToken: () => ({ getJwtToken: () => 'refreshed-access-token' }),
+          getRefreshToken: () => ({ getToken: () => 'fallback-refresh-token' }),
         })
       },
     })
@@ -126,21 +175,26 @@ describe('auth', () => {
     const token = await getStoredToken()
     expect(token).toBe(refreshedToken)
 
-    // ストレージも更新されていること
     const stored = await chrome.storage.local.get('authState')
     expect(stored.authState.idToken).toBe(refreshedToken)
+    expect(stored.authState.refreshToken).toBe('fallback-refresh-token')
   })
 
-  it('リフレッシュ失敗時はnullを返す', async () => {
+  it('returns null when token refresh fails', async () => {
     const expiredToken = createMockJwt({ exp: Math.floor(Date.now() / 1000) - 60 })
     await chrome.storage.local.set({
       authState: {
         idToken: expiredToken,
+        accessToken: 'expired-access-token',
+        refreshToken: 'stored-refresh-token',
         email: 'user@example.com',
         loggedInAt: new Date().toISOString(),
       },
     })
 
+    mockRefreshSession.mockImplementation((_refreshToken: unknown, cb: (err: Error | null, session: null) => void) => {
+      cb(new Error('refresh failed'), null)
+    })
     mockGetCurrentUser.mockReturnValue(null)
 
     const token = await getStoredToken()

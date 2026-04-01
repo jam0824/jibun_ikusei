@@ -2,6 +2,7 @@ import {
   CognitoUserPool,
   CognitoUser,
   AuthenticationDetails,
+  CognitoRefreshToken,
 } from 'amazon-cognito-identity-js'
 
 const USER_POOL_ID = 'ap-northeast-1_sdcbFbWBY'
@@ -14,6 +15,8 @@ const userPool = new CognitoUserPool({
 
 interface AuthState {
   idToken: string
+  accessToken?: string
+  refreshToken?: string
   email: string
   loggedInAt: string
 }
@@ -39,6 +42,8 @@ export function login(email: string, password: string): Promise<LoginResult> {
         const idToken = session.getIdToken().getJwtToken()
         const authState: AuthState = {
           idToken,
+          accessToken: session.getAccessToken().getJwtToken(),
+          refreshToken: session.getRefreshToken().getToken(),
           email,
           loggedInAt: new Date().toISOString(),
         }
@@ -88,6 +93,55 @@ export async function getStoredToken(): Promise<string | null> {
 }
 
 async function refreshToken(): Promise<string | null> {
+  const stored = await chrome.storage.local.get('authState')
+  const authState = stored.authState as AuthState | undefined
+
+  // Extension service workers cannot rely on Cognito's localStorage-backed cache.
+  if (authState?.refreshToken) {
+    const token = await refreshWithStoredRefreshToken(authState)
+    if (token) {
+      return token
+    }
+  }
+
+  return refreshFromCurrentUser(authState)
+}
+
+async function refreshWithStoredRefreshToken(authState: AuthState): Promise<string | null> {
+  return new Promise((resolve) => {
+    const cognitoUser = new CognitoUser({
+      Username: authState.email,
+      Pool: userPool,
+    })
+    const refreshToken = new CognitoRefreshToken({
+      RefreshToken: authState.refreshToken!,
+    })
+
+    cognitoUser.refreshSession(refreshToken, async (err: Error | null, session: {
+      isValid?: () => boolean
+      getIdToken: () => { getJwtToken: () => string }
+      getAccessToken?: () => { getJwtToken: () => string }
+      getRefreshToken?: () => { getToken: () => string }
+    } | null) => {
+      if (err || !session || (typeof session.isValid === 'function' && !session.isValid())) {
+        resolve(null)
+        return
+      }
+
+      const nextState: AuthState = {
+        ...authState,
+        idToken: session.getIdToken().getJwtToken(),
+        accessToken: session.getAccessToken?.().getJwtToken() ?? authState.accessToken,
+        refreshToken: session.getRefreshToken?.().getToken() ?? authState.refreshToken,
+        loggedInAt: new Date().toISOString(),
+      }
+      await chrome.storage.local.set({ authState: nextState })
+      resolve(nextState.idToken)
+    })
+  })
+}
+
+async function refreshFromCurrentUser(authState?: AuthState): Promise<string | null> {
   return new Promise((resolve) => {
     const currentUser = userPool.getCurrentUser()
     if (!currentUser) {
@@ -95,19 +149,27 @@ async function refreshToken(): Promise<string | null> {
       return
     }
 
-    currentUser.getSession(async (err: Error | null, session: { isValid: () => boolean; getIdToken: () => { getJwtToken: () => string } } | null) => {
+    currentUser.getSession(async (err: Error | null, session: {
+      isValid: () => boolean
+      getIdToken: () => { getJwtToken: () => string }
+      getAccessToken?: () => { getJwtToken: () => string }
+      getRefreshToken?: () => { getToken: () => string }
+    } | null) => {
       if (err || !session?.isValid()) {
         resolve(null)
         return
       }
 
-      const idToken = session.getIdToken().getJwtToken()
-      const stored = await chrome.storage.local.get('authState')
-      const authState = stored.authState as AuthState | undefined
-      await chrome.storage.local.set({
-        authState: { ...authState, idToken, loggedInAt: new Date().toISOString() },
-      })
-      resolve(idToken)
+      const nextState: AuthState = {
+        ...authState,
+        idToken: session.getIdToken().getJwtToken(),
+        accessToken: session.getAccessToken?.().getJwtToken() ?? authState?.accessToken,
+        refreshToken: session.getRefreshToken?.().getToken() ?? authState?.refreshToken,
+        email: authState?.email ?? '',
+        loggedInAt: new Date().toISOString(),
+      }
+      await chrome.storage.local.set({ authState: nextState })
+      resolve(nextState.idToken)
     })
   })
 }
