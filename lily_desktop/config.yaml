@@ -42,7 +42,7 @@ voice:
   speaker_verification_threshold: 0.36  # 照合閾値（コサイン類似度、0〜1）
 camera:
   enabled: true
-  device_name: ELECOM 5MP Webcam
+  device_name: USB 2.0 Camera
   interval_seconds: 180            # カメラキャプチャ間隔（秒）
   analysis_model: gpt-5            # カメラ画像分析AI
   summary_model: gpt-5.4           # 30分要約AI
