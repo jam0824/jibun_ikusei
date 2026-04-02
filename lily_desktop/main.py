@@ -21,6 +21,7 @@ from core.camera import capture_camera_frame, find_camera_index
 from core.config import load_config, save_camera_device, save_voice_device, save_healthplanet_token
 from core.desktop_context import DesktopContext, fetch_desktop_context, format_context_log
 from core.event_bus import bus
+from core.runtime_logging import configure_runtime_logging
 from core.situation_logger import SituationLogger, SituationRecord
 from data.session_manager import SessionManager
 from pose.pose_generator import ensure_pose
@@ -43,10 +44,6 @@ from health.sync_policy import (
     get_healthplanet_sync_interval_ms,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-)
 logger = logging.getLogger(__name__)
 JST = timezone(timedelta(hours=9))
 
@@ -560,6 +557,9 @@ async def async_init(app_instance: App) -> None:
 
 
 def main() -> None:
+    log_path = configure_runtime_logging()
+    logger.info("リリィデスクトップを起動します: %s", log_path)
+
     qt_app = QApplication(sys.argv)
     qt_app.setQuitOnLastWindowClosed(False)
 
@@ -591,6 +591,7 @@ def main() -> None:
 
     # アプリ終了時にパイプライン・TTSを停止
     def on_quit():
+        logger.info("リリィデスクトップを終了します")
         if app_instance.voice_pipeline is not None:
             app_instance.voice_pipeline.stop()
         if app_instance.tts_engine is not None:
