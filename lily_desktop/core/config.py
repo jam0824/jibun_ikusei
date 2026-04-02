@@ -11,6 +11,7 @@ _CONFIG_PATH = _BASE_DIR / "config.yaml"
 _ENV_PATH = _PROJECT_ROOT / ".env"
 SYS_DIR = _BASE_DIR / "sys"
 DEFAULT_USER_BALLOON_DISPLAY_SECONDS = 8.0
+DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES = 15
 
 
 def _load_dotenv(path: Path = _ENV_PATH) -> dict[str, str]:
@@ -38,6 +39,17 @@ def normalize_user_balloon_display_seconds(value: object) -> float:
     if seconds <= 0:
         return DEFAULT_USER_BALLOON_DISPLAY_SECONDS
     return seconds
+
+
+def normalize_healthplanet_sync_interval_minutes(value: object) -> int:
+    """Health Planet 同期間隔を正の分数に正規化する。"""
+    try:
+        minutes = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES
+    if minutes <= 0:
+        return DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES
+    return minutes
 
 
 @dataclass
@@ -133,6 +145,7 @@ class HealthPlanetConfig:
     client_secret: str = ""
     access_token: str = ""
     token_expires_at: int = 0  # Unix timestamp (JST)
+    sync_interval_minutes: int = DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES
 
 
 @dataclass
@@ -164,6 +177,17 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
     display_raw["user_balloon_display_seconds"] = normalize_user_balloon_display_seconds(
         display_raw.get("user_balloon_display_seconds", DEFAULT_USER_BALLOON_DISPLAY_SECONDS)
     )
+    healthplanet_raw = raw.get("healthplanet", {}) or {}
+    if not isinstance(healthplanet_raw, dict):
+        healthplanet_raw = {}
+    else:
+        healthplanet_raw = dict(healthplanet_raw)
+    healthplanet_raw["sync_interval_minutes"] = normalize_healthplanet_sync_interval_minutes(
+        healthplanet_raw.get(
+            "sync_interval_minutes",
+            DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES,
+        )
+    )
 
     config = AppConfig(
         openai=OpenAIConfig(**raw.get("openai", {})),
@@ -175,6 +199,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         camera=CameraConfig(**raw.get("camera", {})),
         display=DisplayConfig(**display_raw),
         talk_seeds=TalkSeedsConfig(**raw.get("talk_seeds", {})),
+        healthplanet=HealthPlanetConfig(**healthplanet_raw),
     )
 
     # .env から秘密情報を上書き（.env の値を優先）

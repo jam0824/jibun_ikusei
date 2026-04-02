@@ -52,7 +52,11 @@ uv run python setup_healthplanet.py
 
 **4. 以降の動作**
 
-lily_desktop 起動時に自動で過去30日分のデータを取得・保存する。データは `lily_desktop/logs/health/YYYY-MM-DD.jsonl` に日別で蓄積される（重複なし）。トークンの有効期限は30日。期限切れ後は手順3を再実行する。
+lily_desktop 起動時に自動で過去30日分のデータを取得・保存する。起動後も `healthplanet.sync_interval_minutes` ごとに再同期し、既定値は15分。データは `lily_desktop/logs/health/YYYY-MM-DD.jsonl` に日別で蓄積される（重複なし）。
+
+新規計測が見つかった場合は、JST の `date` + `time` で最新1件だけを対象に、ユーザー発話 `体重計測クエストクリア` をデスクトップのリリィへ送る。クエスト完了判定やリリィの応答は既存の会話フローが担当する。
+
+起動時にトークンが無効なら OAuth ダイアログを表示する。定期同期ではダイアログを連打せずスキップするので、期限切れ後は手順3を再実行する。
 
 ### 3. モデルや表示設定を変更したい場合
 
@@ -67,6 +71,9 @@ display:
   lily_scale: 0.3    # リリィの表示サイズ（1.0 = 元サイズ）
   haruka_scale: 0.7  # 葉留佳の表示サイズ
   user_balloon_display_seconds: 8.0  # 手入力/音声認識の表示秒数（再起動後に反映）
+
+healthplanet:
+  sync_interval_minutes: 15  # 起動時に即時同期し、その後はこの分間隔で再同期
 ```
 
 ### 4. 起動する

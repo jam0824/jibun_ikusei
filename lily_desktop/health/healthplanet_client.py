@@ -131,7 +131,7 @@ def _load_stored_keys(date_str: str) -> set[tuple[str, str]]:
     return keys
 
 
-def save_records(records: list[dict]) -> int:
+def save_records(records: list[dict]) -> list[dict]:
     """
     records を JSONL に追記する。(date, time) が重複する行はスキップ。
     新規保存件数を返す。
@@ -143,7 +143,7 @@ def save_records(records: list[dict]) -> int:
     for r in records:
         by_date.setdefault(r["date"], []).append(r)
 
-    new_count = 0
+    new_records: list[dict] = []
     for date_str, day_records in by_date.items():
         stored = _load_stored_keys(date_str)
         path = _HEALTH_LOG_DIR / f"{date_str}.jsonl"
@@ -154,9 +154,9 @@ def save_records(records: list[dict]) -> int:
                     continue
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
                 stored.add(key)
-                new_count += 1
+                new_records.append(r)
 
-    return new_count
+    return sorted(new_records, key=lambda r: (r["date"], r["time"]))
 
 
 def query_health_data(from_date: str | None, to_date: str | None) -> list[dict]:
@@ -194,7 +194,7 @@ async def sync_health_data(
     client_id: str,
     client_secret: str,
     access_token: str,
-) -> tuple[int, str | None]:
+) -> tuple[list[dict], str | None]:
     """
     過去30日分を fetch して保存する（起動時呼び出し用）。
     戻り値: (新規件数, エラーメッセージ or None)
@@ -205,9 +205,9 @@ async def sync_health_data(
         records = await asyncio.to_thread(
             fetch_innerscan_sync, access_token, from_dt, now
         )
-        new_count = await asyncio.to_thread(save_records, records)
-        return new_count, None
+        new_records = await asyncio.to_thread(save_records, records)
+        return new_records, None
     except requests.HTTPError as exc:
-        return 0, f"HTTP {exc.response.status_code}: {exc.response.text[:200]}"
+        return [], f"HTTP {exc.response.status_code}: {exc.response.text[:200]}"
     except Exception as exc:
-        return 0, str(exc)
+        return [], str(exc)
