@@ -34,6 +34,7 @@ from health.healthplanet_client import (
     is_token_valid,
     build_auth_url,
     exchange_code_for_token,
+    query_health_data,
 )
 from health.oauth_dialog import HealthPlanetOAuthDialog
 
@@ -243,6 +244,18 @@ class App:
             logger.warning("Health Planet 同期エラー: %s", error)
         else:
             logger.info("Health Planet 同期完了: %d 件新規", new_count)
+            if not self.auth.is_configured:
+                return
+
+            today = datetime.now(JST).date().isoformat()
+            from_date = (datetime.now(JST).date() - timedelta(days=30)).isoformat()
+            try:
+                records = await asyncio.to_thread(query_health_data, from_date, today)
+                if records:
+                    await self.api_client.post_health_data(records)
+                    logger.info("Health Planet クラウド同期完了: %d 件", len(records))
+            except Exception:
+                logger.exception("Health Planet クラウド同期に失敗")
 
     def start_camera_system(self) -> None:
         """カメラシステムを開始する（3分間隔キャプチャ + 30分間隔要約）"""

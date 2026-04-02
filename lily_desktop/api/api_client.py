@@ -89,6 +89,15 @@ class ApiClient:
             "GET", "/browsing-times", params={"from": from_date, "to": to_date}
         )
 
+    # ---- 体重・体脂肪率 ----
+    async def get_health_data(self, from_date: str, to_date: str) -> list[dict]:
+        return await self._request(
+            "GET", "/health-data", params={"from": from_date, "to": to_date}
+        )
+
+    async def post_health_data(self, entries: list[dict]) -> dict:
+        return await self._request("POST", "/health-data", json={"entries": entries})
+
     # ---- アクティビティログ ----
     async def get_activity_logs(self, from_date: str, to_date: str) -> list[dict]:
         return await self._request(

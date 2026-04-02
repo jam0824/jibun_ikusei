@@ -163,6 +163,25 @@ export function getBrowsingTimes(from: string, to: string) {
   return request<BrowsingTimeData[]>(`/browsing-times?from=${from}&to=${to}`)
 }
 
+export interface HealthDataEntry {
+  date: string
+  time: string
+  weight_kg: number | null
+  body_fat_pct: number | null
+  source?: string
+}
+
+export function getHealthData(from: string, to: string) {
+  return request<HealthDataEntry[]>(`/health-data?from=${from}&to=${to}`)
+}
+
+export function postHealthData(entries: HealthDataEntry[]) {
+  return request<{ synced: number }>('/health-data', {
+    method: 'POST',
+    body: JSON.stringify({ entries }),
+  })
+}
+
 // アクティビティログ
 export function postActivityLogs(entries: Array<{
   timestamp: string
