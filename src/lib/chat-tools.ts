@@ -2,6 +2,7 @@ import {
   getActivityLogs,
   getBrowsingTimes,
   getChatMessages,
+  getHealthData,
   getSituationLogs,
 } from '@/lib/api-client'
 import type {
@@ -395,6 +396,21 @@ export const CHAT_TOOLS = [
   {
     type: 'function' as const,
     function: {
+      name: 'get_health_data',
+      description: 'ユーザーの体重・体脂肪率データを取得する。Health Planet（タニタ体組成計）から同期したデータ。date / fromDate / toDate は JST の YYYY-MM-DD 形式。',
+      parameters: {
+        type: 'object',
+        properties: {
+          period: PERIOD_PROPERTY,
+          ...JST_DATE_PROPERTIES,
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function' as const,
+    function: {
       name: 'get_quest_data',
       description: 'クエスト一覧や完了記録を取得する。completions では date / fromDate / toDate を JST の YYYY-MM-DD 形式で指定できる。',
       parameters: {
@@ -605,6 +621,33 @@ async function executeGetBrowsingTimes(args: ToolArgs): Promise<string> {
   lines.push('■ サイト別')
   for (const domain of domains) {
     lines.push(`- ${domain.domain}: ${formatSeconds(domain.totalSeconds)}（${domain.category}）`)
+  }
+
+  return lines.join('\n')
+}
+
+async function executeGetHealthData(args: ToolArgs): Promise<string> {
+  const filter = resolveJstDateFilter(args, 'month')
+  if ('error' in filter) {
+    return filter.error
+  }
+
+  let records
+  try {
+    records = await getHealthData(filter.from, filter.to)
+  } catch {
+    return '体重・体脂肪率データの取得に失敗しました。'
+  }
+
+  if (records.length === 0) {
+    return `${filter.label} の体重・体脂肪率データがありません。`
+  }
+
+  const lines = [`【${filter.label} の体重・体脂肪率】`, `取得件数: ${records.length}件`, '']
+  for (const record of records) {
+    const weight = record.weight_kg !== null ? `${record.weight_kg}kg` : '－'
+    const bodyFat = record.body_fat_pct !== null ? `${record.body_fat_pct}%` : '－'
+    lines.push(`- ${record.date} ${record.time}  体重: ${weight}  体脂肪率: ${bodyFat}`)
   }
 
   return lines.join('\n')
@@ -1168,6 +1211,10 @@ export async function executeTool(
 ): Promise<string> {
   if (name === 'get_browsing_times') {
     return executeGetBrowsingTimes(args)
+  }
+
+  if (name === 'get_health_data') {
+    return executeGetHealthData(args)
   }
 
   // context が必要なツール

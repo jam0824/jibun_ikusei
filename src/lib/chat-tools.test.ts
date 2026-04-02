@@ -5,6 +5,7 @@ import type { BrowsingTimeData } from './api-client'
 
 vi.mock('./api-client', () => ({
   getBrowsingTimes: vi.fn(),
+  getHealthData: vi.fn(),
   getActivityLogs: vi.fn(),
   getSituationLogs: vi.fn(),
   getChatMessages: vi.fn(),
@@ -38,6 +39,21 @@ const sampleData: BrowsingTimeData[] = [
       'udemy.com': { totalSeconds: 2400, category: 'Study', isGrowth: true },
     },
     totalSeconds: 7800,
+  },
+]
+
+const sampleHealthData = [
+  {
+    date: '2026-03-23',
+    time: '07:10',
+    weight_kg: 65.4,
+    body_fat_pct: 18.1,
+  },
+  {
+    date: '2026-03-24',
+    time: '07:12',
+    weight_kg: 65.1,
+    body_fat_pct: 17.9,
   },
 ]
 
@@ -276,6 +292,15 @@ describe('CHAT_TOOLS', () => {
     expect(tool?.function.parameters.properties).toHaveProperty('toDate')
     expect(tool?.function.parameters.required).not.toContain('period')
   })
+
+  it('exposes explicit JST date args on health data tool', () => {
+    const tool = CHAT_TOOLS.find((entry) => entry.function.name === 'get_health_data')
+    expect(tool).toBeDefined()
+    expect(tool?.function.parameters.properties).toHaveProperty('date')
+    expect(tool?.function.parameters.properties).toHaveProperty('fromDate')
+    expect(tool?.function.parameters.properties).toHaveProperty('toDate')
+    expect(tool?.function.parameters.required).not.toContain('period')
+  })
 })
 
 describe('get_browsing_times', () => {
@@ -311,6 +336,44 @@ describe('get_browsing_times', () => {
     const result = await executeTool('get_browsing_times', { period: 'today' })
 
     expect(result).toContain('閲覧時間データがありません')
+  })
+})
+
+describe('get_health_data', () => {
+  beforeEach(() => {
+    vi.resetAllMocks()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-23T06:00:00.000Z'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('uses month period by default', async () => {
+    vi.mocked(api.getHealthData).mockResolvedValue(sampleHealthData)
+
+    await executeTool('get_health_data', {})
+
+    expect(api.getHealthData).toHaveBeenCalledWith('2026-02-21', '2026-03-23')
+  })
+
+  it('passes explicit date through', async () => {
+    vi.mocked(api.getHealthData).mockResolvedValue(sampleHealthData)
+
+    await executeTool('get_health_data', { date: '2026-03-29' })
+
+    expect(api.getHealthData).toHaveBeenCalledWith('2026-03-29', '2026-03-29')
+  })
+
+  it('formats returned health records', async () => {
+    vi.mocked(api.getHealthData).mockResolvedValue(sampleHealthData)
+
+    const result = await executeTool('get_health_data', { period: 'month' })
+
+    expect(result).toContain('体重・体脂肪率')
+    expect(result).toContain('65.4kg')
+    expect(result).toContain('18.1%')
   })
 })
 
