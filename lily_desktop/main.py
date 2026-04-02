@@ -37,6 +37,11 @@ from health.healthplanet_client import (
     query_health_data,
 )
 from health.oauth_dialog import HealthPlanetOAuthDialog
+from health.sync_policy import (
+    choose_healthplanet_sync_action,
+    emit_weight_quest_clear_for_new_records,
+    get_healthplanet_sync_interval_ms,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -72,6 +77,11 @@ class App:
         self._camera_timer.setSingleShot(False)
         self._summary_timer = QTimer()
         self._summary_timer.setSingleShot(False)
+        self._healthplanet_timer = QTimer()
+        self._healthplanet_timer.setSingleShot(False)
+        self._healthplanet_timer.timeout.connect(self._on_healthplanet_timer)
+        self._healthplanet_sync_in_progress = False
+        self._healthplanet_oauth_dialog: HealthPlanetOAuthDialog | None = None
         self.situation_logger = SituationLogger(
             openai_api_key=self.config.openai.api_key,
             summary_model=self.config.camera.summary_model,
@@ -207,17 +217,48 @@ class App:
         logger.info("カメラを選択・保存: %s (index=%d)", device_name, device_index)
         bus.balloon_show.emit("リリィ", f"カメラを「{device_name}」に切り替えたよ！")
 
-    def start_healthplanet_sync(self) -> None:
-        """Health Planet データ同期を開始する。トークン未取得なら OAuth ダイアログを表示。"""
+    def start_healthplanet_sync(self, *, interactive_auth: bool = True) -> None:
+        """Health Planet データ同期を開始する。起動時のみ OAuth ダイアログを出す。"""
+        hp = self.config.healthplanet
+        has_credentials = bool(hp.client_id and hp.client_secret)
+        token_valid = is_token_valid(hp.access_token, hp.token_expires_at)
+        action = choose_healthplanet_sync_action(
+            has_credentials=has_credentials,
+            token_valid=token_valid,
+            interactive_auth=interactive_auth,
+            sync_in_progress=self._healthplanet_sync_in_progress,
+        )
+
+        if action == "skip":
+            if has_credentials and not token_valid and not interactive_auth:
+                logger.info("Health Planet 定期同期をスキップ: トークン無効のため再認証待ち")
+            return
+
+        if action == "oauth":
+            if self._healthplanet_oauth_dialog is None:
+                dialog = HealthPlanetOAuthDialog(build_auth_url(hp.client_id))
+                dialog.code_submitted.connect(self._on_healthplanet_code)
+                dialog.finished.connect(self._on_healthplanet_oauth_dialog_closed)
+                self._healthplanet_oauth_dialog = dialog
+
+            self._healthplanet_oauth_dialog.show()
+            return
+
+        asyncio.ensure_future(self._run_healthplanet_sync())
+
+    def start_healthplanet_timer(self) -> None:
         hp = self.config.healthplanet
         if not hp.client_id or not hp.client_secret:
             return
-        if not is_token_valid(hp.access_token, hp.token_expires_at):
-            dialog = HealthPlanetOAuthDialog(build_auth_url(hp.client_id))
-            dialog.code_submitted.connect(self._on_healthplanet_code)
-            dialog.show()
-            return
-        asyncio.ensure_future(self._run_healthplanet_sync())
+        self._healthplanet_timer.start(
+            get_healthplanet_sync_interval_ms(hp.sync_interval_minutes)
+        )
+
+    def _on_healthplanet_timer(self) -> None:
+        self.start_healthplanet_sync(interactive_auth=False)
+
+    def _on_healthplanet_oauth_dialog_closed(self) -> None:
+        self._healthplanet_oauth_dialog = None
 
     def _on_healthplanet_code(self, code: str) -> None:
         asyncio.ensure_future(self._exchange_and_sync(code))
@@ -233,17 +274,40 @@ class App:
             save_healthplanet_token(access_token, expires_at)
             self.config.healthplanet.access_token = access_token
             self.config.healthplanet.token_expires_at = expires_at
+            if self._healthplanet_oauth_dialog is not None:
+                self._healthplanet_oauth_dialog.close()
             await self._run_healthplanet_sync()
         except Exception:
             logger.exception("Health Planet OAuth 失敗")
 
     async def _run_healthplanet_sync(self) -> None:
+        if self._healthplanet_sync_in_progress:
+            return
+
         hp = self.config.healthplanet
-        new_count, error = await sync_health_data(hp.client_id, hp.client_secret, hp.access_token)
-        if error:
-            logger.warning("Health Planet 同期エラー: %s", error)
-        else:
-            logger.info("Health Planet 同期完了: %d 件新規", new_count)
+        self._healthplanet_sync_in_progress = True
+        try:
+            new_records, error = await sync_health_data(
+                hp.client_id,
+                hp.client_secret,
+                hp.access_token,
+            )
+            if error:
+                logger.warning("Health Planet 同期エラー: %s", error)
+                return
+
+            logger.info("Health Planet 同期完了: %d 件新規", len(new_records))
+            latest_record = emit_weight_quest_clear_for_new_records(
+                new_records,
+                bus.user_message_received.emit,
+            )
+            if latest_record is not None:
+                logger.info(
+                    "Health Planet 新規計測をクエスト発話に変換: %s %s",
+                    latest_record.get("date", ""),
+                    latest_record.get("time", ""),
+                )
+
             if not self.auth.is_configured:
                 return
 
@@ -256,6 +320,8 @@ class App:
                     logger.info("Health Planet クラウド同期完了: %d 件", len(records))
             except Exception:
                 logger.exception("Health Planet クラウド同期に失敗")
+        finally:
+            self._healthplanet_sync_in_progress = False
 
     def start_camera_system(self) -> None:
         """カメラシステムを開始する（3分間隔キャプチャ + 30分間隔要約）"""
@@ -489,6 +555,7 @@ async def async_init(app_instance: App) -> None:
 
     # Health Planet データ同期
     if app_instance.config.healthplanet.client_id:
+        app_instance.start_healthplanet_timer()
         app_instance.start_healthplanet_sync()
 
 

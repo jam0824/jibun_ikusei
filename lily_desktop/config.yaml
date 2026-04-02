@@ -62,3 +62,5 @@ tts:
   haruka_speaker_id: 3             # VOICEVOX用
   haruka_gemini_voice: Achernar        # Gemini TTS用
   gemini_model: gemini-2.5-flash-preview-tts
+healthplanet:
+  sync_interval_minutes: 15  # 起動時に即時同期し、その後はこの分間隔で再同期
