@@ -83,6 +83,8 @@ cd lily_desktop
 uv run python main.py
 ```
 
+起動中の実行ログは `lily_desktop/logs/runtime/YYYY-MM-DD.log` に JST で追記される。
+
 ---
 
 ## 使い方
