@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import { Bell, Home, ListTodo, Plus, ScrollText, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'

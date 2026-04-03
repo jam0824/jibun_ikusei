@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Globe, History, RotateCcw, ScrollText, Settings2 } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { CalendarDays, Globe, History, RotateCcw, ScrollText, Settings2, Utensils } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { CompletionResolutionCard } from '@/components/completion-resolution-card'
 import {
@@ -12,7 +12,115 @@ import { formatDateTime, isUndoable } from '@/lib/date'
 import { useAppStore } from '@/store/app-store'
 import { BrowsingTimeView } from '@/screens/browsing-time-view'
 
-type RecordsTab = 'quests' | 'browsing'
+type RecordsTab = 'quests' | 'browsing' | 'nutrition'
+
+type NutrientLabel = '不足' | '適正' | '過剰'
+
+interface MockNutrient {
+  name: string
+  value: number
+  unit: string
+  label: NutrientLabel
+  referenceMax: number
+}
+
+const MOCK_NUTRIENTS: MockNutrient[] = [
+  { name: 'エネルギー', value: 1822,  unit: 'kcal', label: '不足', referenceMax: 2239 },
+  { name: 'たんぱく質', value: 83.3,  unit: 'g',    label: '適正', referenceMax: 178.4 },
+  { name: '脂質',       value: 68.2,  unit: 'g',    label: '適正', referenceMax: 79.3 },
+  { name: '糖質',       value: 224.4, unit: 'g',    label: '適正', referenceMax: 254.9 },
+  { name: 'カリウム',   value: 1704,  unit: 'mg',   label: '不足', referenceMax: 3000 },
+  { name: 'カルシウム', value: 472,   unit: 'mg',   label: '不足', referenceMax: 2500 },
+  { name: '鉄',         value: 13.7,  unit: 'mg',   label: '適正', referenceMax: 20 },
+  { name: 'ビタミンA',  value: 2977,  unit: 'µg',   label: '過剰', referenceMax: 2700 },
+  { name: 'ビタミンE',  value: 17,    unit: 'mg',   label: '適正', referenceMax: 800 },
+  { name: 'ビタミンB1', value: 3.5,   unit: 'mg',   label: '適正', referenceMax: 5 },
+  { name: 'ビタミンB2', value: 3.59,  unit: 'mg',   label: '適正', referenceMax: 5 },
+  { name: 'ビタミンB6', value: 4.47,  unit: 'mg',   label: '適正', referenceMax: 60 },
+  { name: 'ビタミンC',  value: 136,   unit: 'mg',   label: '適正', referenceMax: 500 },
+  { name: '食物繊維',   value: 14.5,  unit: 'g',    label: '不足', referenceMax: 22 },
+  { name: '飽和脂肪酸', value: 17.77, unit: 'g',    label: '過剰', referenceMax: 15.86 },
+  { name: '塩分',       value: 7.1,   unit: 'g',    label: '適正', referenceMax: 7.5 },
+]
+
+const BAR_COLORS: Record<NutrientLabel, string> = {
+  '不足': 'bg-blue-400',
+  '適正': 'bg-green-400',
+  '過剰': 'bg-red-400',
+}
+
+function getTodayJst(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function formatDateJst(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-')
+  return `${y}年${Number(m)}月${Number(d)}日`
+}
+
+function NutritionMockView() {
+  const [date, setDate] = useState(getTodayJst())
+  const dateInputRef = useRef<HTMLInputElement>(null)
+
+  return (
+    <div className="space-y-3 pb-6">
+      {/* 日付ピッカー */}
+      <button
+        type="button"
+        onClick={() => dateInputRef.current?.showPicker()}
+        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 transition hover:border-violet-200 hover:bg-violet-50/40"
+      >
+        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+          <CalendarDays className="h-4 w-4 text-violet-500" />
+          {formatDateJst(date)}
+        </div>
+        <span className="text-xs text-slate-400">タップで変更</span>
+      </button>
+      <input
+        ref={dateInputRef}
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        className="absolute opacity-0 pointer-events-none h-0 w-0"
+      />
+
+      {/* モックバナー */}
+      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+        モックデータを表示しています（1日分）
+      </div>
+
+      {/* 栄養素グラフ */}
+      {MOCK_NUTRIENTS.map((nutrient) => {
+        const pct = Math.min((nutrient.value / nutrient.referenceMax) * 100, 100)
+        return (
+          <div key={nutrient.name} className="flex items-center gap-2">
+            <div className="w-20 shrink-0 text-xs text-slate-600">{nutrient.name}</div>
+            <div className="flex-1 overflow-hidden rounded-full bg-slate-100" style={{ height: '8px' }}>
+              <div
+                className={`h-full rounded-full ${BAR_COLORS[nutrient.label]}`}
+                style={{ width: `${pct}%` }}
+              />
+            </div>
+            <div className="w-20 shrink-0 text-right text-xs text-slate-500">
+              {nutrient.value} {nutrient.unit}
+            </div>
+          </div>
+        )
+      })}
+
+      {/* 凡例 */}
+      <div className="flex items-center gap-4 text-[10px] text-slate-400">
+        <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-full bg-blue-400" />不足</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-full bg-green-400" />適正</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-full bg-red-400" />過剰</span>
+      </div>
+    </div>
+  )
+}
 
 const recordFilterOptions: Array<{
   key: CompletionHistoryFilter
@@ -57,6 +165,9 @@ const subtitles: Record<RecordsTab, Record<string, string>> = {
   browsing: {
     default: 'ドメインごとの閲覧時間を確認できます。',
   },
+  nutrition: {
+    default: '本日の栄養素摂取状況を確認できます。',
+  },
 }
 
 export function RecordsScreen() {
@@ -82,9 +193,12 @@ export function RecordsScreen() {
 
   const activeOption = recordFilterOptions.find((option) => option.key === activeFilter) ?? recordFilterOptions[0]
 
-  const subtitle = activeTab === 'quests'
-    ? subtitles.quests[activeFilter]
-    : subtitles.browsing.default
+  const subtitle =
+    activeTab === 'quests'
+      ? subtitles.quests[activeFilter]
+      : activeTab === 'browsing'
+        ? subtitles.browsing.default
+        : subtitles.nutrition.default
 
   return (
     <Screen
@@ -108,7 +222,7 @@ export function RecordsScreen() {
           }`}
         >
           <ScrollText className="h-3.5 w-3.5" />
-          クエスト記録
+          クエスト
         </button>
         <button
           type="button"
@@ -122,10 +236,24 @@ export function RecordsScreen() {
           <Globe className="h-3.5 w-3.5" />
           閲覧時間
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('nutrition')}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+            activeTab === 'nutrition'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Utensils className="h-3.5 w-3.5" />
+          栄養
+        </button>
       </div>
 
       {activeTab === 'browsing' ? (
         <BrowsingTimeView />
+      ) : activeTab === 'nutrition' ? (
+        <NutritionMockView />
       ) : (
         <>
           <div className="grid grid-cols-3 gap-3">
