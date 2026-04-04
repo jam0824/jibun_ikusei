@@ -10,11 +10,11 @@ from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
 
 from ai.annict_client import AnnictWork, fetch_seasonal_works
-from ai.camera_analyzer import CameraAnalysis, analyze_camera_frame
+from ai.camera_analyzer import CameraAnalysis
 from ai.screen_analyzer import ScreenAnalysis
 from ai.wikimedia_client import WikimediaArticle, fetch_featured_content, fetch_interest_articles
-from core.camera import capture_camera_frame
-from core.desktop_context import DesktopContext, fetch_desktop_context
+from core.desktop_context import DesktopContext
+from core.situation_capture import SituationCaptureCoordinator
 
 if TYPE_CHECKING:
     from api.api_client import ApiClient
@@ -54,6 +54,7 @@ class TalkSeedManager:
         camera_device_index: int = 0,
         interest_topics: list[str] | None = None,
         api_client: ApiClient | None = None,
+        situation_capture_coordinator: SituationCaptureCoordinator | None = None,
     ):
         self._openai_api_key = openai_api_key
         self._screen_analysis_model = screen_analysis_model
@@ -63,6 +64,7 @@ class TalkSeedManager:
         self._camera_device_index = camera_device_index
         self._interest_topics: list[str] = interest_topics or []
         self._api_client = api_client
+        self._situation_capture = situation_capture_coordinator or SituationCaptureCoordinator()
         self._used_history: list[tuple[str, datetime]] = []  # (source_key, used_at)
         self._last_camera_analysis: CameraAnalysis | None = None
 
@@ -176,10 +178,17 @@ class TalkSeedManager:
     async def _collect_desktop(self) -> list[TalkSeed]:
         """デスクトップ状況から種を生成"""
         try:
-            ctx = await fetch_desktop_context(
+            attempt = await self._situation_capture.capture_desktop(
                 api_key=self._openai_api_key,
                 model=self._screen_analysis_model,
             )
+            if attempt.skipped:
+                logger.info("デスクトップ種の取得をスキップ: %s", attempt.skip_reason)
+                return []
+            if attempt.error or attempt.context is None:
+                return []
+
+            ctx = attempt.context
             if ctx.skipped or ctx.error or ctx.analysis is None:
                 return []
 
@@ -231,15 +240,18 @@ class TalkSeedManager:
         if not self._camera_enabled:
             return []
         try:
-            frame_png = capture_camera_frame(self._camera_device_index)
-            if frame_png is None:
-                return []
-
-            analysis = await analyze_camera_frame(
+            attempt = await self._situation_capture.capture_camera(
                 api_key=self._openai_api_key,
                 model=self._camera_analysis_model,
-                frame_png=frame_png,
+                device_index=self._camera_device_index,
             )
+            if attempt.skipped:
+                logger.info("カメラ種の取得をスキップ: %s", attempt.skip_reason)
+                return []
+            if attempt.error or attempt.analysis is None:
+                return []
+
+            analysis = attempt.analysis
             self._last_camera_analysis = analysis
 
             # 「特に変化なし」的な内容は雑談向きでないのでスキップ

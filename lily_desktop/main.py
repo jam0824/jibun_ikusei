@@ -11,18 +11,18 @@ from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
 
 from ai.auto_conversation import AutoConversation
-from ai.camera_analyzer import analyze_camera_frame
 from ai.chat_engine import ChatEngine
 from ai.tool_definitions import CHAT_TOOLS
 from ai.tool_executor import ToolExecutor
 from api.api_client import ApiClient
 from api.auth import CognitoAuth
-from core.camera import capture_camera_frame, find_camera_index
+from core.camera import find_camera_index
 from core.config import load_config, save_camera_device, save_voice_device, save_healthplanet_token
-from core.desktop_context import DesktopContext, fetch_desktop_context, format_context_log
+from core.desktop_context import format_context_log
 from core.event_bus import bus
 from core.local_http_bridge import LocalHttpBridge, start_local_http_bridge
 from core.runtime_logging import configure_runtime_logging
+from core.situation_capture import SituationCaptureCoordinator
 from core.situation_logger import SituationLogger, SituationRecord
 from data.session_manager import SessionManager
 from pose.pose_generator import ensure_pose
@@ -67,7 +67,13 @@ class App:
             self.config, self.api_client, self.session_mgr
         )
         self.chat_engine.set_tools(CHAT_TOOLS, self.tool_executor.execute)
-        self.auto_conversation = AutoConversation(self.config, self.session_mgr, api_client=self.api_client)
+        self.situation_capture = SituationCaptureCoordinator()
+        self.auto_conversation = AutoConversation(
+            self.config,
+            self.session_mgr,
+            api_client=self.api_client,
+            situation_capture_coordinator=self.situation_capture,
+        )
         self.voice_pipeline: VoicePipeline | None = None
         self.tts_engine: TTSEngine | None = None
 
@@ -94,6 +100,7 @@ class App:
         self._healthplanet_timer.timeout.connect(self._on_healthplanet_timer)
         self._healthplanet_sync_in_progress = False
         self._healthplanet_oauth_dialog: HealthPlanetOAuthDialog | None = None
+        self._last_situation_capture_skip_reason = ""
         self.situation_logger = SituationLogger(
             openai_api_key=self.config.openai.api_key,
             summary_model=self.config.camera.summary_model,
@@ -385,14 +392,16 @@ class App:
 
     def _on_camera_timer(self) -> None:
         """3分間隔のカメラキャプチャ + デスクトップ状況取得"""
-        asyncio.ensure_future(self._capture_and_record())
+        asyncio.ensure_future(self._capture_and_record_coordinated())
 
     def _on_summary_timer(self) -> None:
         """30分間隔のサーバー要約"""
         asyncio.ensure_future(self._generate_and_send_summary())
 
-    async def _capture_and_record(self) -> None:
+    async def _capture_and_record(self) -> SituationRecord | None:
         """カメラ画像取得 + デスクトップ状況取得 → ローカル記録"""
+        return await self._capture_and_record_coordinated()
+
         from core.active_window import get_active_window_info
 
         record = SituationRecord()
@@ -453,10 +462,12 @@ class App:
         self.auto_conversation.trigger_now()
 
     def _on_desktop_context_requested(self) -> None:
-        asyncio.ensure_future(self._fetch_and_show_desktop_context())
+        asyncio.ensure_future(self._fetch_and_show_desktop_context_coordinated())
 
     async def _fetch_and_show_desktop_context(self) -> None:
         """デスクトップ状況を取得してログ出力 + 吹き出しに表示（デバッグ用）"""
+        return await self._fetch_and_show_desktop_context_coordinated()
+
         bus.balloon_show.emit("リリィ", "画面の状況を確認中…")
         try:
             ctx = await fetch_desktop_context(
@@ -488,13 +499,126 @@ class App:
             bus.balloon_show.emit("リリィ", "[デバッグ] 状況取得に失敗しちゃった…")
 
     def _on_camera_capture_requested(self) -> None:
-        asyncio.ensure_future(self._debug_capture_and_record())
+        asyncio.ensure_future(self._debug_capture_and_record_coordinated())
 
     async def _debug_capture_and_record(self) -> None:
         """カメラ+デスクトップ+アクティブアプリを取得・記録して吹き出しに表示（デバッグ用）"""
+        return await self._debug_capture_and_record_coordinated()
+
         bus.balloon_show.emit("リリィ", "カメラ・デスクトップ状況を確認中…")
         try:
             record = await self._capture_and_record()
+
+            parts = ["[デバッグ] 状況記録完了"]
+            if record.camera_summary:
+                parts.append(f"カメラ: {record.camera_summary}")
+            else:
+                parts.append("カメラ: 取得できず")
+            if record.desktop_summary:
+                parts.append(f"デスクトップ: {record.desktop_summary}")
+            if record.active_app:
+                parts.append(f"アプリ: {record.active_app}")
+
+            bus.balloon_show.emit("リリィ", "\n".join(parts))
+        except Exception:
+            logger.exception("デバッグ: 状況記録に失敗")
+            bus.balloon_show.emit("リリィ", "[デバッグ] 状況記録に失敗しちゃった…")
+
+    async def _capture_and_record_coordinated(self) -> SituationRecord | None:
+        """共有コーディネータ経由で状況を取得して記録する。"""
+        from core.active_window import get_active_window_info
+
+        record = SituationRecord()
+        record.timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+        self._last_situation_capture_skip_reason = ""
+
+        capture = await self.situation_capture.capture_for_record(
+            api_key=self.config.openai.api_key,
+            camera_model=self.config.camera.analysis_model,
+            screen_model=self.config.openai.screen_analysis_model,
+            camera_device_index=self._camera_device_index,
+        )
+        if capture.skipped:
+            self._last_situation_capture_skip_reason = capture.skip_reason
+            logger.info("状況記録をスキップ: %s", capture.skip_reason)
+            return None
+
+        if capture.camera.analysis is not None:
+            record.camera_summary = capture.camera.analysis.summary
+            record.camera_tags = capture.camera.analysis.tags
+            record.camera_scene_type = capture.camera.analysis.scene_type
+
+        ctx = capture.desktop.context
+        if ctx is not None and ctx.analysis:
+            record.desktop_summary = ctx.analysis.summary
+            record.desktop_tags = ctx.analysis.tags
+            record.desktop_activity_type = ctx.analysis.activity_type
+
+        try:
+            win_info = ctx.window_info if ctx is not None else get_active_window_info()
+            record.active_app = win_info.app_name
+            record.window_title = win_info.window_title[:80]
+        except Exception:
+            logger.exception("アクティブアプリ取得に失敗")
+
+        self.situation_logger.record(record)
+        return record
+
+    async def _fetch_and_show_desktop_context_coordinated(self) -> None:
+        """共有コーディネータ経由でデスクトップ状況を取得して表示する。"""
+        bus.balloon_show.emit("リリィ", "画面の状況を確認中…")
+        try:
+            attempt = await self.situation_capture.capture_desktop(
+                api_key=self.config.openai.api_key,
+                model=self.config.openai.screen_analysis_model,
+            )
+            if attempt.skipped:
+                bus.balloon_show.emit(
+                    "リリィ",
+                    f"[デバッグ] 取得中のためスキップ\n{attempt.skip_reason}",
+                )
+                return
+            if attempt.error or attempt.context is None:
+                bus.balloon_show.emit(
+                    "リリィ",
+                    f"[デバッグ] エラー: {attempt.error or '状況取得に失敗'}",
+                )
+                return
+
+            ctx = attempt.context
+            self._last_desktop_context = ctx
+            logger.info("\n%s", format_context_log(ctx))
+
+            if ctx.skipped:
+                bus.balloon_show.emit(
+                    "リリィ",
+                    f"[デバッグ] 解析対象外だよ\n{ctx.window_info.exclude_reason}",
+                )
+            elif ctx.error:
+                bus.balloon_show.emit("リリィ", f"[デバッグ] エラー: {ctx.error}")
+            elif ctx.analysis:
+                bus.balloon_show.emit(
+                    "リリィ",
+                    f"[デバッグ] {ctx.analysis.summary}\n"
+                    f"タグ: {', '.join(ctx.analysis.tags)}\n"
+                    f"種類: {ctx.analysis.activity_type}\n"
+                    f"詳細: {ctx.analysis.detail}",
+                )
+        except Exception:
+            logger.exception("デスクトップ状況取得に失敗")
+            bus.balloon_show.emit("リリィ", "[デバッグ] 状況取得に失敗しちゃった…")
+
+    async def _debug_capture_and_record_coordinated(self) -> None:
+        """共有コーディネータ経由で状況記録を確認する。"""
+        bus.balloon_show.emit("リリィ", "カメラ・デスクトップ状況を確認中…")
+        try:
+            record = await self._capture_and_record_coordinated()
+            if record is None:
+                bus.balloon_show.emit(
+                    "リリィ",
+                    f"[デバッグ] 取得中のためスキップ\n{self._last_situation_capture_skip_reason or '状況取得はすでに実行中です'}",
+                )
+                return
 
             parts = ["[デバッグ] 状況記録完了"]
             if record.camera_summary:
