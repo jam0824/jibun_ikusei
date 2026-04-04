@@ -121,7 +121,7 @@
 - [ ] `uv run pytest tests/fitbit/ -v` — 新規テスト全パス
 - [ ] `uv run pytest tests/ -v` — 既存テストに影響なし
 - [ ] `fitbit_config.json` を `lily_desktop/` に配置してアプリ起動
-- [ ] `logs/fitbit/` に raw JSON が保存されること
+- [ ] `logs/fitbit/` に raw JSON が保存されること（summary化失敗時のみ保存される）
 - [ ] DynamoDB コンソールで `SK=FITBIT#YYYY-MM-DD` レコード確認
 - [ ] 2 回目起動で upsert（`updatedAt` が更新）されること
 - [ ] チャットで「昨日の睡眠は？」と入力し `get_fitbit_data` が呼ばれること
