@@ -4,6 +4,7 @@ import {
   buildTemplateSkillResolution,
   createAssistantMessage,
   createSkillRecord,
+  ensureSystemQuests,
   getProviderConfig,
   getQuestAvailability,
   hasUsableAi,
@@ -48,7 +49,7 @@ type ImportMode = 'merge' | 'replace'
 type CompletionOptions = {
   note?: string
   completedAt: string
-  sourceScreen: 'home' | 'quest_list'
+  sourceScreen: 'home' | 'quest_list' | 'meal'
 }
 
 type ConnectionState = {
@@ -252,6 +253,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // まずlocalStorageで即時初期化（画面をすぐ表示するため）
     const rawLocal = loadPersistedState()
     const local = maybeCreatePeriodicMessages(hydratePersistedState(rawLocal))
+    // システムクエストを即座に永続化して2重生成を防ぐ
+    persistState(local)
     set({
       ...local,
       hydrated: true,
@@ -277,7 +280,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return (cloudVal.updatedAt ?? '') > (localVal.updatedAt ?? '') ? cloudVal : localVal
       }
 
-      const merged = reconcileState({
+      const merged = ensureSystemQuests(reconcileState({
         ...local,
         user: pickNewer(local.user, cloud.user as typeof local.user | undefined),
         settings: pickNewer(local.settings, cloud.settings as typeof local.settings | undefined),
@@ -288,7 +291,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         skills: mergeArrayById(local.skills, cloud.skills ?? []),
         personalSkillDictionary: mergeArrayById(local.personalSkillDictionary, cloud.personalSkillDictionary ?? []),
         assistantMessages: mergeArrayById(local.assistantMessages, cloud.assistantMessages ?? []),
-      })
+      }))
       const hydrated = maybeCreatePeriodicMessages(merged)
       persistState(hydrated)
       set({

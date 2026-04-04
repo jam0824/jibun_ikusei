@@ -5,6 +5,7 @@ import { Screen } from '@/components/layout'
 import { Button, Card, CardContent } from '@/components/ui'
 import { NUTRIENT_META } from '@/domain/nutrition-constants'
 import { useAppStore } from '@/store/app-store'
+import { nowIso } from '@/lib/date'
 import type { MealType, NutrientKey, NutrientLabel, NutrientMap, NutritionRecord } from '@/domain/types'
 
 const MEAL_TYPE_LABELS: Record<string, string> = {
@@ -62,11 +63,13 @@ export function MealConfirmScreen() {
   const type = (searchParams.get('type') ?? 'daily') as MealType
   const date = searchParams.get('date') ?? ''
 
-  const { fetchNutrition, saveNutrition, nutritionCache } = useAppStore(
+  const { fetchNutrition, saveNutrition, nutritionCache, quests, completeQuest } = useAppStore(
     useShallow((s) => ({
       fetchNutrition: s.fetchNutrition,
       saveNutrition: s.saveNutrition,
       nutritionCache: s.nutritionCache,
+      quests: s.quests,
+      completeQuest: s.completeQuest,
     }))
   )
 
@@ -131,6 +134,19 @@ export function MealConfirmScreen() {
         createdAt: existingRecord?.createdAt,
         updatedAt: new Date().toISOString(),
       } as Omit<NutritionRecord, 'userId'>)
+
+      // 食事登録クエストをクリア
+      const mealQuest = quests.find((q) => q.systemKey === 'meal_register' && q.status === 'active')
+      if (mealQuest) {
+        const { completionId } = await completeQuest(mealQuest.id, {
+          completedAt: nowIso(),
+          sourceScreen: 'meal',
+        })
+        if (completionId) {
+          navigate(`/clear/${completionId}`)
+          return
+        }
+      }
 
       navigate('/meal')
     } catch (err) {
