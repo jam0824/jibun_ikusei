@@ -14,6 +14,7 @@ from ai.openai_client import TextResult, send_chat_message
 from ai.system_prompts import build_haruka_system_prompt
 from ai.talk_seed import TalkSeed, TalkSeedManager
 from core.config import AppConfig
+from core.domain_events import ChatAutoTalkDue, ChatFollowUpRequested, DomainEventHub
 from core.event_bus import bus
 from core.situation_capture import SituationCaptureCoordinator
 from data.session_manager import SessionManager
@@ -134,9 +135,11 @@ class AutoConversation:
         session_mgr: SessionManager,
         api_client=None,
         situation_capture_coordinator: SituationCaptureCoordinator | None = None,
+        event_hub: DomainEventHub | None = None,
     ):
         self._config = config
         self._session_mgr = session_mgr
+        self._event_hub = event_hub
         self._seed_mgr = TalkSeedManager(
             openai_api_key=config.openai.api_key,
             screen_analysis_model=config.openai.screen_analysis_model,
@@ -728,3 +731,66 @@ def _parse_talk_response(raw: str) -> tuple[str, str]:
     except json.JSONDecodeError:
         logger.warning("雑談レスポンスのJSONパース失敗: %s", raw[:100])
         return raw.strip()[:200], "default"
+
+
+def _evented_trigger_now(self: AutoConversation) -> None:
+    if self._event_hub is not None:
+        self._event_hub.publish(
+            ChatAutoTalkDue(source="auto_conversation.manual")
+        )
+        return
+    if self._is_talking:
+        logger.info("髮題ｫ・ｸｭ縺ｮ縺溘ａ繧ｹ繧ｭ繝・・")
+        return
+    asyncio.ensure_future(self._run_conversation())
+
+
+def _evented_trigger_follow_up(
+    self: AutoConversation,
+    user_text: str,
+    lily_text: str,
+) -> None:
+    if self._event_hub is not None:
+        self._event_hub.publish(
+            ChatFollowUpRequested(
+                source="auto_conversation.follow_up",
+                user_text=user_text,
+                lily_text=lily_text,
+            )
+        )
+        return
+    if self._is_talking:
+        logger.info("謗帙￠蜷医＞荳ｭ縺ｮ縺溘ａ繝輔か繝ｭ繝ｼ繧｢繝・・繧偵せ繧ｭ繝・・")
+        return
+    asyncio.ensure_future(self._run_follow_up(user_text, lily_text))
+
+
+def _evented_on_timer(self: AutoConversation) -> None:
+    if self._event_hub is not None:
+        self._event_hub.publish(
+            ChatAutoTalkDue(source="auto_conversation.timer")
+        )
+        return
+    if self._is_talking:
+        logger.info("髮題ｫ・ｸｭ縺ｮ縺溘ａ繧ｿ繧､繝槭・繧ｹ繧ｭ繝・・")
+        return
+    asyncio.ensure_future(self._run_conversation())
+
+
+async def _run_auto_talk_job(self: AutoConversation) -> None:
+    await self._run_conversation()
+
+
+async def _run_follow_up_job(
+    self: AutoConversation,
+    user_text: str,
+    lily_text: str,
+) -> None:
+    await self._run_follow_up(user_text, lily_text)
+
+
+AutoConversation.trigger_now = _evented_trigger_now
+AutoConversation.trigger_follow_up = _evented_trigger_follow_up
+AutoConversation._on_timer = _evented_on_timer
+AutoConversation.run_auto_talk_job = _run_auto_talk_job
+AutoConversation.run_follow_up_job = _run_follow_up_job

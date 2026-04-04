@@ -16,10 +16,19 @@ from ai.tool_definitions import CHAT_TOOLS
 from ai.tool_executor import ToolExecutor
 from api.api_client import ApiClient
 from api.auth import CognitoAuth
+from core.background_event_runtime import register_background_event_handlers
 from core.camera import find_camera_index
 from core.config import load_config, save_camera_device, save_voice_device, save_healthplanet_token
 from core.desktop_context import format_context_log
+from core.domain_events import (
+    AppStarted,
+    CaptureSnapshotRequested,
+    CaptureSummaryDue,
+    DomainEventHub,
+    HealthPlanetSyncRequested,
+)
 from core.event_bus import bus
+from core.job_manager import JobManager
 from core.local_http_bridge import LocalHttpBridge, start_local_http_bridge
 from core.runtime_logging import configure_runtime_logging
 from core.situation_capture import SituationCaptureCoordinator
@@ -56,6 +65,8 @@ class App:
 
     def __init__(self):
         self.config = load_config()
+        self.event_hub = DomainEventHub()
+        self.job_manager = JobManager()
         self.auth = CognitoAuth(
             self.config.cognito.email, self.config.cognito.password
         )
@@ -73,6 +84,7 @@ class App:
             self.session_mgr,
             api_client=self.api_client,
             situation_capture_coordinator=self.situation_capture,
+            event_hub=self.event_hub,
         )
         self.voice_pipeline: VoicePipeline | None = None
         self.tts_engine: TTSEngine | None = None
@@ -106,6 +118,11 @@ class App:
             summary_model=self.config.camera.summary_model,
         )
         self.http_bridge: LocalHttpBridge | None = None
+        register_background_event_handlers(
+            self,
+            self.event_hub,
+            self.job_manager,
+        )
 
     def connect_signals(self, window: MainWindow) -> None:
         """イベントバスとUIの配線"""
@@ -717,6 +734,166 @@ async def async_init(app_instance: App) -> None:
             await app_instance.fitbit_sync.run()
         except Exception:
             logger.exception("Fitbit 同期中にエラーが発生しました")
+
+
+_LEGACY_START_HEALTHPLANET_SYNC = App.start_healthplanet_sync
+_LEGACY_ON_HEALTHPLANET_TIMER = App._on_healthplanet_timer
+_LEGACY_ON_CAMERA_TIMER = App._on_camera_timer
+_LEGACY_ON_SUMMARY_TIMER = App._on_summary_timer
+
+
+async def _evented_handle_healthplanet_sync_request(
+    self: App,
+    *,
+    interactive_auth: bool,
+) -> None:
+    hp = self.config.healthplanet
+    has_credentials = bool(hp.client_id and hp.client_secret)
+    token_valid = is_token_valid(hp.access_token, hp.token_expires_at)
+    action = choose_healthplanet_sync_action(
+        has_credentials=has_credentials,
+        token_valid=token_valid,
+        interactive_auth=interactive_auth,
+        sync_in_progress=self._healthplanet_sync_in_progress,
+    )
+
+    if action == "skip":
+        if has_credentials and not token_valid and not interactive_auth:
+            logger.info(
+                "Health Planet startup sync skipped because interactive auth is disabled"
+            )
+        return
+
+    if action == "oauth":
+        if self._healthplanet_oauth_dialog is None:
+            dialog = HealthPlanetOAuthDialog(build_auth_url(hp.client_id))
+            dialog.code_submitted.connect(self._on_healthplanet_code)
+            dialog.finished.connect(self._on_healthplanet_oauth_dialog_closed)
+            self._healthplanet_oauth_dialog = dialog
+
+        self._healthplanet_oauth_dialog.show()
+        return
+
+    await self._run_healthplanet_sync()
+
+
+async def _evented_handle_fitbit_sync_request(self: App) -> None:
+    if self.fitbit_sync is None:
+        return
+    try:
+        await self.fitbit_sync.run()
+    except Exception:
+        logger.exception("Fitbit startup sync failed")
+
+
+async def _evented_run_capture_snapshot_job(self: App) -> None:
+    await self._capture_and_record_coordinated()
+
+
+async def _evented_run_capture_summary_job(self: App) -> None:
+    await self._generate_and_send_summary()
+
+
+def _evented_start_healthplanet_sync(
+    self: App,
+    *,
+    interactive_auth: bool = True,
+) -> None:
+    if getattr(self, "event_hub", None) is not None:
+        self.event_hub.publish(
+            HealthPlanetSyncRequested(
+                source="app.start_healthplanet_sync",
+                interactive_auth=interactive_auth,
+            )
+        )
+        return
+    _LEGACY_START_HEALTHPLANET_SYNC(self, interactive_auth=interactive_auth)
+
+
+def _evented_on_healthplanet_timer(self: App) -> None:
+    if getattr(self, "event_hub", None) is not None:
+        self.event_hub.publish(
+            HealthPlanetSyncRequested(
+                source="healthplanet.timer",
+                interactive_auth=False,
+            )
+        )
+        return
+    _LEGACY_ON_HEALTHPLANET_TIMER(self)
+
+
+def _evented_on_camera_timer(self: App) -> None:
+    if getattr(self, "event_hub", None) is not None:
+        self.event_hub.publish(CaptureSnapshotRequested(source="camera.timer"))
+        return
+    _LEGACY_ON_CAMERA_TIMER(self)
+
+
+def _evented_on_summary_timer(self: App) -> None:
+    if getattr(self, "event_hub", None) is not None:
+        self.event_hub.publish(CaptureSummaryDue(source="camera.summary_timer"))
+        return
+    _LEGACY_ON_SUMMARY_TIMER(self)
+
+
+App.handle_healthplanet_sync_request = _evented_handle_healthplanet_sync_request
+App.handle_fitbit_sync_request = _evented_handle_fitbit_sync_request
+App.run_capture_snapshot_job = _evented_run_capture_snapshot_job
+App.run_capture_summary_job = _evented_run_capture_summary_job
+App.start_healthplanet_sync = _evented_start_healthplanet_sync
+App._on_healthplanet_timer = _evented_on_healthplanet_timer
+App._on_camera_timer = _evented_on_camera_timer
+App._on_summary_timer = _evented_on_summary_timer
+
+
+async def async_init(app_instance: App) -> None:
+    """起動時の認証と各サブシステム初期化を行う。"""
+    if app_instance.auth.is_configured:
+        try:
+            await app_instance.auth.get_id_token()
+            logger.info("Cognito authentication succeeded")
+            await app_instance.session_mgr.create_new_session()
+        except Exception:
+            logger.exception(
+                "Failed to authenticate Cognito during startup session initialization"
+            )
+    else:
+        logger.warning("Cognito認証情報が未設定です。config.yamlを確認してください。")
+
+    app_instance.auto_conversation.start()
+
+    if app_instance.config.voice.enabled and app_instance.config.voice.google_api_key:
+        app_instance.voice_pipeline = VoicePipeline(
+            config=app_instance.config.voice,
+            loop=asyncio.get_event_loop(),
+        )
+        app_instance.voice_pipeline.start()
+        if app_instance.voice_pipeline.is_running:
+            bus.voice_state_changed.emit(True)
+
+    if app_instance.config.tts.enabled:
+        app_instance.tts_engine = TTSEngine(app_instance.config.tts)
+        app_instance.auto_conversation.set_tts(app_instance.tts_engine)
+        await app_instance.tts_engine.start()
+
+    if app_instance.config.camera.enabled:
+        app_instance.start_camera_system()
+
+    if app_instance.config.healthplanet.client_id:
+        app_instance.start_healthplanet_timer()
+
+    if getattr(app_instance, "event_hub", None) is not None:
+        app_instance.event_hub.publish(AppStarted(source="async_init"))
+        return
+
+    if app_instance.config.healthplanet.client_id:
+        app_instance.start_healthplanet_sync()
+
+    if app_instance.fitbit_sync is not None:
+        try:
+            await app_instance.fitbit_sync.run()
+        except Exception:
+            logger.exception("Fitbit startup sync failed")
 
 
 def main() -> None:

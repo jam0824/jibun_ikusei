@@ -77,6 +77,10 @@
       {
         "filename": "lily_shy_04.png",
         "description": "頬を赤らめて恥ずかしそうにしている、目をそらしている、照れ笑い（バリエーション4）"
+      },
+      {
+        "filename": "lily_shy_05.png",
+        "description": "頬を赤らめて恥ずかしそうにしている、目をそらしている、照れ笑い（バリエーション5）"
       }
     ],
     "worried": [
@@ -101,7 +105,12 @@
         "description": "心配そうな表情、眉をひそめている、手を胸に当てている（バリエーション5）"
       }
     ],
-    "surprised": [],
+    "surprised": [
+      {
+        "filename": "lily_surprised_01.png",
+        "description": "目を大きく見開いて驚いている、口を開けている、びっくりした表情（バリエーション1）"
+      }
+    ],
     "proud": [
       {
         "filename": "lily_proud_01.png",
