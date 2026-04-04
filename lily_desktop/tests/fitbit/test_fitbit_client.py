@@ -1,5 +1,6 @@
 """fitbit.fitbit_client のユニットテスト"""
 
+import base64
 import json
 from pathlib import Path
 from unittest.mock import MagicMock, call, patch
@@ -21,6 +22,16 @@ def _make_config(tmp_path: Path) -> Path:
     config_path = tmp_path / "fitbit_config.json"
     config_path.write_text(json.dumps(config), encoding="utf-8")
     return config_path
+
+
+def _make_jwt_access_token(aud: str = "TEST_CLIENT_ID") -> str:
+    header = base64.urlsafe_b64encode(
+        json.dumps({"alg": "none"}).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+    payload = base64.urlsafe_b64encode(
+        json.dumps({"aud": aud}).encode("utf-8")
+    ).decode("ascii").rstrip("=")
+    return f"{header}.{payload}.signature"
 
 
 def _ok_response(body: dict) -> MagicMock:
@@ -59,6 +70,33 @@ def test_設定ファイルを読み込める(tmp_path):
 
     assert client._config["access_token"] == "ACCESS_TOKEN_INIT"
     assert client._config["client_id"] == "TEST_CLIENT_ID"
+
+
+def test_legacy_config_without_client_id_recovers_from_access_token(tmp_path):
+    config = {
+        "access_token": _make_jwt_access_token("RECOVERED_CLIENT_ID"),
+        "refresh_token": "REFRESH_TOKEN_INIT",
+    }
+    config_path = tmp_path / "fitbit_config.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    client = FitbitClient(config_path)
+
+    assert client._config["client_id"] == "RECOVERED_CLIENT_ID"
+    saved = json.loads(config_path.read_text(encoding="utf-8"))
+    assert saved["client_id"] == "RECOVERED_CLIENT_ID"
+
+
+def test_missing_client_id_and_unrecoverable_access_token_raises_value_error(tmp_path):
+    config = {
+        "access_token": "not-a-jwt",
+        "refresh_token": "REFRESH_TOKEN_INIT",
+    }
+    config_path = tmp_path / "fitbit_config.json"
+    config_path.write_text(json.dumps(config), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="client_id"):
+        FitbitClient(config_path)
 
 
 # ---------------------------------------------------------------------------

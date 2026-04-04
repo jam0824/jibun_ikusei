@@ -225,6 +225,7 @@ Active Zone Minutes は、0 と未取得を明確に区別して扱う。
 ### 補足
 
 * refresh 成功時は access_token と refresh_token を設定ファイルへ上書き保存する
+* 旧形式の設定ファイルで client_id が欠けている場合は、access_token の JWT payload にある `aud` から復元し、設定ファイルへ上書き保存する
 * client_secret は現行フローでは不要な前提とする
 
 ## エラー時の動作
