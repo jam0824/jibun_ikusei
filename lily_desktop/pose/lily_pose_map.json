@@ -73,6 +73,10 @@
       {
         "filename": "lily_shy_03.png",
         "description": "頬を赤らめて恥ずかしそうにしている、目をそらしている、照れ笑い（バリエーション3）"
+      },
+      {
+        "filename": "lily_shy_04.png",
+        "description": "頬を赤らめて恥ずかしそうにしている、目をそらしている、照れ笑い（バリエーション4）"
       }
     ],
     "worried": [
