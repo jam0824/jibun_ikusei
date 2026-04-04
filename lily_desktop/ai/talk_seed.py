@@ -1,4 +1,4 @@
-"""雑談の種マネージャー — 3系統の話題を収集・優先度判定・クールダウン管理"""
+"""雑談の種マネージャー — 6系統の話題を収集・優先度判定・クールダウン管理"""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import logging
 import random
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from typing import TYPE_CHECKING
 
 from ai.annict_client import AnnictWork, fetch_seasonal_works
 from ai.camera_analyzer import CameraAnalysis, analyze_camera_frame
@@ -14,6 +15,9 @@ from ai.screen_analyzer import ScreenAnalysis
 from ai.wikimedia_client import WikimediaArticle, fetch_featured_content, fetch_interest_articles
 from core.camera import capture_camera_frame
 from core.desktop_context import DesktopContext, fetch_desktop_context
+
+if TYPE_CHECKING:
+    from api.api_client import ApiClient
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +53,7 @@ class TalkSeedManager:
         camera_analysis_model: str = "gpt-5.4",
         camera_device_index: int = 0,
         interest_topics: list[str] | None = None,
+        api_client: ApiClient | None = None,
     ):
         self._openai_api_key = openai_api_key
         self._screen_analysis_model = screen_analysis_model
@@ -57,11 +62,12 @@ class TalkSeedManager:
         self._camera_analysis_model = camera_analysis_model
         self._camera_device_index = camera_device_index
         self._interest_topics: list[str] = interest_topics or []
+        self._api_client = api_client
         self._used_history: list[tuple[str, datetime]] = []  # (source_key, used_at)
         self._last_camera_analysis: CameraAnalysis | None = None
 
     async def collect_seeds(self) -> list[TalkSeed]:
-        """5系統から雑談の種を並行収集する"""
+        """6系統から雑談の種を並行収集する"""
         seeds: list[TalkSeed] = []
 
         # 並行で取得
@@ -70,31 +76,34 @@ class TalkSeedManager:
         wiki_interest_task = asyncio.create_task(self._collect_wikimedia_interest())
         annict_task = asyncio.create_task(self._collect_annict())
         camera_task = asyncio.create_task(self._collect_camera())
+        health_task = asyncio.create_task(self._collect_health())
 
         desktop_seeds = await desktop_task
         wiki_seeds = await wiki_task
         wiki_interest_seeds = await wiki_interest_task
         annict_seeds = await annict_task
         camera_seeds = await camera_task
+        health_seeds = await health_task
 
         seeds.extend(desktop_seeds)
         seeds.extend(wiki_seeds)
         seeds.extend(wiki_interest_seeds)
         seeds.extend(annict_seeds)
         seeds.extend(camera_seeds)
+        seeds.extend(health_seeds)
 
         logger.info(
-            "雑談の種: desktop=%d wiki=%d wiki_interest=%d annict=%d camera=%d 合計=%d",
+            "雑談の種: desktop=%d wiki=%d wiki_interest=%d annict=%d camera=%d health=%d 合計=%d",
             len(desktop_seeds), len(wiki_seeds), len(wiki_interest_seeds),
-            len(annict_seeds), len(camera_seeds), len(seeds),
+            len(annict_seeds), len(camera_seeds), len(health_seeds), len(seeds),
         )
         return seeds
 
     def select_best_seed(self, seeds: list[TalkSeed]) -> TalkSeed | None:
         """話題のバランスを考慮して種を選ぶ。
 
-        デスクトップ 25% / カメラ 25% / 注目記事・今日は何の日 12.5% /
-        興味ある分野 12.5% / アニメ(Annict) 25% の配分。
+        デスクトップ / カメラ / 注目記事・今日は何の日 / 興味ある分野 /
+        アニメ(Annict) / 健康豆知識 の6カテゴリを均等（各約16.7%）に配分。
         該当カテゴリの種がない場合は、残りのカテゴリで再配分する。
         クールダウン中の種は除外。
         """
@@ -115,19 +124,22 @@ class TalkSeedManager:
         wikimedia_seeds = [s for s in available if s.source == "wikimedia"]
         wikimedia_interest_seeds = [s for s in available if s.source == "wikimedia_interest"]
         annict_seeds = [s for s in available if s.source == "annict"]
+        health_seeds = [s for s in available if s.source == "health"]
 
-        # 利用可能なカテゴリで重み付き抽選
+        # 利用可能なカテゴリで均等重み付き抽選
         candidates: list[tuple[float, list[TalkSeed]]] = []
         if desktop_seeds:
-            candidates.append((0.25, desktop_seeds))
+            candidates.append((1.0, desktop_seeds))
         if camera_seeds:
-            candidates.append((0.25, camera_seeds))
+            candidates.append((1.0, camera_seeds))
         if wikimedia_seeds:
-            candidates.append((0.125, wikimedia_seeds))
+            candidates.append((1.0, wikimedia_seeds))
         if wikimedia_interest_seeds:
-            candidates.append((0.125, wikimedia_interest_seeds))
+            candidates.append((1.0, wikimedia_interest_seeds))
         if annict_seeds:
-            candidates.append((0.25, annict_seeds))
+            candidates.append((1.0, annict_seeds))
+        if health_seeds:
+            candidates.append((1.0, health_seeds))
 
         if not candidates:
             return None
@@ -300,6 +312,95 @@ class TalkSeedManager:
             return seeds
         except Exception:
             logger.exception("Annict の収集に失敗")
+            return []
+
+    async def _collect_health(self) -> list[TalkSeed]:
+        """Fitbit・食事データから健康豆知識の種を生成"""
+        if self._api_client is None:
+            return []
+        try:
+            now = datetime.now(JST)
+            today = now.strftime("%Y-%m-%d")
+            yesterday = (now - timedelta(days=1)).strftime("%Y-%m-%d")
+
+            # Fitbit と栄養素データを並行取得
+            fitbit_task = asyncio.create_task(
+                self._api_client.get_fitbit_data(yesterday, today)
+            )
+            nutrition_task = asyncio.create_task(
+                self._api_client.get_nutrition_range(today, today)
+            )
+            fitbit_records, nutrition_data = await asyncio.gather(
+                fitbit_task, nutrition_task, return_exceptions=True
+            )
+
+            # サマリパーツを組み立て
+            parts: list[str] = []
+
+            # Fitbit サマリ
+            if isinstance(fitbit_records, list) and fitbit_records:
+                latest = fitbit_records[-1]
+                fitbit_parts: list[str] = []
+                activity = latest.get("activity") or {}
+                if activity.get("steps"):
+                    fitbit_parts.append(f"歩数{activity['steps']}歩")
+                heart = latest.get("heart") or {}
+                if heart.get("resting_heart_rate"):
+                    fitbit_parts.append(f"安静時心拍{heart['resting_heart_rate']}bpm")
+                sleep = latest.get("sleep") or {}
+                ms = sleep.get("main_sleep")
+                if ms and ms.get("minutes_asleep"):
+                    h, m = divmod(ms["minutes_asleep"], 60)
+                    fitbit_parts.append(f"睡眠{h}時間{m}分")
+                if fitbit_parts:
+                    parts.append("直近の活動: " + "、".join(fitbit_parts))
+
+            # 栄養素サマリ（不足・過剰栄養素）
+            if isinstance(nutrition_data, dict) and nutrition_data:
+                insufficient: list[str] = []
+                excessive: list[str] = []
+                _NAMES = {
+                    "energy": "エネルギー", "protein": "たんぱく質", "fat": "脂質",
+                    "carbs": "糖質", "potassium": "カリウム", "calcium": "カルシウム",
+                    "iron": "鉄", "vitaminA": "ビタミンA", "vitaminC": "ビタミンC",
+                    "fiber": "食物繊維", "salt": "塩分",
+                }
+                for day_data in nutrition_data.values():
+                    for meal_data in day_data.values():
+                        nutrients = meal_data.get("nutrients", {}) if isinstance(meal_data, dict) else {}
+                        for key, name in _NAMES.items():
+                            entry = nutrients.get(key)
+                            if not entry:
+                                continue
+                            label = entry.get("label")
+                            if label == "不足" and name not in insufficient:
+                                insufficient.append(name)
+                            elif label == "過剰" and name not in excessive:
+                                excessive.append(name)
+                nutrition_parts: list[str] = []
+                if insufficient:
+                    nutrition_parts.append(f"不足: {'・'.join(insufficient[:3])}")
+                if excessive:
+                    nutrition_parts.append(f"過剰: {'・'.join(excessive[:3])}")
+                if nutrition_parts:
+                    parts.append("今日の食事: " + "、".join(nutrition_parts))
+
+            if not parts:
+                return []
+
+            summary = " / ".join(parts)
+            return [TalkSeed(
+                summary=summary,
+                tags=["健康", "豆知識"],
+                freshness="fresh",
+                source="health",
+                lily_perspective="健康データや食事内容をもとに、健康豆知識や体のケアについて話題を振る",
+                haruka_perspective="健康・食事の話題にテンション高く乗っかってコメントする",
+                created_at=now.strftime("%Y-%m-%d %H:%M:%S"),
+                _source_key=f"health:{today}",
+            )]
+        except Exception:
+            logger.exception("健康データの収集に失敗")
             return []
 
 
