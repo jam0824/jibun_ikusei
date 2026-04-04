@@ -66,7 +66,7 @@ class App:
             self.config, self.api_client, self.session_mgr
         )
         self.chat_engine.set_tools(CHAT_TOOLS, self.tool_executor.execute)
-        self.auto_conversation = AutoConversation(self.config, self.session_mgr)
+        self.auto_conversation = AutoConversation(self.config, self.session_mgr, api_client=self.api_client)
         self.voice_pipeline: VoicePipeline | None = None
         self.tts_engine: TTSEngine | None = None
 
