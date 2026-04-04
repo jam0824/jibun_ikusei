@@ -67,3 +67,6 @@ healthplanet:
 fitbit:
   enabled: true
   config_file: fitbit_config.json  # lily_desktop/ 直下に配置（.gitignore 済み）
+http_bridge:
+  enabled: true
+  port: 18765

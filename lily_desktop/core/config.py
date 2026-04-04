@@ -12,6 +12,7 @@ _ENV_PATH = _PROJECT_ROOT / ".env"
 SYS_DIR = _BASE_DIR / "sys"
 DEFAULT_USER_BALLOON_DISPLAY_SECONDS = 8.0
 DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES = 15
+DEFAULT_HTTP_BRIDGE_PORT = 18765
 
 
 def _load_dotenv(path: Path = _ENV_PATH) -> dict[str, str]:
@@ -50,6 +51,17 @@ def normalize_healthplanet_sync_interval_minutes(value: object) -> int:
     if minutes <= 0:
         return DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES
     return minutes
+
+
+def normalize_http_bridge_port(value: object) -> int:
+    """Local HTTP Bridge のポート番号を正規化する。"""
+    try:
+        port = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_HTTP_BRIDGE_PORT
+    if port <= 0 or port > 65535:
+        return DEFAULT_HTTP_BRIDGE_PORT
+    return port
 
 
 @dataclass
@@ -155,6 +167,12 @@ class FitbitConfig:
 
 
 @dataclass
+class HttpBridgeConfig:
+    enabled: bool = True
+    port: int = DEFAULT_HTTP_BRIDGE_PORT
+
+
+@dataclass
 class AppConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     cognito: CognitoConfig = field(default_factory=CognitoConfig)
@@ -167,6 +185,7 @@ class AppConfig:
     talk_seeds: TalkSeedsConfig = field(default_factory=TalkSeedsConfig)
     healthplanet: HealthPlanetConfig = field(default_factory=HealthPlanetConfig)
     fitbit: FitbitConfig = field(default_factory=FitbitConfig)
+    http_bridge: HttpBridgeConfig = field(default_factory=HttpBridgeConfig)
 
 
 def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
@@ -195,6 +214,14 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
             DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES,
         )
     )
+    http_bridge_raw = raw.get("http_bridge", {}) or {}
+    if not isinstance(http_bridge_raw, dict):
+        http_bridge_raw = {}
+    else:
+        http_bridge_raw = dict(http_bridge_raw)
+    http_bridge_raw["port"] = normalize_http_bridge_port(
+        http_bridge_raw.get("port", DEFAULT_HTTP_BRIDGE_PORT)
+    )
 
     config = AppConfig(
         openai=OpenAIConfig(**raw.get("openai", {})),
@@ -208,6 +235,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         talk_seeds=TalkSeedsConfig(**raw.get("talk_seeds", {})),
         healthplanet=HealthPlanetConfig(**healthplanet_raw),
         fitbit=FitbitConfig(**raw.get("fitbit", {})),
+        http_bridge=HttpBridgeConfig(**http_bridge_raw),
     )
 
     # .env から秘密情報を上書き（.env の値を優先）

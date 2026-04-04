@@ -1,6 +1,7 @@
 """core.config のユニットテスト"""
 
 from core.config import (
+    DEFAULT_HTTP_BRIDGE_PORT,
     DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES,
     DEFAULT_USER_BALLOON_DISPLAY_SECONDS,
     load_config,
@@ -140,3 +141,41 @@ def test_fitbit_config_file_uses_config_value(tmp_path):
     config = load_config(config_path)
 
     assert config.fitbit.config_file == "custom_fitbit.json"
+
+
+def test_http_bridge_defaults_to_enabled_with_default_port(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.http_bridge.enabled is True
+    assert config.http_bridge.port == DEFAULT_HTTP_BRIDGE_PORT
+
+
+def test_http_bridge_uses_config_values(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "http_bridge:\n"
+        "  enabled: false\n"
+        "  port: 19191\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.http_bridge.enabled is False
+    assert config.http_bridge.port == 19191
+
+
+def test_http_bridge_invalid_port_falls_back_to_default(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "http_bridge:\n"
+        "  port: 70000\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.http_bridge.port == DEFAULT_HTTP_BRIDGE_PORT

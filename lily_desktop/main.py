@@ -21,6 +21,7 @@ from core.camera import capture_camera_frame, find_camera_index
 from core.config import load_config, save_camera_device, save_voice_device, save_healthplanet_token
 from core.desktop_context import DesktopContext, fetch_desktop_context, format_context_log
 from core.event_bus import bus
+from core.local_http_bridge import LocalHttpBridge, start_local_http_bridge
 from core.runtime_logging import configure_runtime_logging
 from core.situation_logger import SituationLogger, SituationRecord
 from data.session_manager import SessionManager
@@ -97,6 +98,7 @@ class App:
             openai_api_key=self.config.openai.api_key,
             summary_model=self.config.camera.summary_model,
         )
+        self.http_bridge: LocalHttpBridge | None = None
 
     def connect_signals(self, window: MainWindow) -> None:
         """イベントバスとUIの配線"""
@@ -359,6 +361,22 @@ class App:
             cam_cfg.summary_interval_seconds,
         )
 
+    def start_http_bridge(self, event_loop: asyncio.AbstractEventLoop) -> None:
+        """Local HTTP Bridge を起動する。"""
+        self.http_bridge = start_local_http_bridge(
+            self.config.http_bridge,
+            event_loop=event_loop,
+            emit_user_message=bus.user_message_received.emit,
+            logger_instance=logger,
+        )
+
+    def stop_http_bridge(self) -> None:
+        """Local HTTP Bridge を停止する。"""
+        if self.http_bridge is None:
+            return
+        self.http_bridge.stop()
+        self.http_bridge = None
+
     def stop_camera_system(self) -> None:
         """カメラシステムを停止する"""
         self._camera_timer.stop()
@@ -604,6 +622,7 @@ def main() -> None:
     bus.pose_change.connect(on_pose_change)
 
     app_instance.connect_signals(window)
+    app_instance.start_http_bridge(loop)
 
     window.show()
 
@@ -617,6 +636,7 @@ def main() -> None:
             app_instance.voice_pipeline.stop()
         if app_instance.tts_engine is not None:
             app_instance.tts_engine.clear_queue()
+        app_instance.stop_http_bridge()
         app_instance.stop_camera_system()
 
     qt_app.aboutToQuit.connect(on_quit)
