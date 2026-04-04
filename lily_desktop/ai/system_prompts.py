@@ -130,6 +130,7 @@ def build_lily_system_prompt(
             "- get_messages_and_logs: アシスタントメッセージ、AI設定、活動ログ、状況ログ、チャットセッション、チャット本文。"
             "date / fromDate / toDate / period が使える。"
             "type=chat_messages は date / fromDate / toDate があれば sessionId なしで全セッション横断検索できる。",
+            "- get_nutrition_data: 栄養素摂取データ（16栄養素）。date / fromDate / toDate / period が使える。デフォルトは今日。",
             "",
             "【レスポンス形式】",
             "必ず以下のJSON形式で回答してください。他の文章は不要です。",

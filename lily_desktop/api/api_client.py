@@ -104,6 +104,12 @@ class ApiClient:
             "GET", "/activity-logs", params={"from": from_date, "to": to_date}
         )
 
+    # ---- 栄養素 ----
+    async def get_nutrition_range(self, from_date: str, to_date: str) -> dict:
+        return await self._request(
+            "GET", "/nutrition", params={"from": from_date, "to": to_date}
+        )
+
     # ---- 状況ログ ----
     async def get_situation_logs(self, from_date: str, to_date: str) -> list[dict]:
         return await self._request(

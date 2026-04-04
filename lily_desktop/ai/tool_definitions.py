@@ -263,4 +263,19 @@ CHAT_TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_nutrition_data",
+            "description": "栄養素摂取データを取得する。スクリーンショット解析で登録した16栄養素（エネルギー・たんぱく質・脂質・糖質・各種ビタミン・ミネラル・食物繊維・塩分など）のデータ。date / fromDate / toDate は JST の YYYY-MM-DD 形式。デフォルトは今日。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period": PERIOD_PROPERTY,
+                    **JST_DATE_PROPERTIES,
+                },
+                "required": [],
+            },
+        },
+    },
 ]
