@@ -143,7 +143,7 @@ describe('aggregateMeals', () => {
     expect(result.nutrients.protein.value).toBeNull()
   })
 
-  it('基準値は最初の1件を採用する', () => {
+  it('合算時の基準値は固定の日次基準値を採用する', () => {
     const threshold1 = { type: 'range' as const, lower: 50, upper: 100 }
     const threshold2 = { type: 'range' as const, lower: 60, upper: 120 }
 
@@ -157,7 +157,28 @@ describe('aggregateMeals', () => {
     })
 
     const result = aggregateMeals([breakfast, lunch])
-    expect(result.nutrients.protein.threshold).toEqual(threshold1)
+    expect(result.nutrients.protein.threshold).toEqual({
+      type: 'range',
+      lower: 76.5,
+      upper: 178.4,
+    })
+  })
+
+  it('合算時のラベルは固定の日次基準値で再判定する', () => {
+    const threshold = { type: 'range' as const, lower: 50, upper: 100 }
+
+    const breakfast = makeRecord('breakfast', {
+      ...makeNutrientMap(0),
+      protein: { value: 30, unit: 'g', label: '不足', threshold },
+    })
+    const lunch = makeRecord('lunch', {
+      ...makeNutrientMap(0),
+      protein: { value: 45, unit: 'g', label: '不足', threshold },
+    })
+
+    const result = aggregateMeals([breakfast, lunch])
+    expect(result.nutrients.protein.value).toBe(75)
+    expect(result.nutrients.protein.label).toBe('不足')
   })
 
   it('合算後のラベルを再判定する（range: 適正）', () => {
@@ -165,15 +186,15 @@ describe('aggregateMeals', () => {
 
     const breakfast = makeRecord('breakfast', {
       ...makeNutrientMap(0),
-      protein: { value: 20, unit: 'g', label: '不足', threshold },
+      protein: { value: 30, unit: 'g', label: '不足', threshold },
     })
     const lunch = makeRecord('lunch', {
       ...makeNutrientMap(0),
-      protein: { value: 40, unit: 'g', label: '不足', threshold },
+      protein: { value: 60, unit: 'g', label: '不足', threshold },
     })
 
     const result = aggregateMeals([breakfast, lunch])
-    // 20 + 40 = 60 → range 50〜100 → 適正
+    // 30 + 60 = 90 → fixed daily threshold 76.5〜178.4 → 適正
     expect(result.nutrients.protein.label).toBe('適正')
   })
 
@@ -182,15 +203,15 @@ describe('aggregateMeals', () => {
 
     const breakfast = makeRecord('breakfast', {
       ...makeNutrientMap(0),
-      protein: { value: 60, unit: 'g', label: '適正', threshold },
+      protein: { value: 100, unit: 'g', label: '適正', threshold },
     })
     const lunch = makeRecord('lunch', {
       ...makeNutrientMap(0),
-      protein: { value: 60, unit: 'g', label: '適正', threshold },
+      protein: { value: 100, unit: 'g', label: '適正', threshold },
     })
 
     const result = aggregateMeals([breakfast, lunch])
-    // 60 + 60 = 120 → range 50〜100 → 過剰
+    // 100 + 100 = 200 → fixed daily threshold 76.5〜178.4 → 過剰
     expect(result.nutrients.protein.label).toBe('過剰')
   })
 
@@ -204,13 +225,22 @@ describe('aggregateMeals', () => {
 
 describe('resolveDayNutrition', () => {
   it('1日分が存在する場合はそれを優先返却する', () => {
-    const daily = makeRecord('daily', { ...makeNutrientMap(0), protein: makeEntry(100) })
+    const daily = makeRecord('daily', {
+      ...makeNutrientMap(0),
+      protein: {
+        value: 100,
+        unit: 'g',
+        label: '適正',
+        threshold: { type: 'range', lower: 90, upper: 110 },
+      },
+    })
     const breakfast = makeRecord('breakfast', { ...makeNutrientMap(0), protein: makeEntry(30) })
     const lunch = makeRecord('lunch', { ...makeNutrientMap(0), protein: makeEntry(40) })
 
     const result = resolveDayNutrition(daily, [breakfast, lunch])
     expect(result.mealType).toBe('daily')
     expect(result.nutrients.protein.value).toBe(100)
+    expect(result.nutrients.protein.threshold).toEqual({ type: 'range', lower: 90, upper: 110 })
   })
 
   it('1日分がnullの場合は朝昼夜を合算して返却する', () => {

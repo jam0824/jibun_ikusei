@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { NUTRIENT_META } from '@/domain/nutrition-constants'
+import { DEFAULT_DAILY_NUTRIENT_THRESHOLDS, NUTRIENT_META } from '@/domain/nutrition-constants'
 import type { NutrientMap } from '@/domain/types'
 
 // ---------------------------------------------------------------
@@ -35,10 +35,10 @@ saturatedFat(飽和脂肪酸), salt(塩分)
 {
   "isValid": true,
   "nutrients": {
-    "energy": { "value": 1822, "label": "不足", "threshold": { "type": "range", "lower": 1839, "upper": 2239 } },
-    "protein": { "value": 83.3, "label": "適正", "threshold": { "type": "range", "lower": 73.8, "upper": 178.4 } },
-    "potassium": { "value": 1704, "label": "不足", "threshold": { "type": "min_only", "lower": 3000 } },
-    "salt": { "value": 7.1, "label": "適正", "threshold": { "type": "max_only", "upper": 7.5 } }
+    "energy": { "value": 1822, "label": "不足", "threshold": { "type": "range", "lower": ${DEFAULT_DAILY_NUTRIENT_THRESHOLDS.energy.lower}, "upper": ${DEFAULT_DAILY_NUTRIENT_THRESHOLDS.energy.upper} } },
+    "protein": { "value": 83.3, "label": "適正", "threshold": { "type": "range", "lower": ${DEFAULT_DAILY_NUTRIENT_THRESHOLDS.protein.lower}, "upper": ${DEFAULT_DAILY_NUTRIENT_THRESHOLDS.protein.upper} } },
+    "potassium": { "value": 1704, "label": "不足", "threshold": { "type": "min_only", "lower": ${DEFAULT_DAILY_NUTRIENT_THRESHOLDS.potassium.lower} } },
+    "salt": { "value": 7.1, "label": "適正", "threshold": { "type": "max_only", "upper": ${DEFAULT_DAILY_NUTRIENT_THRESHOLDS.salt.upper} } }
   }
 }
 
