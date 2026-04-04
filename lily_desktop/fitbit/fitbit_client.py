@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 from pathlib import Path
@@ -23,6 +24,7 @@ class FitbitClient:
     def __init__(self, config_path: Path) -> None:
         self._config_path = config_path
         self._config = self._load_config()
+        self._ensure_client_id()
 
     # ------------------------------------------------------------------
     # 設定ファイル
@@ -35,6 +37,44 @@ class FitbitClient:
     def _save_config(self) -> None:
         with open(self._config_path, "w", encoding="utf-8") as f:
             json.dump(self._config, f, indent=2, ensure_ascii=False)
+
+    def _ensure_client_id(self) -> None:
+        """Legacy config may miss client_id; recover it from the JWT audience."""
+        if self._config.get("client_id"):
+            return
+
+        client_id = self._extract_client_id_from_access_token(
+            self._config.get("access_token", "")
+        )
+        if not client_id:
+            raise ValueError(
+                "fitbit_config.json に client_id がありません。"
+                "access_token からも復元できないため、再取得が必要です。"
+            )
+
+        self._config["client_id"] = client_id
+        self._save_config()
+        logger.info("Recovered missing Fitbit client_id from access token.")
+
+    @staticmethod
+    def _extract_client_id_from_access_token(access_token: str) -> str | None:
+        try:
+            payload_b64 = access_token.split(".")[1]
+            padded = payload_b64 + "=" * (-len(payload_b64) % 4)
+            payload = json.loads(
+                base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8")
+            )
+        except Exception:
+            return None
+
+        aud = payload.get("aud")
+        if isinstance(aud, str) and aud:
+            return aud
+        if isinstance(aud, list):
+            for value in aud:
+                if isinstance(value, str) and value:
+                    return value
+        return None
 
     # ------------------------------------------------------------------
     # HTTP
