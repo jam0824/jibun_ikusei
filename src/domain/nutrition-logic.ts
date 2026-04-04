@@ -1,4 +1,4 @@
-import { NUTRIENT_KEYS } from '@/domain/nutrition-constants'
+import { DEFAULT_DAILY_NUTRIENT_THRESHOLDS, NUTRIENT_KEYS } from '@/domain/nutrition-constants'
 import type {
   MealType,
   NutrientEntry,
@@ -32,9 +32,9 @@ export function judgeLabel(value: number, threshold: NutrientThreshold): Nutrien
 }
 
 /**
- * NutrientEntry を合算する（摂取量合算・基準値は最初の1件・ラベルは再判定）
+ * NutrientEntry を合算する（摂取量合算・基準値は固定の日次基準値・ラベルは再判定）
  */
-function mergeEntries(entries: NutrientEntry[]): NutrientEntry {
+function mergeEntries(key: NutrientKey, entries: NutrientEntry[]): NutrientEntry {
   const first = entries[0]
 
   // 摂取量合算（nullは0扱い、全nullならnull）
@@ -43,8 +43,8 @@ function mergeEntries(entries: NutrientEntry[]): NutrientEntry {
     ? entries.reduce((sum, e) => sum + (e.value ?? 0), 0)
     : null
 
-  // 基準値は最初の1件
-  const threshold = first.threshold ?? null
+  // daily未登録時は固定の日次基準値で評価する
+  const threshold = DEFAULT_DAILY_NUTRIENT_THRESHOLDS[key]
 
   // ラベル再判定
   const label: NutrientLabel | null =
@@ -113,7 +113,7 @@ export function aggregateMeals(records: NutritionRecord[]): NutritionRecord {
   const nutrients = Object.fromEntries(
     NUTRIENT_KEYS.map((key) => [
       key,
-      mergeEntries(records.map((r) => r.nutrients[key])),
+      mergeEntries(key, records.map((r) => r.nutrients[key])),
     ]),
   ) as NutrientMap
 

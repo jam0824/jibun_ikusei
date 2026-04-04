@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { Screen } from '@/components/layout'
 import { Button, Card, CardContent } from '@/components/ui'
-import { NUTRIENT_META } from '@/domain/nutrition-constants'
+import { DEFAULT_DAILY_NUTRIENT_THRESHOLDS, NUTRIENT_META } from '@/domain/nutrition-constants'
 import { useAppStore } from '@/store/app-store'
 import { nowIso } from '@/lib/date'
 import type { MealType, NutrientKey, NutrientLabel, NutrientMap, NutritionRecord } from '@/domain/types'
@@ -17,22 +17,22 @@ const MEAL_TYPE_LABELS: Record<string, string> = {
 
 // フォールバック用モックデータ（meal_screenshot.png の実測値）
 const MOCK_NUTRIENT_MAP: NutrientMap = {
-  energy:       { value: 1822,  unit: 'kcal', label: '不足', threshold: { type: 'range',    lower: 1839,  upper: 2239  } },
-  protein:      { value: 83.3,  unit: 'g',    label: '適正', threshold: { type: 'range',    lower: 73.8,  upper: 178.4 } },
-  fat:          { value: 68.2,  unit: 'g',    label: '適正', threshold: { type: 'range',    lower: 56.6,  upper: 79.3  } },
-  carbs:        { value: 224.4, unit: 'g',    label: '適正', threshold: { type: 'range',    lower: 152.9, upper: 254.9 } },
-  potassium:    { value: 1704,  unit: 'mg',   label: '不足', threshold: { type: 'min_only', lower: 3000               } },
-  calcium:      { value: 472,   unit: 'mg',   label: '不足', threshold: { type: 'range',    lower: 750,   upper: 2500  } },
-  iron:         { value: 13.7,  unit: 'mg',   label: '適正', threshold: { type: 'min_only', lower: 7.5                } },
-  vitaminA:     { value: 2977,  unit: 'µg',   label: '過剰', threshold: { type: 'range',    lower: 900,   upper: 2700  } },
-  vitaminE:     { value: 17,    unit: 'mg',   label: '適正', threshold: { type: 'range',    lower: 6.5,   upper: 800   } },
-  vitaminB1:    { value: 3.5,   unit: 'mg',   label: '適正', threshold: { type: 'min_only', lower: 1                  } },
-  vitaminB2:    { value: 3.59,  unit: 'mg',   label: '適正', threshold: { type: 'min_only', lower: 1.4                } },
-  vitaminB6:    { value: 4.47,  unit: 'mg',   label: '適正', threshold: { type: 'range',    lower: 1.5,   upper: 60    } },
-  vitaminC:     { value: 136,   unit: 'mg',   label: '適正', threshold: { type: 'min_only', lower: 100                } },
-  fiber:        { value: 14.5,  unit: 'g',    label: '不足', threshold: { type: 'min_only', lower: 22                 } },
-  saturatedFat: { value: 17.77, unit: 'g',    label: '過剰', threshold: { type: 'max_only', upper: 15.86              } },
-  salt:         { value: 7.1,   unit: 'g',    label: '適正', threshold: { type: 'max_only', upper: 7.5                } },
+  energy:       { value: 1822,  unit: 'kcal', label: '不足', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.energy },
+  protein:      { value: 83.3,  unit: 'g',    label: '適正', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.protein },
+  fat:          { value: 68.2,  unit: 'g',    label: '適正', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.fat },
+  carbs:        { value: 224.4, unit: 'g',    label: '適正', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.carbs },
+  potassium:    { value: 1704,  unit: 'mg',   label: '不足', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.potassium },
+  calcium:      { value: 472,   unit: 'mg',   label: '不足', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.calcium },
+  iron:         { value: 13.7,  unit: 'mg',   label: '適正', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.iron },
+  vitaminA:     { value: 2977,  unit: 'µg',   label: '過剰', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.vitaminA },
+  vitaminE:     { value: 17,    unit: 'mg',   label: '適正', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.vitaminE },
+  vitaminB1:    { value: 3.5,   unit: 'mg',   label: '適正', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.vitaminB1 },
+  vitaminB2:    { value: 3.59,  unit: 'mg',   label: '適正', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.vitaminB2 },
+  vitaminB6:    { value: 4.47,  unit: 'mg',   label: '適正', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.vitaminB6 },
+  vitaminC:     { value: 136,   unit: 'mg',   label: '適正', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.vitaminC },
+  fiber:        { value: 14.5,  unit: 'g',    label: '不足', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.fiber },
+  saturatedFat: { value: 17.77, unit: 'g',    label: '過剰', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.saturatedFat },
+  salt:         { value: 7.1,   unit: 'g',    label: '適正', threshold: DEFAULT_DAILY_NUTRIENT_THRESHOLDS.salt },
 }
 
 const LABEL_STYLES: Record<NutrientLabel, string> = {

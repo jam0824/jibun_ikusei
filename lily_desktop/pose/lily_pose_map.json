@@ -91,6 +91,10 @@
       {
         "filename": "lily_worried_04.png",
         "description": "心配そうな表情、眉をひそめている、手を胸に当てている（バリエーション4）"
+      },
+      {
+        "filename": "lily_worried_05.png",
+        "description": "心配そうな表情、眉をひそめている、手を胸に当てている（バリエーション5）"
       }
     ],
     "surprised": [],
