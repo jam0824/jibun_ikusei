@@ -4,6 +4,9 @@ import { ClearEffectScreen } from '@/screens/clear-effect-screen'
 import { HomeScreen } from '@/screens/home-screen'
 import { LilyChatScreen } from '@/screens/lily-chat-screen'
 import { LoginScreen } from '@/screens/login-screen'
+import { MealAnalyzeScreen } from '@/screens/meal-analyze-screen'
+import { MealConfirmScreen } from '@/screens/meal-confirm-screen'
+import { MealRegisterScreen } from '@/screens/meal-register-screen'
 import { QuestFormScreen } from '@/screens/quest-form-screen'
 import { QuestListScreen } from '@/screens/quest-list-screen'
 import { RecordsScreen } from '@/screens/records-screen'
@@ -54,6 +57,9 @@ function AppRoutes() {
       <Route path="/lily" element={<LilyChatScreen />} />
       <Route path="/settings" element={<SettingsScreen />} />
       <Route path="/clear/:completionId" element={<ClearEffectScreen />} />
+      <Route path="/meal" element={<MealRegisterScreen />} />
+      <Route path="/meal/analyze" element={<MealAnalyzeScreen />} />
+      <Route path="/meal/confirm" element={<MealConfirmScreen />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   )

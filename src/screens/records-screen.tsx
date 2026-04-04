@@ -1,18 +1,159 @@
-import { useMemo, useState } from 'react'
-import { Globe, History, RotateCcw, ScrollText, Settings2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { CalendarDays, ChevronLeft, ChevronRight, Globe, History, RotateCcw, ScrollText, Settings2, Utensils } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useShallow } from 'zustand/react/shallow'
 import { CompletionResolutionCard } from '@/components/completion-resolution-card'
 import {
   getFilteredActiveCompletions,
   type CompletionHistoryFilter,
 } from '@/domain/logic'
+import { NUTRIENT_META } from '@/domain/nutrition-constants'
+import { resolveDayNutrition } from '@/domain/nutrition-logic'
+import type { NutrientEntry, NutrientLabel } from '@/domain/types'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent } from '@/components/ui'
 import { formatDateTime, isUndoable } from '@/lib/date'
 import { useAppStore } from '@/store/app-store'
 import { BrowsingTimeView } from '@/screens/browsing-time-view'
 
-type RecordsTab = 'quests' | 'browsing'
+type RecordsTab = 'quests' | 'browsing' | 'nutrition'
+
+const BAR_COLORS: Record<NutrientLabel, string> = {
+  '不足': 'bg-blue-400',
+  '適正': 'bg-green-400',
+  '過剰': 'bg-red-400',
+}
+
+function getTodayJst(): string {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = String(now.getMonth() + 1).padStart(2, '0')
+  const d = String(now.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function formatDateJst(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-')
+  return `${y}年${Number(m)}月${Number(d)}日`
+}
+
+function shiftDate(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const next = new Date(y, m - 1, d + days)
+  const ny = next.getFullYear()
+  const nm = String(next.getMonth() + 1).padStart(2, '0')
+  const nd = String(next.getDate()).padStart(2, '0')
+  return `${ny}-${nm}-${nd}`
+}
+
+function calcBarWidth(entry: NutrientEntry): number {
+  const { value, threshold } = entry
+  if (value === null || !threshold) return 0
+  const ref =
+    threshold.type === 'range' ? threshold.upper :
+    threshold.type === 'min_only' ? threshold.lower :
+    threshold.upper
+  if (!ref) return 0
+  return Math.min((value / ref) * 100, 100)
+}
+
+function NutritionView() {
+  const [date, setDate] = useState(getTodayJst())
+  const [isLoading, setIsLoading] = useState(false)
+  const dateInputRef = useRef<HTMLInputElement>(null)
+
+  const { fetchNutrition, nutritionCache } = useAppStore(
+    useShallow((s) => ({ fetchNutrition: s.fetchNutrition, nutritionCache: s.nutritionCache }))
+  )
+
+  useEffect(() => {
+    setIsLoading(true)
+    fetchNutrition(date).finally(() => setIsLoading(false))
+  }, [date, fetchNutrition])
+
+  const dayData = nutritionCache[date]
+  const resolved = dayData
+    ? resolveDayNutrition(
+        dayData.daily,
+        [dayData.breakfast, dayData.lunch, dayData.dinner].filter((r): r is NonNullable<typeof r> => r !== null)
+      )
+    : null
+
+  return (
+    <div className="space-y-3 pb-6">
+      {/* 日付ナビゲーション */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setDate((d) => shiftDate(d, -1))}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-violet-200 hover:text-violet-600"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => dateInputRef.current?.showPicker()}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:border-violet-200 hover:bg-violet-50/40"
+        >
+          <CalendarDays className="h-4 w-4 text-violet-500" />
+          {formatDateJst(date)}
+        </button>
+        <button
+          type="button"
+          onClick={() => setDate((d) => shiftDate(d, 1))}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-violet-200 hover:text-violet-600"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+      <input
+        ref={dateInputRef}
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        className="absolute opacity-0 pointer-events-none h-0 w-0"
+      />
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12 text-sm text-slate-400">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-violet-500 mr-2" />
+          読み込み中...
+        </div>
+      ) : !resolved ? (
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400">
+          この日の栄養データはありません
+        </div>
+      ) : (
+        <>
+          {/* 栄養素グラフ */}
+          {NUTRIENT_META.map((meta) => {
+            const entry = resolved.nutrients[meta.key]
+            const pct = calcBarWidth(entry)
+            const barColor = entry.label ? BAR_COLORS[entry.label] : 'bg-slate-300'
+            return (
+              <div key={meta.key} className="flex items-center gap-2">
+                <div className="w-20 shrink-0 text-xs text-slate-600">{meta.name}</div>
+                <div className="flex-1 overflow-hidden rounded-full bg-slate-100" style={{ height: '8px' }}>
+                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                </div>
+                <div className="w-20 shrink-0 text-right text-xs text-slate-500">
+                  {entry.value !== null ? `${entry.value} ${meta.unit}` : '未取得'}
+                </div>
+              </div>
+            )
+          })}
+
+          {/* 凡例 */}
+          <div className="flex items-center gap-4 text-[10px] text-slate-400">
+            <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-full bg-blue-400" />不足</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-full bg-green-400" />適正</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-full bg-red-400" />過剰</span>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
 
 const recordFilterOptions: Array<{
   key: CompletionHistoryFilter
@@ -57,6 +198,9 @@ const subtitles: Record<RecordsTab, Record<string, string>> = {
   browsing: {
     default: 'ドメインごとの閲覧時間を確認できます。',
   },
+  nutrition: {
+    default: '本日の栄養素摂取状況を確認できます。',
+  },
 }
 
 export function RecordsScreen() {
@@ -82,9 +226,12 @@ export function RecordsScreen() {
 
   const activeOption = recordFilterOptions.find((option) => option.key === activeFilter) ?? recordFilterOptions[0]
 
-  const subtitle = activeTab === 'quests'
-    ? subtitles.quests[activeFilter]
-    : subtitles.browsing.default
+  const subtitle =
+    activeTab === 'quests'
+      ? subtitles.quests[activeFilter]
+      : activeTab === 'browsing'
+        ? subtitles.browsing.default
+        : subtitles.nutrition.default
 
   return (
     <Screen
@@ -108,7 +255,7 @@ export function RecordsScreen() {
           }`}
         >
           <ScrollText className="h-3.5 w-3.5" />
-          クエスト記録
+          クエスト
         </button>
         <button
           type="button"
@@ -122,10 +269,24 @@ export function RecordsScreen() {
           <Globe className="h-3.5 w-3.5" />
           閲覧時間
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('nutrition')}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+            activeTab === 'nutrition'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Utensils className="h-3.5 w-3.5" />
+          栄養
+        </button>
       </div>
 
       {activeTab === 'browsing' ? (
         <BrowsingTimeView />
+      ) : activeTab === 'nutrition' ? (
+        <NutritionView />
       ) : (
         <>
           <div className="grid grid-cols-3 gap-3">

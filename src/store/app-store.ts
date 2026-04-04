@@ -19,12 +19,15 @@ import {
 import type {
   AiConfig,
   AssistantMessage,
+  MealType,
+  NutritionRecord,
   PersistedAppState,
   Quest,
   QuestCompletion,
   SkillResolutionResult,
   UserSettings,
 } from '@/domain/types'
+import type { NutritionDayResult } from '@/lib/api-client'
 import { getDayKey, getWeekKey, isUndoable, nowIso } from '@/lib/date'
 import {
   generateLilyMessageWithProvider,
@@ -78,6 +81,10 @@ interface AppStore extends PersistedAppState {
   importData: (jsonText: string, mode: ImportMode) => { ok: boolean; reason?: string }
   resetLocalData: () => void
   setImportMode: (mode: ImportMode) => void
+  // 栄養素
+  nutritionCache: Record<string, NutritionDayResult>
+  fetchNutrition: (date: string) => Promise<NutritionDayResult>
+  saveNutrition: (date: string, mealType: MealType, record: Omit<NutritionRecord, 'userId'>) => Promise<NutritionRecord>
 }
 
 const recentQuestRequests = new Map<string, number>()
@@ -235,6 +242,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     gemini: { status: 'idle' },
   },
   importMode: 'merge',
+  nutritionCache: {},
 
   initialize: () => {
     if (get().hydrated) {
@@ -1195,6 +1203,30 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   setImportMode: (mode) => {
     set({ importMode: mode })
+  },
+
+  // ---- 栄養素 ----
+  fetchNutrition: async (date) => {
+    const result = await api.getNutrition(date)
+    set((state) => ({
+      nutritionCache: { ...state.nutritionCache, [date]: result },
+    }))
+    return result
+  },
+
+  saveNutrition: async (date, mealType, record) => {
+    const saved = await api.putNutrition(date, mealType, record)
+    // キャッシュ更新
+    set((state) => {
+      const existing = state.nutritionCache[date] ?? { daily: null, breakfast: null, lunch: null, dinner: null }
+      return {
+        nutritionCache: {
+          ...state.nutritionCache,
+          [date]: { ...existing, [mealType]: saved },
+        },
+      }
+    })
+    return saved
   },
 }))
 

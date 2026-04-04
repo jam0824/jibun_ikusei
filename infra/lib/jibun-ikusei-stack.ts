@@ -149,7 +149,13 @@ export class JibunIkuseiStack extends cdk.Stack {
       timeout: cdk.Duration.seconds(60),
     })
 
-    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, healthDataFn, activityLogFn, situationLogFn, chatFn, migrateStateFn]) {
+    const nutritionFn = new lambda.Function(this, 'NutritionHandler', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-nutritionHandler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/nutritionHandler')),
+    })
+
+    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, healthDataFn, activityLogFn, situationLogFn, chatFn, migrateStateFn, nutritionFn]) {
       table.grantReadWriteData(fn)
     }
 
@@ -257,6 +263,11 @@ export class JibunIkuseiStack extends cdk.Stack {
     api.addRoutes({ path: '/dictionary', methods: [apigwv2.HttpMethod.GET], integration: messageIntegration })
     api.addRoutes({ path: '/dictionary', methods: [apigwv2.HttpMethod.POST], integration: messageIntegration })
     api.addRoutes({ path: '/dictionary/{id}', methods: [apigwv2.HttpMethod.PUT], integration: messageIntegration })
+
+    // Nutrition
+    const nutritionIntegration = new integrations.HttpLambdaIntegration('NutritionIntegration', nutritionFn)
+    api.addRoutes({ path: '/nutrition', methods: [apigwv2.HttpMethod.GET], integration: nutritionIntegration })
+    api.addRoutes({ path: '/nutrition/{date}/{mealType}', methods: [apigwv2.HttpMethod.PUT], integration: nutritionIntegration })
 
     // ---- Outputs ----
     new cdk.CfnOutput(this, 'ApiUrl', {
