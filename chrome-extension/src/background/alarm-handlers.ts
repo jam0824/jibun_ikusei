@@ -6,6 +6,7 @@ import {
   sortSyncEntries,
 } from '@ext/lib/browsing-sync'
 import { isLoggedIn } from '@ext/lib/auth'
+import { sendBrowsingUserMessageToLilyDesktop } from '@ext/lib/lily-desktop-bridge'
 import { getLocal, removeLocal, setLocal } from '@ext/lib/storage'
 import { sendToastToActiveTab } from '@ext/lib/notifications'
 import type {
@@ -122,6 +123,7 @@ async function evaluateAndEnqueue(): Promise<void> {
       }
     }
 
+    const messageTitle = title || undefined
     if (!title) {
       title = domain ? `${domain} での閲覧` : '閲覧活動'
     }
@@ -159,6 +161,13 @@ async function evaluateAndEnqueue(): Promise<void> {
           skillResolutionStatus: 'not_needed',
         },
       },
+    })
+    await sendBrowsingUserMessageToLilyDesktop({
+      browsingType: event.type === 'good_quest' ? 'good' : 'bad',
+      xp: event.xp,
+      title: messageTitle,
+      domain: domain || undefined,
+      category: browsingCategory || undefined,
     })
   }
 

@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { setLocal } from '@ext/lib/storage'
 import { createMockDailyProgress, createMockAuthState } from '@ext/test/helpers'
 import { BROWSING_XP } from '@ext/types/browsing'
+const LILY_DESKTOP_BRIDGE_URL = 'http://127.0.0.1:18765/v1/events'
 
 // Mock fetch for API calls — track request bodies
 const fetchMock = vi.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => (
@@ -69,6 +70,22 @@ describe('alarm-handlers', () => {
       expect(questBody.browsingType).toBe('good')
       expect(questBody.xpReward).toBe(BROWSING_XP.GOOD_REWARD)
       expect(questBody.domain).toBe('docs.example.com')
+      const bridgeCalls = fetchMock.mock.calls.filter(
+        (call) => String(call[0]) === LILY_DESKTOP_BRIDGE_URL,
+      )
+      expect(bridgeCalls).toHaveLength(1)
+      const bridgeBody = JSON.parse(String(bridgeCalls[0][1]?.body)) as {
+        payload: { text: string }
+        metadata: Record<string, unknown>
+      }
+      expect(bridgeBody.payload.text).toBe(`「${questBody.title}」で+2 XPをゲットしました。`)
+      expect(bridgeBody.metadata).toMatchObject({
+        browsingType: 'good',
+        domain: 'docs.example.com',
+        category: '学習',
+        xp: 2,
+        title: questBody.title,
+      })
 
       // POST /completions が呼ばれたことを確認
       const completionCalls = fetchMock.mock.calls.filter(
@@ -120,6 +137,22 @@ describe('alarm-handlers', () => {
       expect(questBody.source).toBe('browsing')
       expect(questBody.browsingType).toBe('bad')
       expect(questBody.xpReward).toBe(-BROWSING_XP.BAD_PENALTY)
+      const bridgeCalls = fetchMock.mock.calls.filter(
+        (call) => String(call[0]) === LILY_DESKTOP_BRIDGE_URL,
+      )
+      expect(bridgeCalls).toHaveLength(1)
+      const bridgeBody = JSON.parse(String(bridgeCalls[0][1]?.body)) as {
+        payload: { text: string }
+        metadata: Record<string, unknown>
+      }
+      expect(bridgeBody.payload.text).toBe('「game.com」で-5 XPのペナルティとなりました。')
+      expect(bridgeBody.metadata).toMatchObject({
+        browsingType: 'bad',
+        domain: 'game.com',
+        category: '娯楽',
+        xp: -5,
+        title: null,
+      })
 
       // POST /completions が呼ばれたことを確認
       const completionCalls = fetchMock.mock.calls.filter(
@@ -210,6 +243,7 @@ describe('alarm-handlers', () => {
       const { getLocal: gl } = await import('@ext/lib/storage')
       const updated = await gl<{ warningShownDomains: string[] }>('dailyProgress')
       expect(updated!.warningShownDomains).toContain('game.com')
+      expect(fetchMock.mock.calls.some((call) => String(call[0]) === LILY_DESKTOP_BRIDGE_URL)).toBe(false)
     })
 
     it('既存のSyncQueueエントリもreplayする', async () => {
@@ -228,6 +262,52 @@ describe('alarm-handlers', () => {
       await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
 
       expect(fetchMock).toHaveBeenCalled()
+    })
+
+    it('bridge send failure does not block quest replay or progress updates', async () => {
+      const progress = createMockDailyProgress({
+        goodBrowsingSeconds: 30 * 60,
+        lastGoodRewardAtSeconds: 0,
+        domainTimes: {
+          'docs.example.com:/api': {
+            domain: 'docs.example.com',
+            cacheKey: 'docs.example.com:/api',
+            category: '学習',
+            isGrowth: true,
+            isBlocklisted: false,
+            totalSeconds: 30 * 60,
+            lastUpdated: '',
+          },
+        },
+      })
+      await setLocal('dailyProgress', progress)
+      await setLocal('extensionSettings', {
+        serverBaseUrl: 'https://test.example.com',
+        syncEnabled: true,
+      })
+      await setLocal('authState', createMockAuthState())
+      fetchMock.mockImplementation(async (input: RequestInfo | URL, _init?: RequestInit) => {
+        if (String(input) === LILY_DESKTOP_BRIDGE_URL) {
+          throw new Error('connect ECONNREFUSED')
+        }
+        return { ok: true, json: () => Promise.resolve({}) } as Response
+      })
+
+      const { handleAlarm } = await import('./alarm-handlers')
+      await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
+
+      const questCalls = fetchMock.mock.calls.filter(
+        (call) => String(call[0]).includes('/quests') && (call[1] as RequestInit | undefined)?.method === 'POST',
+      )
+      const completionCalls = fetchMock.mock.calls.filter(
+        (call) => String(call[0]).includes('/completions') && (call[1] as RequestInit | undefined)?.method === 'POST',
+      )
+      expect(questCalls.length).toBeGreaterThanOrEqual(1)
+      expect(completionCalls.length).toBeGreaterThanOrEqual(1)
+
+      const { getLocal: gl } = await import('@ext/lib/storage')
+      const updated = await gl<{ lastGoodRewardAtSeconds: number }>('dailyProgress')
+      expect(updated!.lastGoodRewardAtSeconds).toBe(30 * 60)
     })
   })
 
