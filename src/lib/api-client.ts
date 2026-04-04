@@ -291,6 +291,12 @@ export function getNutrition(date: string) {
   return request<NutritionDayResult>(`/nutrition?date=${date}`)
 }
 
+export type NutritionRangeResult = Record<string, NutritionDayResult>
+
+export function getNutritionRange(from: string, to: string) {
+  return request<NutritionRangeResult>(`/nutrition?from=${from}&to=${to}`)
+}
+
 export function putNutrition(date: string, mealType: MealType, record: Omit<NutritionRecord, 'userId'>) {
   return request<NutritionRecord>(`/nutrition/${date}/${mealType}`, {
     method: 'PUT',

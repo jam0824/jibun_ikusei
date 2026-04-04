@@ -9,9 +9,36 @@ export const handler = async (event) => {
 
   switch (event.routeKey) {
     case "GET /nutrition": {
-      const date = event.queryStringParameters?.date;
+      const { date, from, to } = event.queryStringParameters ?? {};
+
+      // 期間クエリ: from + to
+      if (from && to) {
+        const result = await db.send(new QueryCommand({
+          TableName: TABLE_NAME,
+          KeyConditionExpression: "PK = :pk AND SK BETWEEN :from AND :to",
+          ExpressionAttributeValues: {
+            ":pk": pk,
+            ":from": `NUTRITION#${from}#`,
+            ":to": `NUTRITION#${to}#z`,
+          },
+        }));
+
+        // 日付ごとにグルーピング
+        const byDate = {};
+        for (const item of (result.Items ?? [])) {
+          const { PK, SK, ...rest } = item;
+          const itemDate = rest.date;
+          if (!byDate[itemDate]) {
+            byDate[itemDate] = Object.fromEntries(MEAL_TYPES.map((t) => [t, null]));
+          }
+          byDate[itemDate][rest.mealType] = rest;
+        }
+        return response(200, byDate);
+      }
+
+      // 単日クエリ: date
       if (!date) {
-        return response(400, { error: "date query parameter is required" });
+        return response(400, { error: "date or from/to query parameters are required" });
       }
 
       const result = await db.send(new QueryCommand({

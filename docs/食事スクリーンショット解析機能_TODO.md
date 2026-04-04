@@ -106,33 +106,39 @@
 
 ---
 
-## Phase 4: 食事記録表示の完成
+## Phase 4: 食事記録表示の完成 ✅ 完了
 
 目標: 記録画面で栄養データを正しく表示する
 
-- [ ] **4-1** 記録画面に栄養素セクションを組み込み `src/screens/records-screen.tsx`
-  - 日付ナビゲーション（前後移動）
-  - 1日分優先 / 朝昼夜合算ロジックの適用
-  - データ取得中のローディング表示
+- [x] **4-1** 食事登録画面のバッジを実データに切り替え `src/screens/meal-register-screen.tsx`
+  - 画面表示・日付変更時に `fetchNutrition` を呼び出し
+  - 登録済み=緑「登録済み」バッジ / 未登録=「未登録」バッジ / 確認中=「確認中...」
 
-- [ ] **4-2** 横棒グラフの完成
-  - 基準値に対する摂取量の割合でバー幅計算
+- [x] **4-2** 記録画面の栄養タブを実データに切り替え `src/screens/records-screen.tsx`
+  - モックデータ削除、`fetchNutrition` + `resolveDayNutrition` で実データ表示
+  - 前日・翌日ナビゲーションボタン追加（カレンダーピッカーも継続）
+  - 基準値に対する摂取量の割合でバー幅計算（range/min_only/max_only 対応）
   - 色分け実装（不足=青 / 適正=緑 / 過剰=赤）
-  - 「未取得」項目の表示（数値なしの灰色表示）
-  - 基準値ラベル（下限〜上限）の表示
+  - 「未取得」項目の灰色表示
+  - ローディングスピナー・データなし時メッセージ
 
 ---
 
-## Phase 5: リリィ tool search 対応
+## Phase 5: リリィ tool search 対応 ✅ 完了
 
 目標: リリィが食事データを参照・回答できる
 
-- [ ] **5-1** `getNutrition` ツール定義追加 `src/lib/chat-tools.ts`
-  - 引数: 日付（YYYY-MM-DD）
-  - 返却: daily / breakfast / lunch / dinner の全栄養素
-  - 未取得項目は `"未取得"` 文字列で返却
+- [x] **5-1** `get_nutrition_data` ツール定義・実行関数追加
+  - `src/lib/chat-tools.ts`: ツール定義・`executeGetNutritionData`・dispatch追加
+  - `src/lib/ai.ts`: システムプロンプトにツール説明追加
+  - `src/lib/api-client.ts`: `getNutritionRange(from, to)` 追加
+  - `infra/lambda/nutritionHandler/index.mjs`: `GET /nutrition?from=X&to=Y` range クエリ対応
 
-- [ ] **5-2** ツール定義と仕様書（Section 8）の整合性確認
+- [x] **5-2** デスクトップ（リリィ）対応
+  - `lily_desktop/ai/tool_definitions.py`: `get_nutrition_data` ツール定義追加
+  - `lily_desktop/api/api_client.py`: `get_nutrition_range` メソッド追加
+  - `lily_desktop/ai/tool_executor.py`: `_nutrition_data` メソッド・dispatch追加
+  - `lily_desktop/ai/system_prompts.py`: ツール説明追加
 
 ---
 

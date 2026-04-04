@@ -24,6 +24,22 @@ CHAT_MESSAGE_FETCH_CONCURRENCY = 4
 RETRYABLE_CHAT_MESSAGE_STATUS_CODES = {502, 503, 504}
 _PERIOD_LABELS = {"today": "今日", "week": "直近7日", "month": "直近30日"}
 
+_NUTRIENT_NAMES = {
+    "energy": "エネルギー", "protein": "たんぱく質", "fat": "脂質",
+    "carbs": "糖質", "potassium": "カリウム", "calcium": "カルシウム",
+    "iron": "鉄", "vitaminA": "ビタミンA", "vitaminE": "ビタミンE",
+    "vitaminB1": "ビタミンB1", "vitaminB2": "ビタミンB2", "vitaminB6": "ビタミンB6",
+    "vitaminC": "ビタミンC", "fiber": "食物繊維", "saturatedFat": "飽和脂肪酸",
+    "salt": "塩分",
+}
+_NUTRIENT_ORDER = [
+    "energy", "protein", "fat", "carbs", "potassium", "calcium", "iron",
+    "vitaminA", "vitaminE", "vitaminB1", "vitaminB2", "vitaminB6", "vitaminC",
+    "fiber", "saturatedFat", "salt",
+]
+_MEAL_ORDER = ["daily", "breakfast", "lunch", "dinner"]
+_MEAL_LABELS = {"daily": "1日分", "breakfast": "朝", "lunch": "昼", "dinner": "夜"}
+
 RuntimeContextProvider = Callable[[], dict[str, Any] | None]
 
 
@@ -175,6 +191,21 @@ def _resolve_jst_date_filter(args: dict[str, Any], default_period: str) -> Resol
     return _resolve_period_filter(default_period)
 
 
+def _format_nutrition_threshold(threshold: dict | None) -> str:
+    if not threshold:
+        return ""
+    t_type = threshold.get("type")
+    lower = threshold.get("lower")
+    upper = threshold.get("upper")
+    if t_type == "range" and lower is not None and upper is not None:
+        return f"{lower}〜{upper}"
+    if t_type == "min_only" and lower is not None:
+        return f"{lower}以上"
+    if t_type == "max_only" and upper is not None:
+        return f"{upper}未満"
+    return ""
+
+
 def _describe_filter(date_filter: ResolvedDateFilter | None, fallback: str = "全件") -> str:
     return date_filter.label if date_filter is not None else fallback
 
@@ -289,6 +320,8 @@ class ToolExecutor:
                 return await self._delete_quest(args)
             if name == "get_health_data":
                 return await self._health_data(args)
+            if name == "get_nutrition_data":
+                return await self._nutrition_data(args)
             return f"不明なツール: {name}"
         except Exception as exc:
             logger.exception("ツール実行エラー: %s", name)
@@ -965,4 +998,61 @@ class ToolExecutor:
             weight = f"{r['weight_kg']}kg" if r.get("weight_kg") is not None else "－"
             fat = f"{r['body_fat_pct']}%" if r.get("body_fat_pct") is not None else "－"
             lines.append(f"- {r['date']} {r['time']}  体重: {weight}  体脂肪率: {fat}")
+        return "\n".join(lines)
+
+    async def _nutrition_data(self, args: dict[str, Any]) -> str:
+        try:
+            date_filter = _resolve_jst_date_filter(args, "today")
+        except ValueError as exc:
+            return str(exc)
+
+        try:
+            range_data = await self._api.get_nutrition_range(date_filter.from_date, date_filter.to_date)
+        except Exception:
+            return "栄養素データの取得に失敗しました。"
+
+        registered = []
+        for date_str in sorted(range_data.keys()):
+            day = range_data[date_str]
+            for meal_type in _MEAL_ORDER:
+                record = day.get(meal_type)
+                if record:
+                    registered.append((date_str, meal_type, record))
+
+        if not registered:
+            return f"{date_filter.label} の栄養素データがありません。"
+
+        lines = [f"【{date_filter.label} の栄養摂取データ】", f"登録件数: {len(registered)}件", ""]
+
+        for date_str, meal_type, record in registered:
+            meal_label = _MEAL_LABELS.get(meal_type, meal_type)
+            lines.append(f"■ {date_str} {meal_label}")
+            nutrients = record.get("nutrients", {})
+            insufficient = []
+            excessive = []
+
+            for key in _NUTRIENT_ORDER:
+                entry = nutrients.get(key)
+                if not entry:
+                    continue
+                name = _NUTRIENT_NAMES.get(key, key)
+                value = entry.get("value")
+                unit = entry.get("unit", "")
+                label = entry.get("label")
+                threshold_str = _format_nutrition_threshold(entry.get("threshold"))
+                value_str = f"{value} {unit}" if value is not None else "未取得"
+                label_str = f" 【{label}】" if label else ""
+                threshold_part = f"（基準: {threshold_str}）" if threshold_str else ""
+                lines.append(f"  {name}: {value_str}{threshold_part}{label_str}")
+                if label == "不足":
+                    insufficient.append(name)
+                elif label == "過剰":
+                    excessive.append(name)
+
+            if insufficient:
+                lines.append(f"  → 不足: {'、'.join(insufficient)}")
+            if excessive:
+                lines.append(f"  → 過剰: {'、'.join(excessive)}")
+            lines.append("")
+
         return "\n".join(lines)

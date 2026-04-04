@@ -874,6 +874,7 @@ export function buildLilyChatSystemPrompt(params: {
     '- get_quest_data: クエスト一覧(type=quests) と完了履歴(type=completions)。completions では date / fromDate / toDate / period / questId が使える。',
     '- get_skill_data: スキル一覧(type=skills) と個人スキル辞書(type=dictionary)。',
     '- get_messages_and_logs: アシスタントメッセージ、AI設定、活動ログ、状況ログ、チャットセッション、チャット本文。date / fromDate / toDate / period が使える。type=chat_messages は date / fromDate / toDate があれば sessionId なしで全セッション横断検索できる。',
+    '- get_nutrition_data: 栄養素摂取データ（16栄養素）。date / fromDate / toDate / period が使える。デフォルトは今日。',
   ].join('\n')
 }
 

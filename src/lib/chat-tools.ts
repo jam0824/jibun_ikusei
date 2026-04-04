@@ -3,13 +3,16 @@ import {
   getBrowsingTimes,
   getChatMessages,
   getHealthData,
+  getNutritionRange,
   getSituationLogs,
 } from '@/lib/api-client'
 import type {
   ActivityLogEntry,
+  NutritionRangeResult,
   SituationLogEntry,
 } from '@/lib/api-client'
 import { aggregateByCategory, aggregateDomains } from '@/lib/browsing-aggregator'
+import { NUTRIENT_META } from '@/domain/nutrition-constants'
 import { formatSeconds } from '@/lib/time-format'
 import { maskApiKey } from '@/domain/logic'
 import { createId } from '@/lib/utils'
@@ -17,6 +20,7 @@ import { useAppStore } from '@/store/app-store'
 import type {
   ChatMessage,
   ChatSession,
+  NutrientEntry,
   PersistedAppState,
   Quest,
 } from '@/domain/types'
@@ -586,6 +590,21 @@ export const CHAT_TOOLS = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_nutrition_data',
+      description: '栄養素摂取データを取得する。スクリーンショット解析で登録した16栄養素（エネルギー・たんぱく質・脂質・糖質・各種ビタミン・ミネラル・食物繊維・塩分など）のデータ。date / fromDate / toDate は JST の YYYY-MM-DD 形式。デフォルトは今日。',
+      parameters: {
+        type: 'object',
+        properties: {
+          period: PERIOD_PROPERTY,
+          ...JST_DATE_PROPERTIES,
+        },
+        required: [],
+      },
+    },
+  },
 ]
 
 // ── 共通ユーティリティ ──
@@ -648,6 +667,71 @@ async function executeGetHealthData(args: ToolArgs): Promise<string> {
     const weight = record.weight_kg !== null ? `${record.weight_kg}kg` : '－'
     const bodyFat = record.body_fat_pct !== null ? `${record.body_fat_pct}%` : '－'
     lines.push(`- ${record.date} ${record.time}  体重: ${weight}  体脂肪率: ${bodyFat}`)
+  }
+
+  return lines.join('\n')
+}
+
+// ── get_nutrition_data ──
+
+function formatNutrientThreshold(entry: NutrientEntry): string {
+  const t = entry.threshold
+  if (!t) return ''
+  if (t.type === 'range' && t.lower !== undefined && t.upper !== undefined) return `${t.lower}〜${t.upper}`
+  if (t.type === 'min_only' && t.lower !== undefined) return `${t.lower}以上`
+  if (t.type === 'max_only' && t.upper !== undefined) return `${t.upper}未満`
+  return ''
+}
+
+async function executeGetNutritionData(args: ToolArgs): Promise<string> {
+  const filter = resolveJstDateFilter(args, 'today')
+  if ('error' in filter) return filter.error
+
+  let rangeData: NutritionRangeResult
+  try {
+    rangeData = await getNutritionRange(filter.from, filter.to)
+  } catch {
+    return '栄養素データの取得に失敗しました。'
+  }
+
+  const MEAL_LABELS: Record<string, string> = { daily: '1日分', breakfast: '朝', lunch: '昼', dinner: '夜' }
+  const MEAL_ORDER = ['daily', 'breakfast', 'lunch', 'dinner']
+
+  const registered: Array<[string, string, NonNullable<NutritionRangeResult[string]['daily']>]> = []
+  for (const date of Object.keys(rangeData).sort()) {
+    const day = rangeData[date]
+    for (const mealType of MEAL_ORDER) {
+      const record = day[mealType as keyof typeof day]
+      if (record) registered.push([date, mealType, record])
+    }
+  }
+
+  if (registered.length === 0) {
+    return `${filter.label} の栄養素データがありません。`
+  }
+
+  const lines: string[] = [`【${filter.label} の栄養摂取データ】`, `登録件数: ${registered.length}件`, '']
+
+  for (const [date, mealType, record] of registered) {
+    lines.push(`■ ${date} ${MEAL_LABELS[mealType] ?? mealType}`)
+    const insufficient: string[] = []
+    const excessive: string[] = []
+
+    for (const meta of NUTRIENT_META) {
+      const entry = record.nutrients[meta.key]
+      if (!entry) continue
+      const valueStr = entry.value !== null ? `${entry.value} ${meta.unit}` : '未取得'
+      const thresholdStr = formatNutrientThreshold(entry)
+      const labelStr = entry.label ? ` 【${entry.label}】` : ''
+      const thresholdPart = thresholdStr ? `（基準: ${thresholdStr}）` : ''
+      lines.push(`  ${meta.name}: ${valueStr}${thresholdPart}${labelStr}`)
+      if (entry.label === '不足') insufficient.push(meta.name)
+      else if (entry.label === '過剰') excessive.push(meta.name)
+    }
+
+    if (insufficient.length > 0) lines.push(`  → 不足: ${insufficient.join('、')}`)
+    if (excessive.length > 0) lines.push(`  → 過剰: ${excessive.join('、')}`)
+    lines.push('')
   }
 
   return lines.join('\n')
@@ -1215,6 +1299,10 @@ export async function executeTool(
 
   if (name === 'get_health_data') {
     return executeGetHealthData(args)
+  }
+
+  if (name === 'get_nutrition_data') {
+    return executeGetNutritionData(args)
   }
 
   // context が必要なツール
