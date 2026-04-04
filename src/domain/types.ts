@@ -227,3 +227,51 @@ export interface ImportPayload {
   assistantMessages?: AssistantMessage[]
   meta?: Partial<AppMeta>
 }
+
+// --- 食事・栄養素 ---
+
+export type MealType = 'daily' | 'breakfast' | 'lunch' | 'dinner'
+export type NutrientLabel = '不足' | '適正' | '過剰'
+export type ThresholdType = 'range' | 'min_only' | 'max_only'
+
+export interface NutrientThreshold {
+  lower?: number
+  upper?: number
+  type: ThresholdType
+}
+
+export interface NutrientEntry {
+  value: number | null
+  unit: string
+  label: NutrientLabel | null
+  threshold: NutrientThreshold | null
+}
+
+export type NutrientKey =
+  | 'energy'
+  | 'protein'
+  | 'fat'
+  | 'carbs'
+  | 'potassium'
+  | 'calcium'
+  | 'iron'
+  | 'vitaminA'
+  | 'vitaminE'
+  | 'vitaminB1'
+  | 'vitaminB2'
+  | 'vitaminB6'
+  | 'vitaminC'
+  | 'fiber'
+  | 'saturatedFat'
+  | 'salt'
+
+export type NutrientMap = Record<NutrientKey, NutrientEntry>
+
+export interface NutritionRecord {
+  userId: string
+  date: string
+  mealType: MealType
+  nutrients: NutrientMap
+  createdAt: string
+  updatedAt: string
+}

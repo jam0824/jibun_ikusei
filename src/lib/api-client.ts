@@ -280,3 +280,20 @@ export type SituationLogEntry = {
 export function getSituationLogs(from: string, to: string) {
   return request<SituationLogEntry[]>(`/situation-logs?from=${from}&to=${to}`)
 }
+
+// ---- 栄養素 ----
+
+import type { MealType, NutritionRecord } from '@/domain/types'
+
+export type NutritionDayResult = Record<MealType, NutritionRecord | null>
+
+export function getNutrition(date: string) {
+  return request<NutritionDayResult>(`/nutrition?date=${date}`)
+}
+
+export function putNutrition(date: string, mealType: MealType, record: Omit<NutritionRecord, 'userId'>) {
+  return request<NutritionRecord>(`/nutrition/${date}/${mealType}`, {
+    method: 'PUT',
+    body: JSON.stringify(record),
+  })
+}

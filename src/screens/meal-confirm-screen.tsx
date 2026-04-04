@@ -1,17 +1,11 @@
 import { useState } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
+import { useShallow } from 'zustand/react/shallow'
 import { Screen } from '@/components/layout'
 import { Button, Card, CardContent } from '@/components/ui'
-
-type NutrientLabel = '不足' | '適正' | '過剰'
-
-interface MockNutrient {
-  name: string
-  value: number
-  unit: string
-  label: NutrientLabel
-  threshold: string
-}
+import { NUTRIENT_META } from '@/domain/nutrition-constants'
+import { useAppStore } from '@/store/app-store'
+import type { MealType, NutrientKey, NutrientLabel, NutrientMap, NutritionRecord } from '@/domain/types'
 
 const MEAL_TYPE_LABELS: Record<string, string> = {
   daily: '1日分',
@@ -20,24 +14,25 @@ const MEAL_TYPE_LABELS: Record<string, string> = {
   dinner: '夜',
 }
 
-const MOCK_NUTRIENTS: MockNutrient[] = [
-  { name: 'エネルギー', value: 1822,  unit: 'kcal', label: '不足', threshold: '1839〜2239' },
-  { name: 'たんぱく質', value: 83.3,  unit: 'g',    label: '適正', threshold: '73.8〜178.4' },
-  { name: '脂質',       value: 68.2,  unit: 'g',    label: '適正', threshold: '56.6〜79.3' },
-  { name: '糖質',       value: 224.4, unit: 'g',    label: '適正', threshold: '152.9〜254.9' },
-  { name: 'カリウム',   value: 1704,  unit: 'mg',   label: '不足', threshold: '3000以上' },
-  { name: 'カルシウム', value: 472,   unit: 'mg',   label: '不足', threshold: '750〜2500' },
-  { name: '鉄',         value: 13.7,  unit: 'mg',   label: '適正', threshold: '7.5以上' },
-  { name: 'ビタミンA',  value: 2977,  unit: 'µg',   label: '過剰', threshold: '900〜2700' },
-  { name: 'ビタミンE',  value: 17,    unit: 'mg',   label: '適正', threshold: '6.5〜800' },
-  { name: 'ビタミンB1', value: 3.5,   unit: 'mg',   label: '適正', threshold: '1以上' },
-  { name: 'ビタミンB2', value: 3.59,  unit: 'mg',   label: '適正', threshold: '1.4以上' },
-  { name: 'ビタミンB6', value: 4.47,  unit: 'mg',   label: '適正', threshold: '1.5〜60' },
-  { name: 'ビタミンC',  value: 136,   unit: 'mg',   label: '適正', threshold: '100以上' },
-  { name: '食物繊維',   value: 14.5,  unit: 'g',    label: '不足', threshold: '22以上' },
-  { name: '飽和脂肪酸', value: 17.77, unit: 'g',    label: '過剰', threshold: '15.86未満' },
-  { name: '塩分',       value: 7.1,   unit: 'g',    label: '適正', threshold: '7.5未満' },
-]
+// フォールバック用モックデータ（meal_screenshot.png の実測値）
+const MOCK_NUTRIENT_MAP: NutrientMap = {
+  energy:       { value: 1822,  unit: 'kcal', label: '不足', threshold: { type: 'range',    lower: 1839,  upper: 2239  } },
+  protein:      { value: 83.3,  unit: 'g',    label: '適正', threshold: { type: 'range',    lower: 73.8,  upper: 178.4 } },
+  fat:          { value: 68.2,  unit: 'g',    label: '適正', threshold: { type: 'range',    lower: 56.6,  upper: 79.3  } },
+  carbs:        { value: 224.4, unit: 'g',    label: '適正', threshold: { type: 'range',    lower: 152.9, upper: 254.9 } },
+  potassium:    { value: 1704,  unit: 'mg',   label: '不足', threshold: { type: 'min_only', lower: 3000               } },
+  calcium:      { value: 472,   unit: 'mg',   label: '不足', threshold: { type: 'range',    lower: 750,   upper: 2500  } },
+  iron:         { value: 13.7,  unit: 'mg',   label: '適正', threshold: { type: 'min_only', lower: 7.5                } },
+  vitaminA:     { value: 2977,  unit: 'µg',   label: '過剰', threshold: { type: 'range',    lower: 900,   upper: 2700  } },
+  vitaminE:     { value: 17,    unit: 'mg',   label: '適正', threshold: { type: 'range',    lower: 6.5,   upper: 800   } },
+  vitaminB1:    { value: 3.5,   unit: 'mg',   label: '適正', threshold: { type: 'min_only', lower: 1                  } },
+  vitaminB2:    { value: 3.59,  unit: 'mg',   label: '適正', threshold: { type: 'min_only', lower: 1.4                } },
+  vitaminB6:    { value: 4.47,  unit: 'mg',   label: '適正', threshold: { type: 'range',    lower: 1.5,   upper: 60    } },
+  vitaminC:     { value: 136,   unit: 'mg',   label: '適正', threshold: { type: 'min_only', lower: 100                } },
+  fiber:        { value: 14.5,  unit: 'g',    label: '不足', threshold: { type: 'min_only', lower: 22                 } },
+  saturatedFat: { value: 17.77, unit: 'g',    label: '過剰', threshold: { type: 'max_only', upper: 15.86              } },
+  salt:         { value: 7.1,   unit: 'g',    label: '適正', threshold: { type: 'max_only', upper: 7.5                } },
+}
 
 const LABEL_STYLES: Record<NutrientLabel, string> = {
   '不足': 'bg-blue-50 text-blue-700 border border-blue-200',
@@ -45,70 +40,184 @@ const LABEL_STYLES: Record<NutrientLabel, string> = {
   '過剰': 'bg-rose-50 text-rose-700 border border-rose-200',
 }
 
+function formatThreshold(entry: NutrientMap[NutrientKey]): string {
+  const t = entry.threshold
+  if (!t) return ''
+  if (t.type === 'range' && t.lower !== undefined && t.upper !== undefined) {
+    return `${t.lower}〜${t.upper}`
+  }
+  if (t.type === 'min_only' && t.lower !== undefined) {
+    return `${t.lower}以上`
+  }
+  if (t.type === 'max_only' && t.upper !== undefined) {
+    return `${t.upper}未満`
+  }
+  return ''
+}
+
 export function MealConfirmScreen() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams] = useSearchParams()
-  const type = searchParams.get('type') ?? 'daily'
+  const type = (searchParams.get('type') ?? 'daily') as MealType
   const date = searchParams.get('date') ?? ''
 
-  const [values, setValues] = useState<number[]>(MOCK_NUTRIENTS.map((n) => n.value))
+  const { fetchNutrition, saveNutrition, nutritionCache } = useAppStore(
+    useShallow((s) => ({
+      fetchNutrition: s.fetchNutrition,
+      saveNutrition: s.saveNutrition,
+      nutritionCache: s.nutritionCache,
+    }))
+  )
+
+  // 解析結果を location.state から受け取る。なければモックデータ使用
+  const sourceNutrients: NutrientMap = location.state?.nutrients ?? MOCK_NUTRIENT_MAP
+  const isMock = !location.state?.nutrients
+
+  // 編集用 state（摂取量のみ）
+  const [values, setValues] = useState<Record<NutrientKey, number | null>>(
+    () => Object.fromEntries(
+      NUTRIENT_META.map((m) => [m.key, sourceNutrients[m.key].value])
+    ) as Record<NutrientKey, number | null>
+  )
+
+  const [isSaving, setIsSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
 
   const mealLabel = MEAL_TYPE_LABELS[type] ?? type
 
-  const handleSave = () => {
-    alert('保存しました（モック）')
-    navigate('/meal')
+  const handleSave = async () => {
+    // 上書き確認：当日のデータがキャッシュか API にある場合
+    const cached = nutritionCache[date]
+    const existingRecord: NutritionRecord | null = cached?.[type] ?? null
+
+    // キャッシュにない場合は API から確認
+    let hasExisting = Boolean(existingRecord)
+    if (!hasExisting && date) {
+      try {
+        const fetched = await fetchNutrition(date)
+        hasExisting = Boolean(fetched[type])
+      } catch {
+        // fetch 失敗時はそのまま保存続行
+      }
+    }
+
+    if (hasExisting) {
+      const confirmed = window.confirm(
+        `${date} の「${mealLabel}」データが既に存在します。上書きしますか？`
+      )
+      if (!confirmed) return
+    }
+
+    setIsSaving(true)
+    setSaveError(null)
+
+    try {
+      // 編集済み摂取量を nutrients に反映してから保存
+      const nutrients: NutrientMap = Object.fromEntries(
+        NUTRIENT_META.map((m) => [
+          m.key,
+          {
+            ...sourceNutrients[m.key],
+            value: values[m.key],
+          },
+        ])
+      ) as NutrientMap
+
+      await saveNutrition(date, type, {
+        date,
+        mealType: type,
+        nutrients,
+        createdAt: existingRecord?.createdAt,
+        updatedAt: new Date().toISOString(),
+      } as Omit<NutritionRecord, 'userId'>)
+
+      navigate('/meal')
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : '保存に失敗しました。')
+    } finally {
+      setIsSaving(false)
+    }
   }
 
   return (
     <Screen title={`${mealLabel} 確認`} subtitle={date}>
+      {isMock && (
+        <div className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
+          モックデータを表示しています（解析結果がない場合のフォールバック）
+        </div>
+      )}
+
       <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
         解析結果（摂取量のみ編集可）
       </div>
 
       <div className="space-y-2 pb-32">
-        {MOCK_NUTRIENTS.map((nutrient, i) => (
-          <Card key={nutrient.name}>
-            <CardContent className="p-3">
-              <div className="flex items-center gap-3">
-                {/* 栄養素名 + ラベル */}
-                <div className="w-28 shrink-0">
-                  <div className="text-xs font-semibold text-slate-900">{nutrient.name}</div>
-                  <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${LABEL_STYLES[nutrient.label]}`}>
-                    {nutrient.label}
-                  </span>
-                </div>
+        {NUTRIENT_META.map((meta) => {
+          const entry = sourceNutrients[meta.key]
+          const currentValue = values[meta.key]
 
-                {/* 摂取量 入力 */}
-                <div className="flex flex-1 items-center gap-1">
-                  <input
-                    type="number"
-                    value={values[i]}
-                    onChange={(e) => {
-                      const next = [...values]
-                      next[i] = Number(e.target.value)
-                      setValues(next)
-                    }}
-                    className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-right text-sm font-semibold text-slate-900 focus:border-violet-400 focus:outline-none"
-                  />
-                  <span className="shrink-0 text-xs text-slate-500">{nutrient.unit}</span>
-                </div>
+          return (
+            <Card key={meta.key}>
+              <CardContent className="p-3">
+                <div className="flex items-center gap-3">
+                  {/* 栄養素名 + ラベル */}
+                  <div className="w-28 shrink-0">
+                    <div className="text-xs font-semibold text-slate-900">{meta.name}</div>
+                    {entry.label ? (
+                      <span className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${LABEL_STYLES[entry.label]}`}>
+                        {entry.label}
+                      </span>
+                    ) : (
+                      <span className="mt-1 inline-block rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-400">
+                        未取得
+                      </span>
+                    )}
+                  </div>
 
-                {/* 基準値 */}
-                <div className="w-24 shrink-0 text-right text-[10px] leading-4 text-slate-400">
-                  {nutrient.threshold}
+                  {/* 摂取量 入力 */}
+                  <div className="flex flex-1 items-center gap-1">
+                    {currentValue !== null ? (
+                      <input
+                        type="number"
+                        value={currentValue}
+                        onChange={(e) => {
+                          setValues((prev) => ({ ...prev, [meta.key]: Number(e.target.value) }))
+                        }}
+                        className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-right text-sm font-semibold text-slate-900 focus:border-violet-400 focus:outline-none"
+                      />
+                    ) : (
+                      <div className="w-full rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-right text-sm text-slate-400">
+                        未取得
+                      </div>
+                    )}
+                    <span className="shrink-0 text-xs text-slate-500">{meta.unit}</span>
+                  </div>
+
+                  {/* 基準値 */}
+                  <div className="w-24 shrink-0 text-right text-[10px] leading-4 text-slate-400">
+                    {formatThreshold(entry)}
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          )
+        })}
       </div>
 
+      {saveError && (
+        <div className="fixed bottom-[144px] left-0 right-0 px-4">
+          <div className="mx-auto max-w-3xl rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            {saveError}
+          </div>
+        </div>
+      )}
+
       {/* 保存ボタン（固定フッター） */}
-      <div className="fixed bottom-[84px] left-0 right-0 px-4 py-2 bg-white/90 backdrop-blur border-t border-slate-100">
+      <div className="fixed bottom-[84px] left-0 right-0 border-t border-slate-100 bg-white/90 px-4 py-2 backdrop-blur">
         <div className="mx-auto max-w-3xl">
-          <Button className="w-full" onClick={handleSave}>
-            保存する
+          <Button className="w-full" onClick={handleSave} disabled={isSaving}>
+            {isSaving ? '保存中...' : '保存する'}
           </Button>
         </div>
       </div>

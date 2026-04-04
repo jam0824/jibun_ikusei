@@ -1,11 +1,15 @@
-import { useMemo, useRef, useState } from 'react'
-import { CalendarDays, Globe, History, RotateCcw, ScrollText, Settings2, Utensils } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { CalendarDays, ChevronLeft, ChevronRight, Globe, History, RotateCcw, ScrollText, Settings2, Utensils } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useShallow } from 'zustand/react/shallow'
 import { CompletionResolutionCard } from '@/components/completion-resolution-card'
 import {
   getFilteredActiveCompletions,
   type CompletionHistoryFilter,
 } from '@/domain/logic'
+import { NUTRIENT_META } from '@/domain/nutrition-constants'
+import { resolveDayNutrition } from '@/domain/nutrition-logic'
+import type { NutrientEntry, NutrientLabel } from '@/domain/types'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent } from '@/components/ui'
 import { formatDateTime, isUndoable } from '@/lib/date'
@@ -13,35 +17,6 @@ import { useAppStore } from '@/store/app-store'
 import { BrowsingTimeView } from '@/screens/browsing-time-view'
 
 type RecordsTab = 'quests' | 'browsing' | 'nutrition'
-
-type NutrientLabel = '不足' | '適正' | '過剰'
-
-interface MockNutrient {
-  name: string
-  value: number
-  unit: string
-  label: NutrientLabel
-  referenceMax: number
-}
-
-const MOCK_NUTRIENTS: MockNutrient[] = [
-  { name: 'エネルギー', value: 1822,  unit: 'kcal', label: '不足', referenceMax: 2239 },
-  { name: 'たんぱく質', value: 83.3,  unit: 'g',    label: '適正', referenceMax: 178.4 },
-  { name: '脂質',       value: 68.2,  unit: 'g',    label: '適正', referenceMax: 79.3 },
-  { name: '糖質',       value: 224.4, unit: 'g',    label: '適正', referenceMax: 254.9 },
-  { name: 'カリウム',   value: 1704,  unit: 'mg',   label: '不足', referenceMax: 3000 },
-  { name: 'カルシウム', value: 472,   unit: 'mg',   label: '不足', referenceMax: 2500 },
-  { name: '鉄',         value: 13.7,  unit: 'mg',   label: '適正', referenceMax: 20 },
-  { name: 'ビタミンA',  value: 2977,  unit: 'µg',   label: '過剰', referenceMax: 2700 },
-  { name: 'ビタミンE',  value: 17,    unit: 'mg',   label: '適正', referenceMax: 800 },
-  { name: 'ビタミンB1', value: 3.5,   unit: 'mg',   label: '適正', referenceMax: 5 },
-  { name: 'ビタミンB2', value: 3.59,  unit: 'mg',   label: '適正', referenceMax: 5 },
-  { name: 'ビタミンB6', value: 4.47,  unit: 'mg',   label: '適正', referenceMax: 60 },
-  { name: 'ビタミンC',  value: 136,   unit: 'mg',   label: '適正', referenceMax: 500 },
-  { name: '食物繊維',   value: 14.5,  unit: 'g',    label: '不足', referenceMax: 22 },
-  { name: '飽和脂肪酸', value: 17.77, unit: 'g',    label: '過剰', referenceMax: 15.86 },
-  { name: '塩分',       value: 7.1,   unit: 'g',    label: '適正', referenceMax: 7.5 },
-]
 
 const BAR_COLORS: Record<NutrientLabel, string> = {
   '不足': 'bg-blue-400',
@@ -62,24 +37,75 @@ function formatDateJst(dateStr: string): string {
   return `${y}年${Number(m)}月${Number(d)}日`
 }
 
-function NutritionMockView() {
+function shiftDate(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const next = new Date(y, m - 1, d + days)
+  const ny = next.getFullYear()
+  const nm = String(next.getMonth() + 1).padStart(2, '0')
+  const nd = String(next.getDate()).padStart(2, '0')
+  return `${ny}-${nm}-${nd}`
+}
+
+function calcBarWidth(entry: NutrientEntry): number {
+  const { value, threshold } = entry
+  if (value === null || !threshold) return 0
+  const ref =
+    threshold.type === 'range' ? threshold.upper :
+    threshold.type === 'min_only' ? threshold.lower :
+    threshold.upper
+  if (!ref) return 0
+  return Math.min((value / ref) * 100, 100)
+}
+
+function NutritionView() {
   const [date, setDate] = useState(getTodayJst())
+  const [isLoading, setIsLoading] = useState(false)
   const dateInputRef = useRef<HTMLInputElement>(null)
+
+  const { fetchNutrition, nutritionCache } = useAppStore(
+    useShallow((s) => ({ fetchNutrition: s.fetchNutrition, nutritionCache: s.nutritionCache }))
+  )
+
+  useEffect(() => {
+    setIsLoading(true)
+    fetchNutrition(date).finally(() => setIsLoading(false))
+  }, [date, fetchNutrition])
+
+  const dayData = nutritionCache[date]
+  const resolved = dayData
+    ? resolveDayNutrition(
+        dayData.daily,
+        [dayData.breakfast, dayData.lunch, dayData.dinner].filter((r): r is NonNullable<typeof r> => r !== null)
+      )
+    : null
 
   return (
     <div className="space-y-3 pb-6">
-      {/* 日付ピッカー */}
-      <button
-        type="button"
-        onClick={() => dateInputRef.current?.showPicker()}
-        className="flex w-full items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-3 transition hover:border-violet-200 hover:bg-violet-50/40"
-      >
-        <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+      {/* 日付ナビゲーション */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setDate((d) => shiftDate(d, -1))}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-violet-200 hover:text-violet-600"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => dateInputRef.current?.showPicker()}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:border-violet-200 hover:bg-violet-50/40"
+        >
           <CalendarDays className="h-4 w-4 text-violet-500" />
           {formatDateJst(date)}
-        </div>
-        <span className="text-xs text-slate-400">タップで変更</span>
-      </button>
+        </button>
+        <button
+          type="button"
+          onClick={() => setDate((d) => shiftDate(d, 1))}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-violet-200 hover:text-violet-600"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
       <input
         ref={dateInputRef}
         type="date"
@@ -88,36 +114,43 @@ function NutritionMockView() {
         className="absolute opacity-0 pointer-events-none h-0 w-0"
       />
 
-      {/* モックバナー */}
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-700">
-        モックデータを表示しています（1日分）
-      </div>
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12 text-sm text-slate-400">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-violet-500 mr-2" />
+          読み込み中...
+        </div>
+      ) : !resolved ? (
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400">
+          この日の栄養データはありません
+        </div>
+      ) : (
+        <>
+          {/* 栄養素グラフ */}
+          {NUTRIENT_META.map((meta) => {
+            const entry = resolved.nutrients[meta.key]
+            const pct = calcBarWidth(entry)
+            const barColor = entry.label ? BAR_COLORS[entry.label] : 'bg-slate-300'
+            return (
+              <div key={meta.key} className="flex items-center gap-2">
+                <div className="w-20 shrink-0 text-xs text-slate-600">{meta.name}</div>
+                <div className="flex-1 overflow-hidden rounded-full bg-slate-100" style={{ height: '8px' }}>
+                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                </div>
+                <div className="w-20 shrink-0 text-right text-xs text-slate-500">
+                  {entry.value !== null ? `${entry.value} ${meta.unit}` : '未取得'}
+                </div>
+              </div>
+            )
+          })}
 
-      {/* 栄養素グラフ */}
-      {MOCK_NUTRIENTS.map((nutrient) => {
-        const pct = Math.min((nutrient.value / nutrient.referenceMax) * 100, 100)
-        return (
-          <div key={nutrient.name} className="flex items-center gap-2">
-            <div className="w-20 shrink-0 text-xs text-slate-600">{nutrient.name}</div>
-            <div className="flex-1 overflow-hidden rounded-full bg-slate-100" style={{ height: '8px' }}>
-              <div
-                className={`h-full rounded-full ${BAR_COLORS[nutrient.label]}`}
-                style={{ width: `${pct}%` }}
-              />
-            </div>
-            <div className="w-20 shrink-0 text-right text-xs text-slate-500">
-              {nutrient.value} {nutrient.unit}
-            </div>
+          {/* 凡例 */}
+          <div className="flex items-center gap-4 text-[10px] text-slate-400">
+            <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-full bg-blue-400" />不足</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-full bg-green-400" />適正</span>
+            <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-full bg-red-400" />過剰</span>
           </div>
-        )
-      })}
-
-      {/* 凡例 */}
-      <div className="flex items-center gap-4 text-[10px] text-slate-400">
-        <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-full bg-blue-400" />不足</span>
-        <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-full bg-green-400" />適正</span>
-        <span className="flex items-center gap-1"><span className="inline-block h-2 w-3 rounded-full bg-red-400" />過剰</span>
-      </div>
+        </>
+      )}
     </div>
   )
 }
@@ -253,7 +286,7 @@ export function RecordsScreen() {
       {activeTab === 'browsing' ? (
         <BrowsingTimeView />
       ) : activeTab === 'nutrition' ? (
-        <NutritionMockView />
+        <NutritionView />
       ) : (
         <>
           <div className="grid grid-cols-3 gap-3">

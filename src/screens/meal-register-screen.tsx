@@ -1,8 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ChevronRight, ListTodo, Utensils } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import { useShallow } from 'zustand/react/shallow'
 import { Screen } from '@/components/layout'
 import { Badge, Card, CardContent } from '@/components/ui'
+import { useAppStore } from '@/store/app-store'
 
 type MealType = 'daily' | 'breakfast' | 'lunch' | 'dinner'
 
@@ -26,6 +28,18 @@ function getTodayJst(): string {
 export function MealRegisterScreen() {
   const navigate = useNavigate()
   const [date, setDate] = useState(getTodayJst())
+  const [isLoading, setIsLoading] = useState(false)
+
+  const { fetchNutrition, nutritionCache } = useAppStore(
+    useShallow((s) => ({ fetchNutrition: s.fetchNutrition, nutritionCache: s.nutritionCache }))
+  )
+
+  useEffect(() => {
+    setIsLoading(true)
+    fetchNutrition(date).finally(() => setIsLoading(false))
+  }, [date, fetchNutrition])
+
+  const dayData = nutritionCache[date]
 
   const handleMealTypeClick = (type: MealType) => {
     navigate(`/meal/analyze?type=${type}&date=${date}`)
@@ -81,7 +95,13 @@ export function MealRegisterScreen() {
               <CardContent className="flex items-center justify-between p-4">
                 <div className="flex items-center gap-3">
                   <div className="text-sm font-semibold text-slate-900">{MEAL_TYPE_LABELS[type]}</div>
-                  <Badge tone="outline">未登録</Badge>
+                  {isLoading ? (
+                    <span className="inline-block rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[10px] text-slate-400">確認中...</span>
+                  ) : dayData?.[type] ? (
+                    <span className="inline-block rounded-full border border-green-200 bg-green-50 px-2 py-0.5 text-[10px] font-semibold text-green-700">登録済み</span>
+                  ) : (
+                    <Badge tone="outline">未登録</Badge>
+                  )}
                 </div>
                 <ChevronRight className="h-4 w-4 text-slate-400" />
               </CardContent>
