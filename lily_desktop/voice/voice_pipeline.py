@@ -43,6 +43,7 @@ class VoicePipeline:
         )
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
+        self._resume_disabled = False
 
         # 話者照合プロファイルの読み込み（有効時のみ）
         self._speaker_profile = None
@@ -71,6 +72,7 @@ class VoicePipeline:
             logger.warning("GOOGLE_CLOUD_API_KEY が未設定のため音声入力を開始できません")
             return
 
+        self._resume_disabled = False
         self._stop_event.clear()
 
         try:
@@ -153,6 +155,94 @@ class VoicePipeline:
 
         if was_running:
             self.start()
+
+    def start(self) -> None:
+        """別スレッドでマイクキャプチャ + VAD ループを開始する。"""
+        if self.is_running:
+            return
+
+        if not self._config.google_api_key:
+            logger.warning("GOOGLE_CLOUD_API_KEY が未設定のため音声入力を開始できません")
+            return
+
+        self._resume_disabled = False
+        self._stop_event.clear()
+
+        try:
+            self._capture.start()
+        except Exception:
+            logger.exception("マイクの初期化に失敗しました")
+            return
+
+        self._thread = threading.Thread(
+            target=self._worker,
+            name="voice-pipeline",
+            daemon=True,
+        )
+        self._thread.start()
+        logger.info("音声入力パイプラインを開始")
+
+    def resume(self) -> None:
+        """TTS 再生後にマイク入力を再開する。"""
+        if not self.is_running:
+            return
+        if self._resume_disabled:
+            logger.info("マイク自動再開は停止中。マイク再選択または再起動で再開します")
+            return
+
+        attempts = self._build_resume_attempts()
+        for index, (device_index, label) in enumerate(attempts):
+            self._capture.set_device(device_index)
+            try:
+                self._capture.start()
+                logger.info("マイク入力を再開: %s", label)
+                return
+            except Exception as exc:
+                if index == len(attempts) - 1:
+                    self._resume_disabled = True
+                    logger.exception("マイク再開に失敗しました。自動再開を停止します")
+                else:
+                    logger.warning(
+                        "保存済みマイクでの再開に失敗したためデフォルト入力にフォールバックします: %s",
+                        exc,
+                    )
+
+    def set_device(self, device_index: int | None, device_name: str) -> None:
+        """マイクデバイスを切り替える。実行中なら再起動する。"""
+        was_running = self.is_running
+        if was_running:
+            self.stop()
+
+        self._resume_disabled = False
+        self._capture.set_device(device_index)
+        self._config.device_name = device_name
+        logger.info("マイクを切り替え: %s (index=%s)", device_name, device_index)
+
+        if was_running:
+            self.start()
+
+    def _build_resume_attempts(self) -> list[tuple[int | None, str]]:
+        attempts: list[tuple[int | None, str]] = []
+        if self._config.device_name:
+            device_index = find_device_index(self._config.device_name)
+            if device_index is None:
+                logger.warning(
+                    "保存済みマイク '%s' が見つからないため、デフォルト入力で再開します",
+                    self._config.device_name,
+                )
+            else:
+                attempts.append((device_index, self._config.device_name))
+
+        attempts.append((None, "デフォルト入力"))
+
+        deduped: list[tuple[int | None, str]] = []
+        seen: set[int | None] = set()
+        for device_index, label in attempts:
+            if device_index in seen:
+                continue
+            seen.add(device_index)
+            deduped.append((device_index, label))
+        return deduped
 
     async def _process_audio(self, audio_data: bytes) -> None:
         """発話音声を処理する: (話者照合 →) STT → イベント発火"""

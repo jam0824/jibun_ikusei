@@ -15,6 +15,7 @@ from ai.system_prompts import build_haruka_system_prompt
 from ai.talk_seed import TalkSeed, TalkSeedManager
 from core.config import AppConfig
 from core.event_bus import bus
+from core.situation_capture import SituationCaptureCoordinator
 from data.session_manager import SessionManager
 
 logger = logging.getLogger(__name__)
@@ -127,7 +128,13 @@ proud(得意), caring(気遣い), serious(真剣), sleepy(眠い), playful(い�
 class AutoConversation:
     """タイマー駆動の自動雑談（〜10ターン掛け合い + ユーザー割り込み対応）"""
 
-    def __init__(self, config: AppConfig, session_mgr: SessionManager, api_client=None):
+    def __init__(
+        self,
+        config: AppConfig,
+        session_mgr: SessionManager,
+        api_client=None,
+        situation_capture_coordinator: SituationCaptureCoordinator | None = None,
+    ):
         self._config = config
         self._session_mgr = session_mgr
         self._seed_mgr = TalkSeedManager(
@@ -138,6 +145,7 @@ class AutoConversation:
             camera_analysis_model=config.camera.analysis_model,
             interest_topics=config.talk_seeds.interest_topics,
             api_client=api_client,
+            situation_capture_coordinator=situation_capture_coordinator,
         )
         self._timer = QTimer()
         self._timer.setSingleShot(False)
