@@ -78,6 +78,7 @@ export interface Quest {
   privacyMode: PrivacyMode
   pinned: boolean
   source?: QuestSource
+  systemKey?: 'meal_register'
   domain?: string
   browsingCategory?: string
   browsingType?: BrowsingQuestType

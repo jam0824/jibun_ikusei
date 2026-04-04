@@ -330,6 +330,53 @@ function ensureSkill(skills: Skill[], skillName: string, category: string, sourc
   return { skill: created, skills: [created, ...skills] }
 }
 
+export function ensureSystemQuests(baseState: PersistedAppState): PersistedAppState {
+  const mealQuests = baseState.quests.filter((q) => q.systemKey === 'meal_register')
+
+  // 重複があれば最初の1件だけ残す
+  if (mealQuests.length > 1) {
+    const keepId = mealQuests[0].id
+    return {
+      ...baseState,
+      quests: baseState.quests.filter((q) => q.systemKey !== 'meal_register' || q.id === keepId),
+    }
+  }
+
+  if (mealQuests.length === 1) {
+    return baseState
+  }
+
+  let skills = [...baseState.skills]
+  const ensured = ensureSkill(skills, '健康管理', '生活', 'seed')
+  skills = ensured.skills
+  const now = nowIso()
+
+  const mealRegisterQuest: Quest = {
+    id: createId('quest'),
+    title: '食事登録',
+    description: '食事のスクリーンショットを登録する',
+    questType: 'repeatable',
+    xpReward: 2,
+    category: '生活',
+    skillMappingMode: 'fixed',
+    fixedSkillId: ensured.skill.id,
+    cooldownMinutes: 0,
+    dailyCompletionCap: 4,
+    status: 'active',
+    privacyMode: 'normal',
+    pinned: false,
+    systemKey: 'meal_register',
+    createdAt: now,
+    updatedAt: now,
+  }
+
+  return {
+    ...baseState,
+    quests: [...baseState.quests, mealRegisterQuest],
+    skills,
+  }
+}
+
 function createSampleState(baseState: PersistedAppState) {
   let skills = [...baseState.skills]
   const quests: Quest[] = SAMPLE_QUESTS.map((sample, index) => {
@@ -485,7 +532,7 @@ export function hydratePersistedState(partial?: Partial<PersistedAppState>): Per
       ? createSampleState(hydrated)
       : hydrated
 
-  return reconcileState(migrateLegacyContent(withSamples))
+  return reconcileState(ensureSystemQuests(migrateLegacyContent(withSamples)))
 }
 
 export function getActiveCompletions(completions: QuestCompletion[]) {
