@@ -98,6 +98,15 @@ class ApiClient:
     async def post_health_data(self, entries: list[dict]) -> dict:
         return await self._request("POST", "/health-data", json={"entries": entries})
 
+    # ---- Fitbit ----
+    async def post_fitbit_data(self, summary: dict) -> dict:
+        return await self._request("POST", "/fitbit-data", json=summary)
+
+    async def get_fitbit_data(self, from_date: str, to_date: str) -> list[dict]:
+        return await self._request(
+            "GET", "/fitbit-data", params={"from": from_date, "to": to_date}
+        )
+
     # ---- アクティビティログ ----
     async def get_activity_logs(self, from_date: str, to_date: str) -> list[dict]:
         return await self._request(

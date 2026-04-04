@@ -281,3 +281,85 @@ Active Zone Minutes は、0 と未取得を明確に区別して扱う。
 * 日ごとに取得・summary 化・保存を分離することで、失敗時の影響範囲を限定する
 * 将来的に取得対象日数を増やす場合も、対象日リストを変更するだけで拡張しやすい構成とする
 * DB 設計や内部クラス設計などの実装詳細は、実装者が既存仕様との整合を見て決定する
+
+---
+
+## Tool Search 仕様
+
+チャット（デスクトップ・Web）から Fitbit データを参照できる `get_fitbit_data` ツールを提供する。
+
+### ツール名
+
+`get_fitbit_data`
+
+### 説明
+
+Fitbitの心拍・睡眠・活動データを取得する。
+期間や日付を指定して、指定したデータ種別のサマリーをテキストで返す。
+
+### パラメータ
+
+| パラメータ | 型 | 必須 | 説明 |
+|-----------|---|------|------|
+| period | string | 任意 | `"today"` / `"week"` / `"month"`（デフォルト: `"week"`） |
+| date | string | 任意 | 単一日 `"YYYY-MM-DD"`（period より優先） |
+| fromDate | string | 任意 | 範囲開始 `"YYYY-MM-DD"` |
+| toDate | string | 任意 | 範囲終了 `"YYYY-MM-DD"` |
+| data_type | string | 任意 | `"heart"` / `"sleep"` / `"activity"` / `"azm"` / `"all"`（デフォルト: `"all"`） |
+
+日付指定の優先順位: `date` > `fromDate + toDate` > `period`
+
+### 返却形式
+
+テキスト形式（LLM が解析しやすいプレーンテキスト）
+
+#### 例: data_type="sleep"
+
+```
+【2026-03-29 〜 2026-04-04 の睡眠サマリー】取得件数: 7件
+- 2026-04-04: 就寝23:41 起床06:58 睡眠397分 (深72 / 浅220 / REM105 / 覚醒40)
+- 2026-04-03: 就寝00:12 起床07:05 睡眠382分 (深65 / 浅198 / REM98 / 覚醒38)
+```
+
+#### 例: data_type="activity"
+
+```
+【2026-03-29 〜 2026-04-04 の活動サマリー】取得件数: 7件
+- 2026-04-04: 歩数8234 距離5.91km 消費2143kcal 高活動12分 中活動18分
+- 2026-04-03: 歩数7810 距離5.61km 消費2098kcal 高活動8分 中活動22分
+```
+
+#### 例: data_type="heart"
+
+```
+【2026-03-29 〜 2026-04-04 の心拍サマリー】取得件数: 7件
+- 2026-04-04: 安静時心拍62bpm イントラデイ1440点
+- 2026-04-03: 安静時心拍64bpm イントラデイ1440点
+```
+
+#### データなし時
+
+```
+2026-03-29 〜 2026-04-04 のFitbitデータはありません。
+```
+
+### 実装箇所
+
+| レイヤー | ファイル |
+|---------|---------|
+| デスクトップ ツール定義 | `lily_desktop/ai/tool_definitions.py` |
+| デスクトップ ツール実行 | `lily_desktop/ai/tool_executor.py` |
+| デスクトップ API クライアント | `lily_desktop/api/api_client.py` |
+| Web ツール | `src/lib/chat-tools.ts` |
+| Web API クライアント | `src/lib/api-client.ts` |
+| Lambda | `infra/lambda/fitbitDataHandler/index.mjs` |
+
+### DynamoDB スキーマ
+
+```
+PK: user#${userId}
+SK: FITBIT#${date}
+属性: date, heart, active_zone_minutes, sleep, activity, createdAt, updatedAt
+```
+
+GET エンドポイント: `GET /fitbit-data?from=YYYY-MM-DD&to=YYYY-MM-DD`

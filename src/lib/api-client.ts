@@ -303,3 +303,55 @@ export function putNutrition(date: string, mealType: MealType, record: Omit<Nutr
     body: JSON.stringify(record),
   })
 }
+
+// ---- Fitbit ----
+
+export interface FitbitHeartZone {
+  name: string
+  min: number
+  max: number
+  minutes: number
+  calories_out: number
+}
+
+export interface FitbitSummary {
+  date: string
+  heart: {
+    resting_heart_rate: number | null
+    intraday_points: number
+    heart_zones: FitbitHeartZone[]
+  } | null
+  active_zone_minutes: {
+    intraday_points: number
+    minutes_total_estimate: number | null
+    summary_rows: number
+  } | null
+  sleep: {
+    main_sleep: {
+      date_of_sleep: string
+      start_time: string
+      end_time: string
+      minutes_asleep: number
+      minutes_awake: number
+      time_in_bed: number
+      deep_minutes: number | null
+      light_minutes: number | null
+      rem_minutes: number | null
+      wake_minutes: number | null
+    } | null
+    all_sleep_count: number
+  } | null
+  activity: {
+    steps: number | null
+    distance: number | null
+    calories: number | null
+    very_active_minutes: number | null
+    fairly_active_minutes: number | null
+    lightly_active_minutes: number | null
+    sedentary_minutes: number | null
+  } | null
+}
+
+export function getFitbitData(from: string, to: string) {
+  return request<FitbitSummary[]>(`/fitbit-data?from=${from}&to=${to}`)
+}

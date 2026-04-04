@@ -149,6 +149,12 @@ class HealthPlanetConfig:
 
 
 @dataclass
+class FitbitConfig:
+    enabled: bool = False
+    config_file: str = "fitbit_config.json"
+
+
+@dataclass
 class AppConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     cognito: CognitoConfig = field(default_factory=CognitoConfig)
@@ -160,6 +166,7 @@ class AppConfig:
     display: DisplayConfig = field(default_factory=DisplayConfig)
     talk_seeds: TalkSeedsConfig = field(default_factory=TalkSeedsConfig)
     healthplanet: HealthPlanetConfig = field(default_factory=HealthPlanetConfig)
+    fitbit: FitbitConfig = field(default_factory=FitbitConfig)
 
 
 def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
@@ -200,6 +207,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         display=DisplayConfig(**display_raw),
         talk_seeds=TalkSeedsConfig(**raw.get("talk_seeds", {})),
         healthplanet=HealthPlanetConfig(**healthplanet_raw),
+        fitbit=FitbitConfig(**raw.get("fitbit", {})),
     )
 
     # .env から秘密情報を上書き（.env の値を優先）

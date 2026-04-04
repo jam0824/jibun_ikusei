@@ -155,7 +155,13 @@ export class JibunIkuseiStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/nutritionHandler')),
     })
 
-    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, healthDataFn, activityLogFn, situationLogFn, chatFn, migrateStateFn, nutritionFn]) {
+    const fitbitDataFn = new lambda.Function(this, 'FitbitDataHandler', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-fitbitDataHandler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/fitbitDataHandler')),
+    })
+
+    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, healthDataFn, activityLogFn, situationLogFn, chatFn, migrateStateFn, nutritionFn, fitbitDataFn]) {
       table.grantReadWriteData(fn)
     }
 
@@ -268,6 +274,11 @@ export class JibunIkuseiStack extends cdk.Stack {
     const nutritionIntegration = new integrations.HttpLambdaIntegration('NutritionIntegration', nutritionFn)
     api.addRoutes({ path: '/nutrition', methods: [apigwv2.HttpMethod.GET], integration: nutritionIntegration })
     api.addRoutes({ path: '/nutrition/{date}/{mealType}', methods: [apigwv2.HttpMethod.PUT], integration: nutritionIntegration })
+
+    // Fitbit Data
+    const fitbitDataIntegration = new integrations.HttpLambdaIntegration('FitbitDataIntegration', fitbitDataFn)
+    api.addRoutes({ path: '/fitbit-data', methods: [apigwv2.HttpMethod.GET], integration: fitbitDataIntegration })
+    api.addRoutes({ path: '/fitbit-data', methods: [apigwv2.HttpMethod.POST], integration: fitbitDataIntegration })
 
     // ---- Outputs ----
     new cdk.CfnOutput(this, 'ApiUrl', {

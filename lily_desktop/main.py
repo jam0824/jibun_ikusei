@@ -43,6 +43,8 @@ from health.sync_policy import (
     emit_weight_quest_clear_for_new_records,
     get_healthplanet_sync_interval_ms,
 )
+from fitbit.fitbit_client import FitbitClient
+from fitbit.fitbit_sync import FitbitSync
 
 logger = logging.getLogger(__name__)
 JST = timezone(timedelta(hours=9))
@@ -67,6 +69,18 @@ class App:
         self.auto_conversation = AutoConversation(self.config, self.session_mgr)
         self.voice_pipeline: VoicePipeline | None = None
         self.tts_engine: TTSEngine | None = None
+
+        # Fitbit 同期
+        self.fitbit_sync: FitbitSync | None = None
+        if self.config.fitbit.enabled:
+            config_path = Path(__file__).resolve().parent / self.config.fitbit.config_file
+            if config_path.exists():
+                self.fitbit_sync = FitbitSync(
+                    client=FitbitClient(config_path),
+                    api_client=self.api_client,
+                )
+            else:
+                logger.warning("fitbit_config.json が見つかりません: %s", config_path)
 
         # カメラシステム
         self._camera_device_index: int = 0
@@ -554,6 +568,13 @@ async def async_init(app_instance: App) -> None:
     if app_instance.config.healthplanet.client_id:
         app_instance.start_healthplanet_timer()
         app_instance.start_healthplanet_sync()
+
+    # Fitbit データ同期
+    if app_instance.fitbit_sync is not None:
+        try:
+            await app_instance.fitbit_sync.run()
+        except Exception:
+            logger.exception("Fitbit 同期中にエラーが発生しました")
 
 
 def main() -> None:
