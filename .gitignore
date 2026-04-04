@@ -37,6 +37,8 @@ sys_images/
 voice_data/
 
 # experiment
+experiment/
 experiment/flame_qt
 experiment/.garminconnect/
 .playwright-cli/
+venv/
