@@ -322,6 +322,8 @@ class ToolExecutor:
                 return await self._health_data(args)
             if name == "get_nutrition_data":
                 return await self._nutrition_data(args)
+            if name == "get_fitbit_data":
+                return await self._fitbit_data(args)
             return f"不明なツール: {name}"
         except Exception as exc:
             logger.exception("ツール実行エラー: %s", name)
@@ -1053,6 +1055,76 @@ class ToolExecutor:
                 lines.append(f"  → 不足: {'、'.join(insufficient)}")
             if excessive:
                 lines.append(f"  → 過剰: {'、'.join(excessive)}")
+            lines.append("")
+
+        return "\n".join(lines)
+
+    async def _fitbit_data(self, args: dict[str, Any]) -> str:
+        try:
+            date_filter = _resolve_jst_date_filter(args, "week")
+        except ValueError as exc:
+            return str(exc)
+
+        try:
+            records = await self._api.get_fitbit_data(date_filter.from_date, date_filter.to_date)
+        except Exception:
+            return "Fitbitデータの取得に失敗しました。"
+
+        if not records:
+            return f"{date_filter.label} の Fitbit データはありません。"
+
+        data_type = str(args.get("data_type") or "all")
+        lines = [f"【{date_filter.label} の Fitbit データ】取得件数: {len(records)}件", ""]
+
+        for r in records:
+            date = r.get("date", "")
+            parts: list[str] = []
+
+            if data_type in ("heart", "all"):
+                heart = r.get("heart") or {}
+                rhr = heart.get("resting_heart_rate")
+                intra = heart.get("intraday_points", 0)
+                rhr_str = f"{rhr}bpm" if rhr is not None else "－"
+                parts.append(f"心拍: 安静時{rhr_str} イントラデイ{intra}点")
+
+            if data_type in ("sleep", "all"):
+                sleep = r.get("sleep") or {}
+                ms = sleep.get("main_sleep")
+                if ms:
+                    start = (ms.get("start_time") or "")[-13:-8] if ms.get("start_time") else "－"
+                    end = (ms.get("end_time") or "")[-13:-8] if ms.get("end_time") else "－"
+                    asleep = ms.get("minutes_asleep", "－")
+                    deep = ms.get("deep_minutes", "－")
+                    light = ms.get("light_minutes", "－")
+                    rem = ms.get("rem_minutes", "－")
+                    wake = ms.get("wake_minutes", "－")
+                    parts.append(
+                        f"睡眠: 就寝{start} 起床{end} {asleep}分 (深{deep}/浅{light}/REM{rem}/覚醒{wake})"
+                    )
+                else:
+                    parts.append("睡眠: データなし")
+
+            if data_type in ("activity", "all"):
+                act = r.get("activity") or {}
+                steps = act.get("steps", "－")
+                dist = act.get("distance", "－")
+                cal = act.get("calories", "－")
+                very = act.get("very_active_minutes", "－")
+                fairly = act.get("fairly_active_minutes", "－")
+                parts.append(
+                    f"活動: 歩数{steps} 距離{dist}km 消費{cal}kcal 高活動{very}分 中活動{fairly}分"
+                )
+
+            if data_type in ("azm", "all"):
+                azm = r.get("active_zone_minutes") or {}
+                est = azm.get("minutes_total_estimate")
+                intra = azm.get("intraday_points", 0)
+                est_str = f"{est}分" if est is not None else "－"
+                parts.append(f"AZM: 推定{est_str} イントラデイ{intra}点")
+
+            lines.append(f"- {date}")
+            for p in parts:
+                lines.append(f"  {p}")
             lines.append("")
 
         return "\n".join(lines)

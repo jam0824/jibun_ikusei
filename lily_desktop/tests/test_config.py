@@ -96,3 +96,47 @@ def test_healthplanet_sync_interval_minutes_invalid_value_falls_back(tmp_path):
         config.healthplanet.sync_interval_minutes
         == DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES
     )
+
+
+def test_fitbit_enabled_defaults_to_false(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("display:\n  lily_scale: 0.4\n", encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.fitbit.enabled is False
+
+
+def test_fitbit_enabled_uses_config_value(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "fitbit:\n"
+        "  enabled: true\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.fitbit.enabled is True
+
+
+def test_fitbit_config_file_defaults(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.fitbit.config_file == "fitbit_config.json"
+
+
+def test_fitbit_config_file_uses_config_value(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "fitbit:\n"
+        "  config_file: custom_fitbit.json\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.fitbit.config_file == "custom_fitbit.json"

@@ -2,6 +2,7 @@ import {
   getActivityLogs,
   getBrowsingTimes,
   getChatMessages,
+  getFitbitData,
   getHealthData,
   getNutritionRange,
   getSituationLogs,
@@ -605,6 +606,26 @@ export const CHAT_TOOLS = [
       },
     },
   },
+  {
+    type: 'function' as const,
+    function: {
+      name: 'get_fitbit_data',
+      description: 'Fitbitの心拍・睡眠・活動データを取得する。date / fromDate / toDate は JST の YYYY-MM-DD 形式。デフォルトは直近7日。',
+      parameters: {
+        type: 'object',
+        properties: {
+          period: PERIOD_PROPERTY,
+          ...JST_DATE_PROPERTIES,
+          data_type: {
+            type: 'string',
+            enum: ['heart', 'sleep', 'activity', 'azm', 'all'],
+            description: '取得するデータ種別。省略時は all（全項目）。heart=心拍、sleep=睡眠、activity=活動、azm=Active Zone Minutes。',
+          },
+        },
+        required: [],
+      },
+    },
+  },
 ]
 
 // ── 共通ユーティリティ ──
@@ -901,6 +922,78 @@ function executeGetSkillData(args: Record<string, unknown>, context: ToolContext
   }
 
   return `不明なtype: ${type}`
+}
+
+// ── get_fitbit_data ──
+
+async function executeGetFitbitData(args: ToolArgs): Promise<string> {
+  const filter = resolveJstDateFilter(args, 'week')
+  if ('error' in filter) return filter.error
+
+  let records: Awaited<ReturnType<typeof getFitbitData>>
+  try {
+    records = await getFitbitData(filter.from, filter.to)
+  } catch {
+    return 'Fitbitデータの取得に失敗しました。'
+  }
+
+  if (records.length === 0) {
+    return `${filter.label} の Fitbit データはありません。`
+  }
+
+  const dataType = (args.data_type as string | undefined) ?? 'all'
+  const lines: string[] = [`【${filter.label} の Fitbit データ】取得件数: ${records.length}件`, '']
+
+  for (const r of records) {
+    const date = r.date
+    const parts: string[] = []
+
+    if (dataType === 'heart' || dataType === 'all') {
+      const heart = r.heart
+      const rhr = heart?.resting_heart_rate != null ? `${heart.resting_heart_rate}bpm` : '－'
+      const intra = heart?.intraday_points ?? 0
+      parts.push(`心拍: 安静時${rhr} イントラデイ${intra}点`)
+    }
+
+    if (dataType === 'sleep' || dataType === 'all') {
+      const ms = r.sleep?.main_sleep
+      if (ms) {
+        const start = ms.start_time ? ms.start_time.slice(-13, -8) : '－'
+        const end = ms.end_time ? ms.end_time.slice(-13, -8) : '－'
+        const asleep = ms.minutes_asleep ?? '－'
+        const deep = ms.deep_minutes ?? '－'
+        const light = ms.light_minutes ?? '－'
+        const rem = ms.rem_minutes ?? '－'
+        const wake = ms.wake_minutes ?? '－'
+        parts.push(`睡眠: 就寝${start} 起床${end} ${asleep}分 (深${deep}/浅${light}/REM${rem}/覚醒${wake})`)
+      } else {
+        parts.push('睡眠: データなし')
+      }
+    }
+
+    if (dataType === 'activity' || dataType === 'all') {
+      const act = r.activity
+      const steps = act?.steps ?? '－'
+      const dist = act?.distance ?? '－'
+      const cal = act?.calories ?? '－'
+      const very = act?.very_active_minutes ?? '－'
+      const fairly = act?.fairly_active_minutes ?? '－'
+      parts.push(`活動: 歩数${steps} 距離${dist}km 消費${cal}kcal 高活動${very}分 中活動${fairly}分`)
+    }
+
+    if (dataType === 'azm' || dataType === 'all') {
+      const azm = r.active_zone_minutes
+      const est = azm?.minutes_total_estimate != null ? `${azm.minutes_total_estimate}分` : '－'
+      const intra = azm?.intraday_points ?? 0
+      parts.push(`AZM: 推定${est} イントラデイ${intra}点`)
+    }
+
+    lines.push(`- ${date}`)
+    for (const p of parts) lines.push(`  ${p}`)
+    lines.push('')
+  }
+
+  return lines.join('\n')
 }
 
 // ── get_messages_and_logs ──
@@ -1303,6 +1396,10 @@ export async function executeTool(
 
   if (name === 'get_nutrition_data') {
     return executeGetNutritionData(args)
+  }
+
+  if (name === 'get_fitbit_data') {
+    return executeGetFitbitData(args)
   }
 
   // context が必要なツール

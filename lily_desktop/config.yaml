@@ -64,3 +64,6 @@ tts:
   gemini_model: gemini-2.5-flash-preview-tts
 healthplanet:
   sync_interval_minutes: 15  # 起動時に即時同期し、その後はこの分間隔で再同期
+fitbit:
+  enabled: true
+  config_file: fitbit_config.json  # lily_desktop/ 直下に配置（.gitignore 済み）

@@ -278,4 +278,24 @@ CHAT_TOOLS: list[dict] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_fitbit_data",
+            "description": "Fitbitの心拍・睡眠・活動データを取得する。date / fromDate / toDate は JST の YYYY-MM-DD 形式。デフォルトは直近7日。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "period": PERIOD_PROPERTY,
+                    **JST_DATE_PROPERTIES,
+                    "data_type": {
+                        "type": "string",
+                        "enum": ["heart", "sleep", "activity", "azm", "all"],
+                        "description": "取得するデータ種別。省略時は all（全項目）。heart=心拍、sleep=睡眠、activity=活動、azm=Active Zone Minutes。",
+                    },
+                },
+                "required": [],
+            },
+        },
+    },
 ]
