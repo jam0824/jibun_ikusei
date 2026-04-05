@@ -88,6 +88,7 @@ function createNutritionRecord(
   updatedAt: string,
   date = '2026-03-19',
   createdAt = updatedAt,
+  nutrientOverrides: Partial<NutrientMap> = {},
 ): NutritionRecord {
   return {
     userId: 'user_1',
@@ -96,6 +97,7 @@ function createNutritionRecord(
     nutrients: {
       ...createNutritionMap(null),
       protein: createNutritionEntry(proteinValue),
+      ...nutrientOverrides,
     },
     createdAt,
     updatedAt,
@@ -256,7 +258,39 @@ describe('records screen nutrition view', () => {
     const dayData = {
       daily: null,
       breakfast: createNutritionRecord('breakfast', 10.1, `${date}T08:00:00+09:00`, date),
-      lunch: createNutritionRecord('lunch', 20.2, `${date}T12:30:00+09:00`, date),
+      lunch: createNutritionRecord(
+        'lunch',
+        20.2,
+        `${date}T12:30:00+09:00`,
+        date,
+        `${date}T12:30:00+09:00`,
+        {
+          protein: {
+            value: 20.2,
+            unit: 'g',
+            label: '適正',
+            threshold: { type: 'range', lower: 18, upper: 30 },
+          },
+          potassium: {
+            value: 1200,
+            unit: 'mg',
+            label: '不足',
+            threshold: { type: 'min_only', lower: 3000 },
+          },
+          salt: {
+            value: 7.9,
+            unit: 'g',
+            label: '過剰',
+            threshold: { type: 'max_only', upper: 7.5 },
+          },
+          fiber: {
+            value: 11.5,
+            unit: 'g',
+            label: null,
+            threshold: null,
+          },
+        },
+      ),
       dinner: null,
     }
     const fetchNutrition = vi.fn().mockResolvedValue(dayData)
@@ -272,6 +306,10 @@ describe('records screen nutrition view', () => {
 
     expect(await screen.findByText('表示元: 最新登録データ（昼）')).toBeInTheDocument()
     expect(screen.getByText('20.2 g')).toBeInTheDocument()
+    expect(screen.getByText('基準: 18〜30 g')).toBeInTheDocument()
+    expect(screen.getByText('基準: 3000以上 mg')).toBeInTheDocument()
+    expect(screen.getByText('基準: 7.5未満 g')).toBeInTheDocument()
+    expect(screen.getAllByText('基準: 未取得').length).toBeGreaterThan(0)
     expect(screen.queryByText('30.3 g')).not.toBeInTheDocument()
   })
 })
