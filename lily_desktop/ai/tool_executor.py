@@ -894,20 +894,25 @@ class ToolExecutor:
 
         await self._api.post_completion(completion)
 
-        if quest_type == "one_time":
-            await self._api.put_quest(quest_id, {**best, "status": "completed", "updatedAt": now})
+        should_persist_default_skill = bool(
+            resolution
+            and resolution.get("resolved_skill_id")
+            and best.get("skillMappingMode") != "ask_each_time"
+        )
+        quest_updates: dict[str, Any] | None = None
+        if quest_type == "one_time" or should_persist_default_skill:
+            quest_updates = {**best, "updatedAt": now}
+            if quest_type == "one_time":
+                quest_updates["status"] = "completed"
+            if should_persist_default_skill:
+                quest_updates["defaultSkillId"] = resolution["resolved_skill_id"]
 
-        if resolution and resolution.get("resolved_skill_id"):
-            if best.get("skillMappingMode") != "ask_each_time":
+        if quest_updates:
+            if quest_type == "one_time":
+                await self._api.put_quest(quest_id, quest_updates)
+            else:
                 try:
-                    await self._api.put_quest(
-                        quest_id,
-                        {
-                            **best,
-                            "defaultSkillId": resolution["resolved_skill_id"],
-                            "updatedAt": now,
-                        },
-                    )
+                    await self._api.put_quest(quest_id, quest_updates)
                 except Exception:
                     logger.warning("defaultSkillId の保存に失敗", exc_info=True)
 

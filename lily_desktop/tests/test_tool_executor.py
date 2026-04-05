@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock
 import httpx
 import pytest
 
+import ai.tool_executor as tool_executor_module
 from ai.tool_executor import ToolExecutor
 
 
@@ -235,3 +236,41 @@ async def test_chat_messages_retry_503_then_use_current_session_fallback():
 
     assert api.get_chat_messages.await_count == 2
     assert "fallback の本文" in result
+
+
+@pytest.mark.asyncio
+async def test_complete_quest_keeps_one_time_status_completed_when_saving_default_skill(monkeypatch):
+    api = _make_api()
+    api.get_quests.return_value = [{
+        "id": "q_member_hr",
+        "title": "メンバーの人事相談",
+        "status": "active",
+        "questType": "one_time",
+        "xpReward": 15,
+        "category": "対人",
+        "skillMappingMode": "ai_auto",
+        "privacyMode": "normal",
+        "createdAt": "2026-04-05T09:00:00+09:00",
+        "updatedAt": "2026-04-05T09:00:00+09:00",
+    }]
+    monkeypatch.setattr(
+        tool_executor_module,
+        "resolve_skill_for_completion",
+        AsyncMock(return_value={
+            "resolved_skill_id": "skill_communication",
+            "skill_xp_awarded": 15,
+            "skill_name": "コミュニケーション",
+            "status": "resolved",
+            "reason": "キーワード一致",
+        }),
+    )
+    executor = ToolExecutor(api)
+
+    result = await executor.execute("complete_quest", {"query": "メンバーの人事相談"})
+
+    assert "メンバーの人事相談" in result
+    assert api.put_quest.await_count >= 1
+    for call in api.put_quest.await_args_list:
+        assert call.args[0] == "q_member_hr"
+        assert call.args[1]["status"] == "completed"
+    assert api.put_quest.await_args_list[-1].args[1]["defaultSkillId"] == "skill_communication"
