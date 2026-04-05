@@ -392,55 +392,29 @@ export function RecordsScreen() {
       }
     >
       {/* Tab switcher */}
-      <div className="mb-4 flex gap-1 rounded-2xl border border-slate-200 bg-slate-100 p-1">
-        <button
-          type="button"
-          onClick={() => setActiveTab('quests')}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
-            activeTab === 'quests'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <ScrollText className="h-3.5 w-3.5" />
-          クエスト
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('browsing')}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
-            activeTab === 'browsing'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <Globe className="h-3.5 w-3.5" />
-          閲覧
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('nutrition')}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
-            activeTab === 'nutrition'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <Utensils className="h-3.5 w-3.5" />
-          栄養
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('health')}
-          className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
-            activeTab === 'health'
-              ? 'bg-white text-slate-900 shadow-sm'
-              : 'text-slate-500 hover:text-slate-700'
-          }`}
-        >
-          <Heart className="h-3.5 w-3.5" />
-          健康
-        </button>
+      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+        {(
+          [
+            { key: 'quests', icon: <ScrollText className="h-3.5 w-3.5" />, label: 'クエスト' },
+            { key: 'browsing', icon: <Globe className="h-3.5 w-3.5" />, label: '閲覧' },
+            { key: 'nutrition', icon: <Utensils className="h-3.5 w-3.5" />, label: '栄養' },
+            { key: 'health', icon: <Heart className="h-3.5 w-3.5" />, label: '健康' },
+          ] as const
+        ).map(({ key, icon, label }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setActiveTab(key)}
+            className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium whitespace-nowrap transition ${
+              activeTab === key
+                ? 'bg-violet-600 text-white shadow-sm'
+                : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            {icon}
+            {label}
+          </button>
+        ))}
       </div>
 
       {activeTab === 'browsing' ? (
