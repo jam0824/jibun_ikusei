@@ -53,13 +53,7 @@ def register_background_event_handlers(
         )
 
     async def on_chat_auto_talk_due(event: ChatAutoTalkDue) -> None:
-        await job_manager.submit(
-            "chat.auto_talk",
-            "single_flight_drop",
-            lambda: app.auto_conversation.run_auto_talk_job(
-                event.forced_source
-            ),
-        )
+        await app.handle_chat_auto_talk_due(event)
 
     async def on_chat_follow_up(event: ChatFollowUpRequested) -> None:
         await job_manager.submit(

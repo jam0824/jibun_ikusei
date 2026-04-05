@@ -37,12 +37,13 @@ class _FakeSeedManager:
 
 
 class _CaptureHub:
-    def __init__(self):
+    def __init__(self, return_value=()):
         self.events: list[object] = []
+        self.return_value = return_value
 
     def publish(self, event):
         self.events.append(event)
-        return ()
+        return self.return_value
 
 
 def _make_config():
@@ -98,6 +99,18 @@ def test_trigger_follow_up_publishes_event_when_event_hub_exists(patched_auto_co
     assert isinstance(event, ChatFollowUpRequested)
     assert event.user_text == "user"
     assert event.lily_text == "lily"
+
+
+@pytest.mark.asyncio
+async def test_trigger_follow_up_returns_published_tasks_when_event_hub_exists(patched_auto_conversation):
+    task = asyncio.create_task(asyncio.sleep(0))
+    hub = _CaptureHub(return_value=(task,))
+    conv = AutoConversation(_make_config(), SimpleNamespace(), event_hub=hub)
+
+    result = conv.trigger_follow_up("user", "lily")
+
+    assert result == (task,)
+    await asyncio.gather(*result)
 
 
 def test_trigger_books_now_publishes_forced_books_event_when_event_hub_exists(patched_auto_conversation):

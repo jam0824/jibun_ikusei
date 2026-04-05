@@ -60,6 +60,8 @@ class _FakeApp:
         self.summary_started = asyncio.Event()
         self.summary_release = asyncio.Event()
         self.summary_second_finished = asyncio.Event()
+        self.chat_auto_talk_events: list[ChatAutoTalkDue] = []
+        self.chat_auto_talk_started = asyncio.Event()
 
     async def handle_healthplanet_sync_request(self, *, interactive_auth: bool) -> None:
         self.healthplanet_calls.append(interactive_auth)
@@ -72,6 +74,10 @@ class _FakeApp:
         self.fitbit_started.set()
         if self.fitbit_calls == 1:
             await self.capture_release.wait()
+
+    async def handle_chat_auto_talk_due(self, event: ChatAutoTalkDue) -> None:
+        self.chat_auto_talk_events.append(event)
+        self.chat_auto_talk_started.set()
 
     async def run_capture_snapshot_job(self) -> None:
         call_label = f"capture:{len(self.capture_calls) + 1}"
@@ -170,36 +176,31 @@ async def test_fitbit_sync_requests_are_coalesced():
 
 
 @pytest.mark.asyncio
-async def test_chat_auto_talk_uses_single_flight_drop():
+async def test_chat_auto_talk_delegates_to_app_handler():
     app = _FakeApp()
     hub = DomainEventHub()
     manager = JobManager()
     register_background_event_handlers(app, hub, manager)
 
     hub.publish(ChatAutoTalkDue(source="timer"))
-    await asyncio.wait_for(app.auto_conversation.auto_talk_started.wait(), timeout=1)
-    hub.publish(ChatAutoTalkDue(source="timer"))
+    await asyncio.wait_for(app.chat_auto_talk_started.wait(), timeout=1)
 
-    app.auto_conversation.release_auto_talk.set()
-    await asyncio.sleep(0.05)
-
-    assert app.auto_conversation.auto_talk_calls == 1
+    assert len(app.chat_auto_talk_events) == 1
+    assert app.chat_auto_talk_events[0].source == "timer"
 
 
 @pytest.mark.asyncio
-async def test_chat_auto_talk_passes_forced_books_source():
+async def test_chat_auto_talk_passes_forced_books_source_to_app_handler():
     app = _FakeApp()
     hub = DomainEventHub()
     manager = JobManager()
     register_background_event_handlers(app, hub, manager)
 
     hub.publish(ChatAutoTalkDue(source="debug", forced_source="books"))
-    await asyncio.wait_for(app.auto_conversation.auto_talk_started.wait(), timeout=1)
+    await asyncio.wait_for(app.chat_auto_talk_started.wait(), timeout=1)
 
-    app.auto_conversation.release_auto_talk.set()
-    await asyncio.sleep(0.05)
-
-    assert app.auto_conversation.auto_talk_sources == ["books"]
+    assert len(app.chat_auto_talk_events) == 1
+    assert app.chat_auto_talk_events[0].forced_source == "books"
 
 
 @pytest.mark.asyncio

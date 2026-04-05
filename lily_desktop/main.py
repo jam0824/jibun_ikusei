@@ -89,6 +89,9 @@ class App:
         )
         self.voice_pipeline: VoicePipeline | None = None
         self.tts_engine: TTSEngine | None = None
+        self.active_user_conversation = False
+        self.pending_periodic_auto_talk: ChatAutoTalkDue | None = None
+        self.pending_periodic_expires_at: datetime | None = None
 
         # Fitbit 同期
         self.fitbit_sync: FitbitSync | None = None
@@ -166,9 +169,64 @@ class App:
 
     async def _handle_user_message_with_follow_up(self, text: str) -> None:
         """リリィの応答後にはるかを交えた掛け合いを起動する"""
-        lily_text = await self.chat_engine.handle_user_message(text)
-        if lily_text:
-            self.auto_conversation.trigger_follow_up(text, lily_text)
+        self.active_user_conversation = True
+        try:
+            lily_text = await self.chat_engine.handle_user_message(text)
+            if lily_text:
+                follow_up_tasks = self.auto_conversation.trigger_follow_up(text, lily_text)
+                if follow_up_tasks:
+                    await asyncio.gather(*follow_up_tasks)
+        finally:
+            self.active_user_conversation = False
+            await self._drain_pending_periodic_auto_talk_if_needed()
+
+    async def handle_chat_auto_talk_due(self, event: ChatAutoTalkDue) -> None:
+        """定期自動雑談は通常会話中なら1件だけ保留し、空いたら実行する。"""
+        is_periodic_timer = (
+            event.source == "auto_conversation.timer"
+            and event.forced_source is None
+        )
+        if is_periodic_timer and self.active_user_conversation:
+            self.pending_periodic_auto_talk = event
+            self.pending_periodic_expires_at = event.occurred_at + timedelta(minutes=5)
+            logger.info(
+                "定期自動雑談を保留: occurred_at=%s expires_at=%s",
+                event.occurred_at.isoformat(),
+                self.pending_periodic_expires_at.isoformat(),
+            )
+            return
+
+        await self.job_manager.submit(
+            "chat.auto_talk",
+            "single_flight_drop",
+            lambda: self.auto_conversation.run_auto_talk_job(event.forced_source),
+        )
+
+    async def _drain_pending_periodic_auto_talk_if_needed(self) -> None:
+        event = self.pending_periodic_auto_talk
+        expires_at = self.pending_periodic_expires_at
+        self.pending_periodic_auto_talk = None
+        self.pending_periodic_expires_at = None
+
+        if event is None:
+            return
+
+        now = datetime.now(JST)
+        if expires_at is not None and now > expires_at:
+            logger.info(
+                "保留中の定期自動雑談を破棄: occurred_at=%s expired_at=%s now=%s",
+                event.occurred_at.isoformat(),
+                expires_at.isoformat(),
+                now.isoformat(),
+            )
+            return
+
+        logger.info("保留中の定期自動雑談を実行")
+        await self.job_manager.submit(
+            "chat.auto_talk",
+            "single_flight_drop",
+            lambda: self.auto_conversation.run_auto_talk_job(event.forced_source),
+        )
 
     def _on_new_chat(self) -> None:
         asyncio.ensure_future(self._create_new_chat())
