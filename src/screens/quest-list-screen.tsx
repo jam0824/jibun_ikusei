@@ -61,13 +61,13 @@ export function QuestListScreen() {
           return quest.questType === 'repeatable' && quest.source !== 'browsing'
         }
         if (tab === 'one_time') {
-          return quest.questType === 'one_time' && quest.source !== 'browsing'
+          return quest.questType === 'one_time' && quest.status !== 'completed' && quest.source !== 'browsing'
         }
         if (tab === 'completed') {
           return completionQuestIds.has(quest.id)
         }
-        // "すべて" tab: show browsing quests too
-        return true
+        // "すべて" tab: show browsing quests too (except completed one_time quests)
+        return !(quest.questType === 'one_time' && quest.status === 'completed')
       })
       .filter((quest) => {
         const haystack = `${quest.title} ${quest.description ?? ''}`.toLowerCase()
