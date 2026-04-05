@@ -1,5 +1,7 @@
 """雑談の種選択ロジックのテスト — 7系統均等配分の検証"""
 
+from unittest.mock import AsyncMock
+
 import pytest
 
 from ai.talk_seed import TalkSeed, TalkSeedManager
@@ -155,3 +157,80 @@ class TestSelectBestSeed:
 
         assert "wikimedia" in sources_selected
         assert "wikimedia_interest" in sources_selected
+
+
+class TestCollectSeed:
+    @pytest.mark.asyncio
+    async def test_カテゴリ先行取得では最初に当たったカテゴリだけ収集する(self, seed_mgr, monkeypatch):
+        desktop_seed = _make_seed("desktop", "作業中")
+        desktop = AsyncMock(return_value=[desktop_seed])
+        wiki = AsyncMock(return_value=[_make_seed("wikimedia", "豆知識")])
+
+        monkeypatch.setattr(seed_mgr, "_collect_desktop", desktop)
+        monkeypatch.setattr(seed_mgr, "_collect_wikimedia", wiki)
+        monkeypatch.setattr("ai.talk_seed.random.randrange", lambda n: 0)
+
+        result = await seed_mgr.collect_seed()
+
+        assert result == desktop_seed
+        desktop.assert_awaited_once()
+        wiki.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_カテゴリが空なら次のカテゴリへフォールバックする(self, seed_mgr, monkeypatch):
+        wiki_seed = _make_seed("wikimedia", "豆知識")
+        desktop = AsyncMock(return_value=[])
+        wiki = AsyncMock(return_value=[wiki_seed])
+
+        monkeypatch.setattr(seed_mgr, "_collect_desktop", desktop)
+        monkeypatch.setattr(seed_mgr, "_collect_wikimedia", wiki)
+        monkeypatch.setattr("ai.talk_seed.random.randrange", lambda n: 0)
+
+        result = await seed_mgr.collect_seed()
+
+        assert result == wiki_seed
+        desktop.assert_awaited_once()
+        wiki.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_強制カテゴリでは指定したカテゴリだけ収集する(self, monkeypatch):
+        seed_mgr = TalkSeedManager(
+            openai_api_key="test",
+            screen_analysis_model="test",
+            rakuten_application_id="app",
+            rakuten_access_key="key",
+        )
+        book_seed = _make_seed("books", "本の話")
+        desktop = AsyncMock(return_value=[_make_seed("desktop", "作業中")])
+        wiki = AsyncMock(return_value=[_make_seed("wikimedia", "豆知識")])
+        books = AsyncMock(return_value=[book_seed])
+
+        monkeypatch.setattr(seed_mgr, "_collect_desktop", desktop)
+        monkeypatch.setattr(seed_mgr, "_collect_wikimedia", wiki)
+        monkeypatch.setattr(seed_mgr, "_collect_books", books)
+
+        result = await seed_mgr.collect_seed(forced_source="books")
+
+        assert result == book_seed
+        books.assert_awaited_once()
+        desktop.assert_not_awaited()
+        wiki.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_クールダウン中のカテゴリは次のカテゴリへフォールバックする(self, seed_mgr, monkeypatch):
+        desktop_seed = _make_seed("desktop", "作業中")
+        wiki_seed = _make_seed("wikimedia", "豆知識")
+        seed_mgr.mark_used(desktop_seed)
+
+        desktop = AsyncMock(return_value=[desktop_seed])
+        wiki = AsyncMock(return_value=[wiki_seed])
+
+        monkeypatch.setattr(seed_mgr, "_collect_desktop", desktop)
+        monkeypatch.setattr(seed_mgr, "_collect_wikimedia", wiki)
+        monkeypatch.setattr("ai.talk_seed.random.randrange", lambda n: 0)
+
+        result = await seed_mgr.collect_seed()
+
+        assert result == wiki_seed
+        desktop.assert_awaited_once()
+        wiki.assert_awaited_once()

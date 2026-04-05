@@ -222,19 +222,16 @@ class AutoConversation:
         self._is_talking = True
         self._interrupted = False
         try:
-            # 1. 種を収集・選択
-            seeds = await self._seed_mgr.collect_seeds()
-            if forced_source:
-                seeds = [seed for seed in seeds if seed.source == forced_source]
-                if not seeds:
+            # 1. カテゴリを抽選し、必要な種だけ取得して選択
+            seed = await self._seed_mgr.collect_seed(forced_source=forced_source)
+
+            if seed is None:
+                if forced_source:
                     logger.info(
                         "指定カテゴリの雑談の種が見つからなかったためスキップ: source=%s",
                         forced_source,
                     )
                     return
-            seed = self._seed_mgr.select_best_seed(seeds)
-
-            if seed is None:
                 logger.info("雑談の種が見つからなかったためスキップ")
                 return
 

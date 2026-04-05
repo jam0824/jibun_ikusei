@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import TYPE_CHECKING
@@ -80,6 +81,53 @@ class TalkSeedManager:
         self._situation_capture = situation_capture_coordinator or SituationCaptureCoordinator()
         self._used_history: list[tuple[str, datetime]] = []  # (source_key, used_at)
         self._last_camera_analysis: CameraAnalysis | None = None
+
+    async def collect_seed(self, forced_source: str | None = None) -> TalkSeed | None:
+        """カテゴリを先に抽選し、必要なカテゴリだけ取得して種を選ぶ。"""
+        self._cleanup_cooldown()
+
+        collectors = self._build_source_collectors(forced_source=forced_source)
+        if not collectors:
+            return None
+
+        cooled_fallbacks: list[tuple[str, list[TalkSeed]]] = []
+
+        while collectors:
+            index = random.randrange(len(collectors))
+            source, collector = collectors.pop(index)
+            seeds = await collector()
+            available = self._filter_cooled_down(seeds)
+
+            if available:
+                chosen = random.choice(available) if len(available) > 1 else available[0]
+                logger.info(
+                    "雑談の種をカテゴリ先行取得: source=%s candidates=%d available=%d",
+                    source,
+                    len(seeds),
+                    len(available),
+                )
+                return chosen
+
+            if seeds:
+                cooled_fallbacks.append((source, seeds))
+                logger.info(
+                    "雑談の種は取得したがクールダウン中のため保留: source=%s candidates=%d",
+                    source,
+                    len(seeds),
+                )
+            else:
+                logger.info("雑談の種候補なし: source=%s", source)
+
+        if cooled_fallbacks:
+            _, seeds = random.choice(cooled_fallbacks)
+            chosen = random.choice(seeds) if len(seeds) > 1 else seeds[0]
+            logger.info(
+                "クールダウン無視のフォールバックで雑談の種を選択: source=%s",
+                chosen.source,
+            )
+            return chosen
+
+        return None
 
     async def collect_seeds(self) -> list[TalkSeed]:
         """7系統から雑談の種を並行収集する"""
@@ -194,6 +242,38 @@ class TalkSeedManager:
             if used_at > cutoff
         ]
 
+    def _build_source_collectors(
+        self,
+        *,
+        forced_source: str | None = None,
+    ) -> list[tuple[str, Callable[[], Awaitable[list[TalkSeed]]]]]:
+        collectors: list[tuple[str, Callable[[], Awaitable[list[TalkSeed]]]]] = []
+
+        def add(
+            source: str,
+            enabled: bool,
+            collector: Callable[[], Awaitable[list[TalkSeed]]],
+        ) -> None:
+            if not enabled:
+                return
+            if forced_source is not None and source != forced_source:
+                return
+            collectors.append((source, collector))
+
+        add("desktop", True, self._collect_desktop)
+        add("camera", self._camera_enabled, self._collect_camera)
+        add("wikimedia", True, self._collect_wikimedia)
+        add("wikimedia_interest", bool(self._interest_topics), self._collect_wikimedia_interest)
+        add("annict", bool(self._annict_access_token), self._collect_annict)
+        add("health", self._api_client is not None, self._collect_health)
+        add("books", self._rakuten_client is not None, self._collect_books)
+
+        return collectors
+
+    def _filter_cooled_down(self, seeds: list[TalkSeed]) -> list[TalkSeed]:
+        cooled_down_keys = {key for key, _ in self._used_history}
+        return [seed for seed in seeds if seed._source_key not in cooled_down_keys]
+
     async def _collect_desktop(self) -> list[TalkSeed]:
         """デスクトップ状況から種を生成"""
         try:
@@ -302,13 +382,31 @@ class TalkSeedManager:
             now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
 
             for article in articles:
+                tags = [article.article_type, "興味ある分野"]
+                if article.topic:
+                    tags.append(article.topic)
+                if article.search_term and article.search_term != article.topic:
+                    tags.append(article.search_term)
+
+                lily_perspective = f"「{article.title}」について豆知識として話を振る"
+                haruka_perspective = f"「{article.title}」に対してリアクションや脱線コメントを返す"
+                if article.topic and article.search_term and article.search_term != article.topic:
+                    lily_perspective = (
+                        f"「{article.title}」について、{article.topic}の中でも"
+                        f"{article.search_term}寄りの豆知識として話を振る"
+                    )
+                    haruka_perspective = (
+                        f"「{article.title}」に対して、{article.topic}の話題として"
+                        "リアクションや脱線コメントを返す"
+                    )
+
                 seeds.append(TalkSeed(
                     summary=article.extract[:100] if article.extract else article.title,
-                    tags=[article.article_type, "興味ある分野"],
+                    tags=tags,
                     freshness="fresh",
                     source="wikimedia_interest",
-                    lily_perspective=f"「{article.title}」について豆知識として話を振る",
-                    haruka_perspective=f"「{article.title}」に対してリアクションや脱線コメントを返す",
+                    lily_perspective=lily_perspective,
+                    haruka_perspective=haruka_perspective,
                     created_at=now_str,
                     _source_key=f"wiki_interest:{article.title[:30]}",
                 ))
