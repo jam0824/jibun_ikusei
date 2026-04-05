@@ -28,7 +28,7 @@ import type {
   SkillResolutionResult,
   UserSettings,
 } from '@/domain/types'
-import type { NutritionDayResult } from '@/lib/api-client'
+import type { FitbitSummary, NutritionDayResult } from '@/lib/api-client'
 import { getDayKey, getWeekKey, isUndoable, nowIso } from '@/lib/date'
 import {
   generateLilyMessageWithProvider,
@@ -86,6 +86,9 @@ interface AppStore extends PersistedAppState {
   nutritionCache: Record<string, NutritionDayResult>
   fetchNutrition: (date: string) => Promise<NutritionDayResult>
   saveNutrition: (date: string, mealType: MealType, record: Omit<NutritionRecord, 'userId'>) => Promise<NutritionRecord>
+  // Fitbit
+  fitbitCache: Record<string, FitbitSummary | null>
+  fetchFitbit: (date: string) => Promise<FitbitSummary | null>
 }
 
 const recentQuestRequests = new Map<string, number>()
@@ -244,6 +247,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
   importMode: 'merge',
   nutritionCache: {},
+  fitbitCache: {},
 
   initialize: () => {
     if (get().hydrated) {
@@ -1230,6 +1234,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
       }
     })
     return saved
+  },
+
+  // ---- Fitbit ----
+  fetchFitbit: async (date) => {
+    const results = await api.getFitbitData(date, date)
+    const data = results[0] ?? null
+    set((state) => ({
+      fitbitCache: { ...state.fitbitCache, [date]: data },
+    }))
+    return data
   },
 }))
 

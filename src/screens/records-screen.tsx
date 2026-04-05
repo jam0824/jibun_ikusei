@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { CalendarDays, ChevronLeft, ChevronRight, Globe, History, RotateCcw, ScrollText, Settings2, Utensils } from 'lucide-react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
+import { CalendarDays, ChevronLeft, ChevronRight, Globe, Heart, History, RotateCcw, ScrollText, Settings2, Utensils } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { CompletionResolutionCard } from '@/components/completion-resolution-card'
@@ -9,6 +9,7 @@ import {
 } from '@/domain/logic'
 import { NUTRIENT_META } from '@/domain/nutrition-constants'
 import { resolveDayNutrition } from '@/domain/nutrition-logic'
+import type { FitbitSummary } from '@/lib/api-client'
 import type { NutrientEntry, NutrientLabel } from '@/domain/types'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent } from '@/components/ui'
@@ -16,7 +17,7 @@ import { formatDateTime, isUndoable } from '@/lib/date'
 import { useAppStore } from '@/store/app-store'
 import { BrowsingTimeView } from '@/screens/browsing-time-view'
 
-type RecordsTab = 'quests' | 'browsing' | 'nutrition'
+type RecordsTab = 'quests' | 'browsing' | 'nutrition' | 'health'
 
 const BAR_COLORS: Record<NutrientLabel, string> = {
   '不足': 'bg-blue-400',
@@ -155,6 +156,148 @@ function NutritionView() {
   )
 }
 
+function formatMinutes(minutes: number): string {
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return h > 0 ? `${h}時間${m}分` : `${m}分`
+}
+
+function formatTime(isoTime: string): string {
+  // "2024-04-05T23:00:00.000" → "23:00"
+  return isoTime.slice(11, 16)
+}
+
+function HealthDataRow({ label, value }: { label: string; value: string | null }) {
+  return (
+    <div className="flex items-center justify-between py-1.5 text-sm">
+      <span className="text-slate-600">{label}</span>
+      <span className="font-semibold text-slate-900">{value ?? '—'}</span>
+    </div>
+  )
+}
+
+function HealthSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+      <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">{title}</div>
+      <div className="divide-y divide-slate-100">{children}</div>
+    </div>
+  )
+}
+
+function HealthView() {
+  const [date, setDate] = useState(getTodayJst())
+  const [isLoading, setIsLoading] = useState(false)
+  const dateInputRef = useRef<HTMLInputElement>(null)
+
+  const { fetchFitbit, fitbitCache } = useAppStore(
+    useShallow((s) => ({ fetchFitbit: s.fetchFitbit, fitbitCache: s.fitbitCache }))
+  )
+
+  useEffect(() => {
+    setIsLoading(true)
+    fetchFitbit(date).finally(() => setIsLoading(false))
+  }, [date, fetchFitbit])
+
+  const data: FitbitSummary | null | undefined = fitbitCache[date]
+
+  return (
+    <div className="space-y-3 pb-6">
+      {/* 日付ナビゲーション */}
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setDate((d) => shiftDate(d, -1))}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-violet-200 hover:text-violet-600"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <button
+          type="button"
+          onClick={() => dateInputRef.current?.showPicker()}
+          className="flex flex-1 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-900 transition hover:border-violet-200 hover:bg-violet-50/40"
+        >
+          <CalendarDays className="h-4 w-4 text-violet-500" />
+          {formatDateJst(date)}
+        </button>
+        <button
+          type="button"
+          onClick={() => setDate((d) => shiftDate(d, 1))}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-violet-200 hover:text-violet-600"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+      </div>
+      <input
+        ref={dateInputRef}
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        className="absolute opacity-0 pointer-events-none h-0 w-0"
+      />
+
+      {isLoading ? (
+        <div className="flex items-center justify-center py-12 text-sm text-slate-400">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-slate-200 border-t-violet-500 mr-2" />
+          読み込み中...
+        </div>
+      ) : !data ? (
+        <div className="rounded-2xl border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-400">
+          この日の健康データはありません
+        </div>
+      ) : (
+        <>
+          {/* 活動 */}
+          {data.activity && (
+            <HealthSection title="活動">
+              <HealthDataRow label="歩数" value={data.activity.steps !== null ? `${data.activity.steps.toLocaleString()} 歩` : null} />
+              <HealthDataRow label="距離" value={data.activity.distance !== null ? `${data.activity.distance} km` : null} />
+              <HealthDataRow label="消費カロリー" value={data.activity.calories !== null ? `${data.activity.calories} kcal` : null} />
+              <HealthDataRow label="活発な運動" value={data.activity.very_active_minutes !== null ? formatMinutes(data.activity.very_active_minutes) : null} />
+              <HealthDataRow label="適度な運動" value={data.activity.fairly_active_minutes !== null ? formatMinutes(data.activity.fairly_active_minutes) : null} />
+              <HealthDataRow label="軽い運動" value={data.activity.lightly_active_minutes !== null ? formatMinutes(data.activity.lightly_active_minutes) : null} />
+              <HealthDataRow label="座位時間" value={data.activity.sedentary_minutes !== null ? formatMinutes(data.activity.sedentary_minutes) : null} />
+            </HealthSection>
+          )}
+
+          {/* 心拍数 */}
+          {data.heart && (
+            <HealthSection title="心拍数">
+              <HealthDataRow label="安静時心拍数" value={data.heart.resting_heart_rate !== null ? `${data.heart.resting_heart_rate} bpm` : null} />
+              {data.heart.heart_zones.map((zone) => (
+                <HealthDataRow key={zone.name} label={zone.name} value={`${zone.minutes} 分`} />
+              ))}
+            </HealthSection>
+          )}
+
+          {/* アクティブゾーン分 */}
+          {data.active_zone_minutes && (
+            <HealthSection title="アクティブゾーン分">
+              <HealthDataRow
+                label="合計推定値"
+                value={data.active_zone_minutes.minutes_total_estimate !== null ? formatMinutes(data.active_zone_minutes.minutes_total_estimate) : null}
+              />
+            </HealthSection>
+          )}
+
+          {/* 睡眠 */}
+          {data.sleep?.main_sleep && (
+            <HealthSection title="睡眠">
+              <HealthDataRow label="就寝時刻" value={formatTime(data.sleep.main_sleep.start_time)} />
+              <HealthDataRow label="起床時刻" value={formatTime(data.sleep.main_sleep.end_time)} />
+              <HealthDataRow label="睡眠時間" value={formatMinutes(data.sleep.main_sleep.minutes_asleep)} />
+              <HealthDataRow label="深い睡眠" value={data.sleep.main_sleep.deep_minutes !== null ? formatMinutes(data.sleep.main_sleep.deep_minutes) : null} />
+              <HealthDataRow label="レム睡眠" value={data.sleep.main_sleep.rem_minutes !== null ? formatMinutes(data.sleep.main_sleep.rem_minutes) : null} />
+              <HealthDataRow label="浅い睡眠" value={data.sleep.main_sleep.light_minutes !== null ? formatMinutes(data.sleep.main_sleep.light_minutes) : null} />
+              <HealthDataRow label="覚醒時間" value={formatMinutes(data.sleep.main_sleep.minutes_awake)} />
+            </HealthSection>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 const recordFilterOptions: Array<{
   key: CompletionHistoryFilter
   label: string
@@ -201,6 +344,9 @@ const subtitles: Record<RecordsTab, Record<string, string>> = {
   nutrition: {
     default: '本日の栄養素摂取状況を確認できます。',
   },
+  health: {
+    default: '本日の健康データを確認できます。',
+  },
 }
 
 export function RecordsScreen() {
@@ -231,7 +377,9 @@ export function RecordsScreen() {
       ? subtitles.quests[activeFilter]
       : activeTab === 'browsing'
         ? subtitles.browsing.default
-        : subtitles.nutrition.default
+        : activeTab === 'health'
+          ? subtitles.health.default
+          : subtitles.nutrition.default
 
   return (
     <Screen
@@ -267,7 +415,7 @@ export function RecordsScreen() {
           }`}
         >
           <Globe className="h-3.5 w-3.5" />
-          閲覧時間
+          閲覧
         </button>
         <button
           type="button"
@@ -281,12 +429,26 @@ export function RecordsScreen() {
           <Utensils className="h-3.5 w-3.5" />
           栄養
         </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('health')}
+          className={`flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+            activeTab === 'health'
+              ? 'bg-white text-slate-900 shadow-sm'
+              : 'text-slate-500 hover:text-slate-700'
+          }`}
+        >
+          <Heart className="h-3.5 w-3.5" />
+          健康
+        </button>
       </div>
 
       {activeTab === 'browsing' ? (
         <BrowsingTimeView />
       ) : activeTab === 'nutrition' ? (
         <NutritionView />
+      ) : activeTab === 'health' ? (
+        <HealthView />
       ) : (
         <>
           <div className="grid grid-cols-3 gap-3">
