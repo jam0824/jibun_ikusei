@@ -10,6 +10,7 @@ from core.domain_events import (
     AppStarted,
     CaptureSnapshotRequested,
     CaptureSummaryDue,
+    ChatAutoTalkDue,
     HealthPlanetSyncRequested,
 )
 
@@ -45,6 +46,18 @@ def test_camera_and_summary_timers_publish_events_when_event_hub_exists():
     assert len(hub.events) == 2
     assert isinstance(hub.events[0], CaptureSnapshotRequested)
     assert isinstance(hub.events[1], CaptureSummaryDue)
+
+
+def test_books_talk_request_publishes_forced_books_event():
+    hub = _CaptureHub()
+    app = SimpleNamespace(event_hub=hub, auto_conversation=SimpleNamespace(trigger_books_now=Mock()))
+
+    main_mod.App._on_books_talk_requested(app)
+
+    assert len(hub.events) == 1
+    event = hub.events[0]
+    assert isinstance(event, ChatAutoTalkDue)
+    assert event.forced_source == "books"
 
 
 @pytest.mark.asyncio

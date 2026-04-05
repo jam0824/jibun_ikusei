@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -15,8 +16,10 @@ DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES = 15
 DEFAULT_HTTP_BRIDGE_PORT = 18765
 
 
-def _load_dotenv(path: Path = _ENV_PATH) -> dict[str, str]:
+def _load_dotenv(path: Path | None = None) -> dict[str, str]:
     """シンプルな .env パーサー（KEY=VALUE 形式）"""
+    if path is None:
+        path = _ENV_PATH
     env: dict[str, str] = {}
     if not path.exists():
         return env
@@ -81,6 +84,13 @@ class CognitoConfig:
 @dataclass
 class AnnictConfig:
     access_token: str = ""
+
+
+@dataclass
+class RakutenConfig:
+    application_id: str = ""
+    access_key: str = ""
+    origin: str = ""
 
 
 @dataclass
@@ -177,6 +187,7 @@ class AppConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     cognito: CognitoConfig = field(default_factory=CognitoConfig)
     annict: AnnictConfig = field(default_factory=AnnictConfig)
+    rakuten: RakutenConfig = field(default_factory=RakutenConfig)
     chat: ChatConfig = field(default_factory=ChatConfig)
     voice: VoiceConfig = field(default_factory=VoiceConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
@@ -227,6 +238,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         openai=OpenAIConfig(**raw.get("openai", {})),
         cognito=CognitoConfig(**raw.get("cognito", {})),
         annict=AnnictConfig(**raw.get("annict", {})),
+        rakuten=RakutenConfig(**raw.get("rakuten", {})),
         chat=ChatConfig(**raw.get("chat", {})),
         voice=VoiceConfig(**{k: v for k, v in raw.get("voice", {}).items() if k != "google_api_key"}),
         tts=TTSConfig(**{k: v for k, v in raw.get("tts", {}).items() if k != "gemini_api_key"}),
@@ -248,6 +260,12 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         config.cognito.password = env["COGNITO_PASSWORD"]
     if env.get("ANNICT_ACCESS_TOKEN"):
         config.annict.access_token = env["ANNICT_ACCESS_TOKEN"]
+    if env.get("RAKUTEN_APPLICATION_ID"):
+        config.rakuten.application_id = env["RAKUTEN_APPLICATION_ID"]
+    if env.get("RAKUTEN_ACCESS_KEY"):
+        config.rakuten.access_key = env["RAKUTEN_ACCESS_KEY"]
+    if env.get("RAKUTEN_ORIGIN"):
+        config.rakuten.origin = _normalize_origin(env["RAKUTEN_ORIGIN"])
     if env.get("GOOGLE_CLOUD_API_KEY"):
         config.voice.google_api_key = env["GOOGLE_CLOUD_API_KEY"]
     if env.get("GEMINI_API_KEY"):
@@ -265,6 +283,17 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
             pass
 
     return config
+
+
+def _normalize_origin(value: str) -> str:
+    """Origin文字列を `scheme://host[:port]` に正規化する。"""
+    raw = value.strip()
+    if not raw:
+        return ""
+    parts = urlsplit(raw)
+    if parts.scheme and parts.netloc:
+        return f"{parts.scheme}://{parts.netloc}"
+    return raw
 
 
 def save_healthplanet_token(access_token: str, expires_at: int, path: Path = _ENV_PATH) -> None:

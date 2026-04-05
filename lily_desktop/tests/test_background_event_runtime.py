@@ -22,14 +22,16 @@ from core.job_manager import JobManager
 class _FakeAutoConversation:
     def __init__(self):
         self.auto_talk_calls = 0
+        self.auto_talk_sources: list[str | None] = []
         self.follow_up_calls: list[tuple[str, str]] = []
         self.auto_talk_started = asyncio.Event()
         self.follow_up_started = asyncio.Event()
         self.release_auto_talk = asyncio.Event()
         self.release_follow_up = asyncio.Event()
 
-    async def run_auto_talk_job(self) -> None:
+    async def run_auto_talk_job(self, forced_source: str | None = None) -> None:
         self.auto_talk_calls += 1
+        self.auto_talk_sources.append(forced_source)
         self.auto_talk_started.set()
         await self.release_auto_talk.wait()
 
@@ -182,6 +184,22 @@ async def test_chat_auto_talk_uses_single_flight_drop():
     await asyncio.sleep(0.05)
 
     assert app.auto_conversation.auto_talk_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_chat_auto_talk_passes_forced_books_source():
+    app = _FakeApp()
+    hub = DomainEventHub()
+    manager = JobManager()
+    register_background_event_handlers(app, hub, manager)
+
+    hub.publish(ChatAutoTalkDue(source="debug", forced_source="books"))
+    await asyncio.wait_for(app.auto_conversation.auto_talk_started.wait(), timeout=1)
+
+    app.auto_conversation.release_auto_talk.set()
+    await asyncio.sleep(0.05)
+
+    assert app.auto_conversation.auto_talk_sources == ["books"]
 
 
 @pytest.mark.asyncio

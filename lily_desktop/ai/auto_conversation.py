@@ -140,6 +140,7 @@ class AutoConversation:
         self._config = config
         self._session_mgr = session_mgr
         self._event_hub = event_hub
+        rakuten_cfg = getattr(config, "rakuten", None)
         self._seed_mgr = TalkSeedManager(
             openai_api_key=config.openai.api_key,
             screen_analysis_model=config.openai.screen_analysis_model,
@@ -147,6 +148,9 @@ class AutoConversation:
             camera_enabled=config.camera.enabled,
             camera_analysis_model=config.camera.analysis_model,
             interest_topics=config.talk_seeds.interest_topics,
+            rakuten_application_id=getattr(rakuten_cfg, "application_id", ""),
+            rakuten_access_key=getattr(rakuten_cfg, "access_key", ""),
+            rakuten_origin=getattr(rakuten_cfg, "origin", ""),
             api_client=api_client,
             situation_capture_coordinator=situation_capture_coordinator,
         )
@@ -213,13 +217,21 @@ class AutoConversation:
             return
         asyncio.ensure_future(self._run_conversation())
 
-    async def _run_conversation(self) -> None:
+    async def _run_conversation(self, forced_source: str | None = None) -> None:
         """掛け合い雑談を実行する（〜10ターン）"""
         self._is_talking = True
         self._interrupted = False
         try:
             # 1. 種を収集・選択
             seeds = await self._seed_mgr.collect_seeds()
+            if forced_source:
+                seeds = [seed for seed in seeds if seed.source == forced_source]
+                if not seeds:
+                    logger.info(
+                        "指定カテゴリの雑談の種が見つからなかったためスキップ: source=%s",
+                        forced_source,
+                    )
+                    return
             seed = self._seed_mgr.select_best_seed(seeds)
 
             if seed is None:
@@ -335,7 +347,7 @@ class AutoConversation:
             f"- あなたの切り口: {seed.lily_perspective}",
         ]
 
-        if not conv_history and seed.source in ("wikimedia", "wikimedia_interest", "annict"):
+        if not conv_history and seed.source in ("wikimedia", "wikimedia_interest", "annict", "books"):
             context_parts.append("")
             context_parts.append(
                 "【最初の一言について】"
@@ -740,9 +752,24 @@ def _evented_trigger_now(self: AutoConversation) -> None:
         )
         return
     if self._is_talking:
-        logger.info("髮題ｫ・ｸｭ縺ｮ縺溘ａ繧ｹ繧ｭ繝・・")
+        logger.info("雑談中のためスキップ")
         return
     asyncio.ensure_future(self._run_conversation())
+
+
+def _evented_trigger_books_now(self: AutoConversation) -> None:
+    if self._event_hub is not None:
+        self._event_hub.publish(
+            ChatAutoTalkDue(
+                source="auto_conversation.manual_books",
+                forced_source="books",
+            )
+        )
+        return
+    if self._is_talking:
+        logger.info("雑談中のため本雑談をスキップ")
+        return
+    asyncio.ensure_future(self._run_conversation(forced_source="books"))
 
 
 def _evented_trigger_follow_up(
@@ -760,7 +787,7 @@ def _evented_trigger_follow_up(
         )
         return
     if self._is_talking:
-        logger.info("謗帙￠蜷医＞荳ｭ縺ｮ縺溘ａ繝輔か繝ｭ繝ｼ繧｢繝・・繧偵せ繧ｭ繝・・")
+        logger.info("掛け合い中のためフォローアップをスキップ")
         return
     asyncio.ensure_future(self._run_follow_up(user_text, lily_text))
 
@@ -772,13 +799,16 @@ def _evented_on_timer(self: AutoConversation) -> None:
         )
         return
     if self._is_talking:
-        logger.info("髮題ｫ・ｸｭ縺ｮ縺溘ａ繧ｿ繧､繝槭・繧ｹ繧ｭ繝・・")
+        logger.info("雑談中のためタイマースキップ")
         return
     asyncio.ensure_future(self._run_conversation())
 
 
-async def _run_auto_talk_job(self: AutoConversation) -> None:
-    await self._run_conversation()
+async def _run_auto_talk_job(
+    self: AutoConversation,
+    forced_source: str | None = None,
+) -> None:
+    await self._run_conversation(forced_source=forced_source)
 
 
 async def _run_follow_up_job(
@@ -790,6 +820,7 @@ async def _run_follow_up_job(
 
 
 AutoConversation.trigger_now = _evented_trigger_now
+AutoConversation.trigger_books_now = _evented_trigger_books_now
 AutoConversation.trigger_follow_up = _evented_trigger_follow_up
 AutoConversation._on_timer = _evented_on_timer
 AutoConversation.run_auto_talk_job = _run_auto_talk_job

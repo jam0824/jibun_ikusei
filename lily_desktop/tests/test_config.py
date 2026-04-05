@@ -1,5 +1,7 @@
 """core.config のユニットテスト"""
 
+import core.config as config_mod
+
 from core.config import (
     DEFAULT_HTTP_BRIDGE_PORT,
     DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES,
@@ -179,3 +181,34 @@ def test_http_bridge_invalid_port_falls_back_to_default(tmp_path):
     config = load_config(config_path)
 
     assert config.http_bridge.port == DEFAULT_HTTP_BRIDGE_PORT
+
+
+def test_rakuten_config_defaults_when_missing(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+    monkeypatch.setattr(config_mod, "_ENV_PATH", tmp_path / ".env")
+
+    config = load_config(config_path)
+
+    assert config.rakuten.application_id == ""
+    assert config.rakuten.access_key == ""
+    assert config.rakuten.origin == ""
+
+
+def test_rakuten_config_reads_credentials_from_env(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+    env_path = tmp_path / ".env"
+    env_path.write_text(
+        "RAKUTEN_APPLICATION_ID=app-123\n"
+        "RAKUTEN_ACCESS_KEY=access-456\n"
+        "RAKUTEN_ORIGIN=https://jam0824.github.io\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config_mod, "_ENV_PATH", env_path)
+
+    config = load_config(config_path)
+
+    assert config.rakuten.application_id == "app-123"
+    assert config.rakuten.access_key == "access-456"
+    assert config.rakuten.origin == "https://jam0824.github.io"
