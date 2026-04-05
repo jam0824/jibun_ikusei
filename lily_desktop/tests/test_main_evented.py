@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
@@ -13,6 +15,10 @@ from core.domain_events import (
     ChatAutoTalkDue,
     HealthPlanetSyncRequested,
 )
+from core.job_manager import JobManager
+
+
+JST = timezone(timedelta(hours=9))
 
 
 class _CaptureHub:
@@ -91,3 +97,167 @@ async def test_async_init_publishes_app_started_without_direct_startup_sync():
     fitbit_sync.run.assert_not_awaited()
     assert len(hub.events) == 1
     assert isinstance(hub.events[0], AppStarted)
+
+
+class _FakeChatEngine:
+    def __init__(self) -> None:
+        self.started = asyncio.Event()
+        self.release = asyncio.Event()
+        self.calls: list[str] = []
+
+    async def handle_user_message(self, text: str) -> str | None:
+        self.calls.append(text)
+        self.started.set()
+        await self.release.wait()
+        return "lily-response"
+
+
+class _FakeAutoConversation:
+    def __init__(self) -> None:
+        self.follow_up_calls: list[tuple[str, str]] = []
+        self.follow_up_started = asyncio.Event()
+        self.follow_up_release = asyncio.Event()
+        self.auto_talk_calls: list[str | None] = []
+        self.auto_talk_started = asyncio.Event()
+        self.auto_talk_release = asyncio.Event()
+
+    def trigger_follow_up(self, user_text: str, lily_text: str):
+        self.follow_up_calls.append((user_text, lily_text))
+
+        async def wait_follow_up() -> None:
+            self.follow_up_started.set()
+            await self.follow_up_release.wait()
+
+        return (asyncio.create_task(wait_follow_up()),)
+
+    async def run_auto_talk_job(self, forced_source: str | None = None) -> None:
+        self.auto_talk_calls.append(forced_source)
+        self.auto_talk_started.set()
+        await self.auto_talk_release.wait()
+
+
+def _make_conversation_app():
+    app = object.__new__(main_mod.App)
+    app.chat_engine = _FakeChatEngine()
+    app.auto_conversation = _FakeAutoConversation()
+    app.job_manager = JobManager()
+    app.active_user_conversation = False
+    app.pending_periodic_auto_talk = None
+    app.pending_periodic_expires_at = None
+    return app
+
+
+@pytest.mark.asyncio
+async def test_periodic_auto_talk_waits_until_follow_up_finishes():
+    app = _make_conversation_app()
+    user_task = asyncio.create_task(app._handle_user_message_with_follow_up("hello"))
+
+    await asyncio.wait_for(app.chat_engine.started.wait(), timeout=1)
+    app.chat_engine.release.set()
+    await asyncio.wait_for(app.auto_conversation.follow_up_started.wait(), timeout=1)
+
+    await app.handle_chat_auto_talk_due(
+        ChatAutoTalkDue(
+            source="auto_conversation.timer",
+            occurred_at=datetime.now(JST),
+        )
+    )
+
+    assert app.active_user_conversation is True
+    assert app.pending_periodic_auto_talk is not None
+    assert app.auto_conversation.auto_talk_started.is_set() is False
+
+    app.auto_conversation.follow_up_release.set()
+    await asyncio.wait_for(app.auto_conversation.auto_talk_started.wait(), timeout=1)
+    app.auto_conversation.auto_talk_release.set()
+    await user_task
+
+    assert app.auto_conversation.follow_up_calls == [("hello", "lily-response")]
+    assert app.auto_conversation.auto_talk_calls == [None]
+    assert app.pending_periodic_auto_talk is None
+
+
+@pytest.mark.asyncio
+async def test_periodic_auto_talk_keeps_only_latest_pending_request():
+    app = _make_conversation_app()
+    user_task = asyncio.create_task(app._handle_user_message_with_follow_up("hello"))
+
+    await asyncio.wait_for(app.chat_engine.started.wait(), timeout=1)
+    app.chat_engine.release.set()
+    await asyncio.wait_for(app.auto_conversation.follow_up_started.wait(), timeout=1)
+
+    first = ChatAutoTalkDue(
+        source="auto_conversation.timer",
+        occurred_at=datetime.now(JST),
+    )
+    second = ChatAutoTalkDue(
+        source="auto_conversation.timer",
+        occurred_at=datetime.now(JST) + timedelta(seconds=10),
+    )
+
+    await app.handle_chat_auto_talk_due(first)
+    await app.handle_chat_auto_talk_due(second)
+
+    assert app.pending_periodic_auto_talk is second
+    assert app.auto_conversation.auto_talk_started.is_set() is False
+
+    app.auto_conversation.follow_up_release.set()
+    await asyncio.wait_for(app.auto_conversation.auto_talk_started.wait(), timeout=1)
+    app.auto_conversation.auto_talk_release.set()
+    await user_task
+
+    assert app.auto_conversation.auto_talk_calls == [None]
+
+
+@pytest.mark.asyncio
+async def test_expired_periodic_auto_talk_is_dropped_after_conversation():
+    app = _make_conversation_app()
+    user_task = asyncio.create_task(app._handle_user_message_with_follow_up("hello"))
+
+    await asyncio.wait_for(app.chat_engine.started.wait(), timeout=1)
+    app.chat_engine.release.set()
+    await asyncio.wait_for(app.auto_conversation.follow_up_started.wait(), timeout=1)
+
+    await app.handle_chat_auto_talk_due(
+        ChatAutoTalkDue(
+            source="auto_conversation.timer",
+            occurred_at=datetime.now(JST) - timedelta(minutes=6),
+        )
+    )
+
+    app.auto_conversation.follow_up_release.set()
+    await user_task
+    await asyncio.sleep(0.05)
+
+    assert app.auto_conversation.auto_talk_started.is_set() is False
+    assert app.auto_conversation.auto_talk_calls == []
+    assert app.pending_periodic_auto_talk is None
+
+
+@pytest.mark.asyncio
+async def test_manual_and_books_auto_talk_run_immediately_while_idle():
+    app = _make_conversation_app()
+
+    manual_task = asyncio.create_task(
+        app.handle_chat_auto_talk_due(ChatAutoTalkDue(source="auto_conversation.manual"))
+    )
+    await asyncio.wait_for(app.auto_conversation.auto_talk_started.wait(), timeout=1)
+    app.auto_conversation.auto_talk_release.set()
+    await manual_task
+
+    app.auto_conversation.auto_talk_started = asyncio.Event()
+    app.auto_conversation.auto_talk_release = asyncio.Event()
+
+    books_task = asyncio.create_task(
+        app.handle_chat_auto_talk_due(
+            ChatAutoTalkDue(
+                source="auto_conversation.manual_books",
+                forced_source="books",
+            )
+        )
+    )
+    await asyncio.wait_for(app.auto_conversation.auto_talk_started.wait(), timeout=1)
+    app.auto_conversation.auto_talk_release.set()
+    await books_task
+
+    assert app.auto_conversation.auto_talk_calls == [None, "books"]

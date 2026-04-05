@@ -200,12 +200,16 @@ class AutoConversation:
                 self._prefetch_task.cancel()
             logger.info("ユーザー割り込みにより掛け合い中断")
 
-    def trigger_follow_up(self, user_text: str, lily_text: str) -> None:
+    def trigger_follow_up(
+        self,
+        user_text: str,
+        lily_text: str,
+    ) -> tuple[asyncio.Task[None], ...]:
         """リリィがユーザーに返答した後、はるかを交えた掛け合いを開始する"""
         if self._is_talking:
             logger.info("掛け合い中のためフォローアップをスキップ")
-            return
-        asyncio.ensure_future(self._run_follow_up(user_text, lily_text))
+            return ()
+        return (asyncio.ensure_future(self._run_follow_up(user_text, lily_text)),)
 
     @property
     def is_talking(self) -> bool:
@@ -773,20 +777,19 @@ def _evented_trigger_follow_up(
     self: AutoConversation,
     user_text: str,
     lily_text: str,
-) -> None:
+) -> tuple[asyncio.Task[None], ...]:
     if self._event_hub is not None:
-        self._event_hub.publish(
+        return self._event_hub.publish(
             ChatFollowUpRequested(
                 source="auto_conversation.follow_up",
                 user_text=user_text,
                 lily_text=lily_text,
             )
         )
-        return
     if self._is_talking:
         logger.info("掛け合い中のためフォローアップをスキップ")
-        return
-    asyncio.ensure_future(self._run_follow_up(user_text, lily_text))
+        return ()
+    return (asyncio.ensure_future(self._run_follow_up(user_text, lily_text)),)
 
 
 def _evented_on_timer(self: AutoConversation) -> None:
