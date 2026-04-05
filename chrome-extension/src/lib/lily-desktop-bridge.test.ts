@@ -93,6 +93,36 @@ describe('lily-desktop-bridge', () => {
     })
   })
 
+  it('sends a warning browsing user_message with domain context', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 202 }),
+    )
+
+    const ok = await sendBrowsingUserMessageToLilyDesktop({
+      browsingType: 'warning',
+      xp: 0,
+      domain: 'game.com',
+      category: '娯楽',
+    })
+
+    expect(ok).toBe(true)
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(String(init.body)) as {
+      payload: { text: string }
+      metadata: Record<string, unknown>
+    }
+
+    expect(body.payload.text).toBe('Lily: game.com をあと10分見続けるとペナルティです。')
+    expect(body.metadata).toMatchObject({
+      browsingType: 'warning',
+      domain: 'game.com',
+      category: '娯楽',
+      xp: 0,
+      title: null,
+    })
+  })
+
   it('falls back to 閲覧活動 when both title and domain are missing', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), { status: 202 }),
