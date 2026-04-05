@@ -22,6 +22,13 @@ export class JibunIkuseiStack extends cdk.Stack {
       timeToLiveAttribute: 'ttl',
     })
 
+    table.addGlobalSecondaryIndex({
+      indexName: 'GSI1',
+      partitionKey: { name: 'GSI1PK', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'GSI1SK', type: dynamodb.AttributeType.NUMBER },
+      projectionType: dynamodb.ProjectionType.ALL,
+    })
+
     // ---- Cognito ----
     const userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: 'jibun-ikusei-users-cdk',
@@ -262,6 +269,7 @@ export class JibunIkuseiStack extends cdk.Stack {
     api.addRoutes({ path: '/chat-sessions/{id}', methods: [apigwv2.HttpMethod.DELETE], integration: chatIntegration })
     api.addRoutes({ path: '/chat-sessions/{id}/messages', methods: [apigwv2.HttpMethod.GET], integration: chatIntegration })
     api.addRoutes({ path: '/chat-sessions/{id}/messages', methods: [apigwv2.HttpMethod.POST], integration: chatIntegration })
+    api.addRoutes({ path: '/chat-messages', methods: [apigwv2.HttpMethod.GET], integration: chatIntegration })
 
     // Messages / Dictionary
     api.addRoutes({ path: '/messages', methods: [apigwv2.HttpMethod.GET], integration: messageIntegration })

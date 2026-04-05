@@ -153,6 +153,13 @@ class ApiClient:
             "GET", f"/chat-sessions/{session_id}/messages"
         )
 
+    async def get_chat_messages_range(self, from_date: str, to_date: str) -> list[dict]:
+        return await self._request(
+            "GET",
+            "/chat-messages",
+            params={"from": from_date, "to": to_date},
+        )
+
     async def post_chat_message(self, session_id: str, message: dict) -> dict:
         return await self._request(
             "POST", f"/chat-sessions/{session_id}/messages", json=message

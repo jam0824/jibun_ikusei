@@ -9,6 +9,7 @@ vi.mock('./api-client', () => ({
   getActivityLogs: vi.fn(),
   getSituationLogs: vi.fn(),
   getChatMessages: vi.fn(),
+  getChatMessagesRange: vi.fn(),
   postQuest: vi.fn().mockResolvedValue(undefined),
   deleteQuest: vi.fn().mockResolvedValue(undefined),
   putQuest: vi.fn().mockResolvedValue(undefined),
@@ -554,16 +555,10 @@ describe('get_messages_and_logs', () => {
       },
     ]
 
-    vi.mocked(api.getChatMessages).mockImplementation(async (sessionId: string) => {
-      if (sessionId === 'cs1') {
-        return [
-          { id: 'm1', sessionId, role: 'user', content: 'hit', createdAt: '2026-03-28T15:00:00.000Z' },
-        ]
-      }
-      return [
-        { id: 'm2', sessionId, role: 'assistant', content: 'miss', createdAt: '2026-03-29T15:00:00.000Z' },
-      ]
-    })
+    vi.mocked(api.getChatMessagesRange).mockResolvedValue([
+      { id: 'm1', sessionId: 'cs1', role: 'user', content: 'hit', createdAt: '2026-03-28T15:00:00.000Z' },
+      { id: 'm2', sessionId: 'cs2', role: 'assistant', content: 'miss', createdAt: '2026-03-29T15:00:00.000Z' },
+    ])
 
     const result = await executeTool(
       'get_messages_and_logs',
@@ -574,8 +569,9 @@ describe('get_messages_and_logs', () => {
     expect(result).toContain('session one')
     expect(result).not.toContain('session two')
     expect(result).toContain('ID: cs1')
-    expect(api.getChatMessages).toHaveBeenCalledTimes(1)
-    expect(api.getChatMessages).toHaveBeenCalledWith('cs1')
+    expect(api.getChatMessagesRange).toHaveBeenCalledTimes(1)
+    expect(api.getChatMessagesRange).toHaveBeenCalledWith('2026-03-29', '2026-03-29')
+    expect(api.getChatMessages).not.toHaveBeenCalled()
   })
 
   it('falls back to context messages when session fetch fails', async () => {
@@ -608,20 +604,11 @@ describe('get_messages_and_logs', () => {
       },
     ]
 
-    vi.mocked(api.getChatMessages).mockImplementation(async (sessionId: string) => {
-      if (sessionId === 'cs1') {
-        return [
-          { id: 'm1', sessionId, role: 'user', content: 'cs1 hit', createdAt: '2026-03-28T15:00:00.000Z' },
-        ]
-      }
-      if (sessionId === 'cs2') {
-        return [
-          { id: 'm2', sessionId, role: 'assistant', content: 'cs2 hit', createdAt: '2026-03-29T14:59:59.000Z' },
-          { id: 'm3', sessionId, role: 'assistant', content: 'outside', createdAt: '2026-03-29T15:00:00.000Z' },
-        ]
-      }
-      return []
-    })
+    vi.mocked(api.getChatMessagesRange).mockResolvedValue([
+      { id: 'm1', sessionId: 'cs1', role: 'user', content: 'cs1 hit', createdAt: '2026-03-28T15:00:00.000Z' },
+      { id: 'm2', sessionId: 'cs2', role: 'assistant', content: 'cs2 hit', createdAt: '2026-03-29T14:59:59.000Z' },
+      { id: 'm3', sessionId: 'cs2', role: 'assistant', content: 'outside', createdAt: '2026-03-29T15:00:00.000Z' },
+    ])
 
     const result = await executeTool(
       'get_messages_and_logs',
@@ -634,6 +621,9 @@ describe('get_messages_and_logs', () => {
     expect(result).toContain('cs1 hit')
     expect(result).toContain('cs2 hit')
     expect(result).not.toContain('outside')
+    expect(api.getChatMessagesRange).toHaveBeenCalledTimes(1)
+    expect(api.getChatMessagesRange).toHaveBeenCalledWith('2026-03-29', '2026-03-29')
+    expect(api.getChatMessages).not.toHaveBeenCalled()
   })
 
   it('falls back to cached messages during cross-session date searches', async () => {
@@ -662,14 +652,7 @@ describe('get_messages_and_logs', () => {
       },
     ]
 
-    vi.mocked(api.getChatMessages).mockImplementation(async (sessionId: string) => {
-      if (sessionId === 'cs1') {
-        return [
-          { id: 'm1', sessionId, role: 'user', content: 'remote hit', createdAt: '2026-03-28T15:05:00.000Z' },
-        ]
-      }
-      throw new Error(`API error: 503 /chat-sessions/${sessionId}/messages`)
-    })
+    vi.mocked(api.getChatMessagesRange).mockRejectedValue(new Error('API error: 503 /chat-messages'))
 
     const result = await executeTool(
       'get_messages_and_logs',
@@ -677,7 +660,6 @@ describe('get_messages_and_logs', () => {
       ctx,
     )
 
-    expect(result).toContain('remote hit')
     expect(result).toContain('cached fallback hit')
   })
 

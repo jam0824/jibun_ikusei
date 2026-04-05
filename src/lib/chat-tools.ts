@@ -2,6 +2,7 @@ import {
   getActivityLogs,
   getBrowsingTimes,
   getChatMessages,
+  getChatMessagesRange,
   getFitbitData,
   getHealthData,
   getNutritionRange,
@@ -362,6 +363,164 @@ async function loadMessagesForCandidateSessions(
   const candidates = getCandidateSessionsForDateFilter(sessions, dateFilter)
   const { loaded, failedCount } = await loadMessagesForSessions(candidates, context.chatMessages)
   return { candidates, loaded, failedCount }
+}
+
+async function loadMessagesForDateRange(
+  sessions: ChatSession[],
+  dateFilter: ResolvedDateFilter,
+  context: ToolContext,
+): Promise<{ loaded: LoadedSessionMessages[]; rangeFailed: boolean }> {
+  let messages: ChatMessage[]
+  let rangeFailed = false
+
+  try {
+    messages = await getChatMessagesRange(dateFilter.from, dateFilter.to)
+  } catch {
+    messages = context.chatMessages
+    rangeFailed = true
+  }
+
+  const filteredMessages = messages.filter((message) => isInJstDateRange(message.createdAt, dateFilter))
+  if (filteredMessages.length === 0) {
+    return { loaded: [], rangeFailed }
+  }
+
+  const sessionMap = new Map(sessions.map((session) => [session.id, session]))
+  const loaded: LoadedSessionMessages[] = []
+  for (const [sessionId, sessionMessages] of buildContextMessagesBySession(filteredMessages).entries()) {
+    const session = sessionMap.get(sessionId) ?? {
+      id: sessionId,
+      title: sessionId,
+      createdAt: sessionMessages[0]?.createdAt ?? '',
+      updatedAt: [...sessionMessages]
+        .map((message) => message.createdAt)
+        .sort((left, right) => right.localeCompare(left))[0] ?? '',
+    }
+    loaded.push({ session, messages: sessionMessages })
+  }
+
+  return { loaded, rangeFailed }
+}
+
+async function executeChatSessionsLookup(
+  args: ToolArgs,
+  context: ToolContext,
+): Promise<string> {
+  const dateFilter = resolveOptionalJstDateFilter(args)
+  if (dateFilter && 'error' in dateFilter) {
+    return dateFilter.error
+  }
+
+  if (context.chatSessions.length === 0) return 'チャットセッションがありません'
+
+  if (!dateFilter) {
+    const sessions = [...context.chatSessions].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+    const lines = ['チャットセッション一覧', `合計: ${sessions.length}件`, '']
+    const items = sessions
+      .slice(0, 20)
+      .map((session) => `- ${session.title} (${toJst(session.createdAt)}) ID: ${session.id}`)
+
+    return [...lines, ...sliceWithOverflow(items, sessions.length)].join('\n')
+  }
+
+  const { loaded, rangeFailed } = await loadMessagesForDateRange(context.chatSessions, dateFilter, context)
+  if (loaded.length === 0 && rangeFailed) {
+    return 'チャットセッションの取得に失敗しました'
+  }
+  if (loaded.length === 0) {
+    return `${dateFilter.label} に該当するチャットセッションがありません`
+  }
+
+  const matched = loaded
+    .map(({ session, messages }) => ({
+      session,
+      count: messages.length,
+      latestAt: messages.map((message) => message.createdAt).sort((left, right) => right.localeCompare(left))[0] ?? '',
+    }))
+    .sort((left, right) => right.latestAt.localeCompare(left.latestAt))
+
+  const lines = [`チャットセッション一覧 (${dateFilter.label})`, `合計: ${matched.length}件`, '']
+  const items = matched
+    .slice(0, 20)
+    .map(
+      (entry) =>
+        `- ${entry.session.title} (${toJst(entry.session.createdAt)}) ID: ${entry.session.id} / 該当: ${entry.count}件`,
+    )
+
+  return [...lines, ...sliceWithOverflow(items, matched.length)].join('\n')
+}
+
+async function executeChatMessagesLookup(
+  args: ToolArgs,
+  context: ToolContext,
+): Promise<string> {
+  const dateFilter = resolveOptionalJstDateFilter(args)
+  if (dateFilter && 'error' in dateFilter) {
+    return dateFilter.error
+  }
+
+  const sessionId = getTextArg(args, 'sessionId')
+  if (sessionId) {
+    let messages: ChatMessage[] = []
+    try {
+      messages = await getChatMessagesWithRetry(sessionId)
+    } catch {
+      messages = context.chatMessages.filter((message) => message.sessionId === sessionId)
+    }
+
+    if (dateFilter) {
+      messages = messages.filter((message) => isInJstDateRange(message.createdAt, dateFilter))
+    }
+
+    messages.sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    if (messages.length === 0) return '該当するメッセージがありません'
+
+    const sessionTitle = context.chatSessions.find((session) => session.id === sessionId)?.title ?? sessionId
+    const lines = [
+      `チャットメッセージ (セッション: ${sessionTitle} / ${describeFilter(dateFilter)})`,
+      `合計: ${messages.length}件`,
+      '',
+    ]
+    const items = messages.slice(0, 30).map((message) => {
+      const label = message.role === 'user' ? 'ユーザー' : 'リリィ'
+      return `- [${label}] ${message.content.slice(0, 100)} (${toJst(message.createdAt)})`
+    })
+
+    return [...lines, ...sliceWithOverflow(items, messages.length)].join('\n')
+  }
+
+  if (!dateFilter) {
+    return 'sessionId または date / fromDate / toDate を指定してください'
+  }
+
+  if (context.chatSessions.length === 0) {
+    return `${dateFilter.label} に該当するチャットメッセージがありません`
+  }
+
+  const { loaded, rangeFailed } = await loadMessagesForDateRange(context.chatSessions, dateFilter, context)
+  if (loaded.length === 0 && rangeFailed) {
+    return 'チャットメッセージの取得に失敗しました'
+  }
+  if (loaded.length === 0) {
+    return `${dateFilter.label} に該当するチャットメッセージがありません`
+  }
+
+  const messages = loaded
+    .flatMap(({ session, messages }) =>
+      messages.map((message) => ({
+        message,
+        session,
+      })),
+    )
+    .sort((left, right) => right.message.createdAt.localeCompare(left.message.createdAt))
+
+  const lines = [`チャットメッセージ (${dateFilter.label})`, `合計: ${messages.length}件`, '']
+  const items = messages.slice(0, 30).map(({ message, session }) => {
+    const label = message.role === 'user' ? 'ユーザー' : 'リリィ'
+    return `- [${session.title} / ${label}] ${message.content.slice(0, 100)} (${toJst(message.createdAt)})`
+  })
+
+  return [...lines, ...sliceWithOverflow(items, messages.length)].join('\n')
 }
 
 export const CHAT_TOOLS = [
@@ -1000,6 +1159,14 @@ async function executeGetFitbitData(args: ToolArgs): Promise<string> {
 
 async function executeGetMessagesAndLogs(args: ToolArgs, context: ToolContext): Promise<string> {
   const type = args.type as string
+
+  if (type === 'chat_sessions') {
+    return executeChatSessionsLookup(args, context)
+  }
+
+  if (type === 'chat_messages') {
+    return executeChatMessagesLookup(args, context)
+  }
 
   if (type === 'assistant_messages') {
     const dateFilter = resolveOptionalJstDateFilter(args)
