@@ -105,6 +105,7 @@ describe('alarm-handlers', () => {
       const progress = createMockDailyProgress({
         badBrowsingSeconds: 60 * 60,
         lastBadPenaltyAtSeconds: 0,
+        warningShownDomains: ['game.com'],
         domainTimes: {
           'game.com:/play': {
             domain: 'game.com',
@@ -220,7 +221,7 @@ describe('alarm-handlers', () => {
       expect(updated!.lastBadPenaltyAtSeconds).toBe(60 * 60)
     })
 
-    it('warningイベント後にwarningShownDomainsを更新する', async () => {
+    it('warningイベント後にwarningShownDomainsを更新し、bridgeへuser_messageを送る', async () => {
       const progress = createMockDailyProgress({
         badBrowsingSeconds: 50 * 60,
         domainTimes: {
@@ -243,7 +244,22 @@ describe('alarm-handlers', () => {
       const { getLocal: gl } = await import('@ext/lib/storage')
       const updated = await gl<{ warningShownDomains: string[] }>('dailyProgress')
       expect(updated!.warningShownDomains).toContain('game.com')
-      expect(fetchMock.mock.calls.some((call) => String(call[0]) === LILY_DESKTOP_BRIDGE_URL)).toBe(false)
+      const bridgeCalls = fetchMock.mock.calls.filter(
+        (call) => String(call[0]) === LILY_DESKTOP_BRIDGE_URL,
+      )
+      expect(bridgeCalls).toHaveLength(1)
+      const bridgeBody = JSON.parse(String(bridgeCalls[0][1]?.body)) as {
+        payload: { text: string }
+        metadata: Record<string, unknown>
+      }
+      expect(bridgeBody.payload.text).toBe('Lily: game.com をあと10分見続けるとペナルティです。')
+      expect(bridgeBody.metadata).toMatchObject({
+        browsingType: 'warning',
+        domain: 'game.com',
+        category: '娯楽',
+        xp: 0,
+        title: null,
+      })
     })
 
     it('既存のSyncQueueエントリもreplayする', async () => {
@@ -308,6 +324,37 @@ describe('alarm-handlers', () => {
       const { getLocal: gl } = await import('@ext/lib/storage')
       const updated = await gl<{ lastGoodRewardAtSeconds: number }>('dailyProgress')
       expect(updated!.lastGoodRewardAtSeconds).toBe(30 * 60)
+    })
+
+    it('warningのbridge送信が失敗してもwarningShownDomains更新は継続する', async () => {
+      const progress = createMockDailyProgress({
+        badBrowsingSeconds: 50 * 60,
+        domainTimes: {
+          'game.com:/': {
+            domain: 'game.com',
+            cacheKey: 'game.com:/',
+            category: '娯楽',
+            isGrowth: false,
+            isBlocklisted: true,
+            totalSeconds: 50 * 60,
+            lastUpdated: '',
+          },
+        },
+      })
+      await setLocal('dailyProgress', progress)
+      fetchMock.mockImplementation(async (input: RequestInfo | URL, _init?: RequestInit) => {
+        if (String(input) === LILY_DESKTOP_BRIDGE_URL) {
+          throw new Error('connect ECONNREFUSED')
+        }
+        return { ok: true, json: () => Promise.resolve({}) } as Response
+      })
+
+      const { handleAlarm } = await import('./alarm-handlers')
+      await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
+
+      const { getLocal: gl } = await import('@ext/lib/storage')
+      const updated = await gl<{ warningShownDomains: string[] }>('dailyProgress')
+      expect(updated!.warningShownDomains).toContain('game.com')
     })
   })
 
@@ -455,10 +502,20 @@ describe('alarm-handlers', () => {
       )
     })
 
-    it('notificationsEnabledがfalseの場合はトーストを送信しない', async () => {
+    it('notificationsEnabledがfalseの場合はwarningのトーストもbridgeも送信しない', async () => {
       const progress = createMockDailyProgress({
-        goodBrowsingSeconds: 30 * 60,
-        lastGoodRewardAtSeconds: 0,
+        badBrowsingSeconds: 50 * 60,
+        domainTimes: {
+          'game.com:/': {
+            domain: 'game.com',
+            cacheKey: 'game.com:/',
+            category: '娯楽',
+            isGrowth: false,
+            isBlocklisted: true,
+            totalSeconds: 50 * 60,
+            lastUpdated: '',
+          },
+        },
       })
       await setLocal('dailyProgress', progress)
       await setLocal('extensionSettings', { notificationsEnabled: false })
@@ -467,6 +524,7 @@ describe('alarm-handlers', () => {
       await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
 
       expect(chrome.tabs.sendMessage).not.toHaveBeenCalled()
+      expect(fetchMock.mock.calls.some((call) => String(call[0]) === LILY_DESKTOP_BRIDGE_URL)).toBe(false)
     })
 
     it('トースト送信が失敗してもevaluateAndEnqueueは完了する', async () => {

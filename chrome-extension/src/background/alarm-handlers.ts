@@ -13,6 +13,7 @@ import type {
   BrowsingTimeSyncBacklog,
   BrowsingTimeSyncEntry,
   DailyProgress,
+  DomainTimeEntry,
   WeeklyReport,
 } from '@ext/types/browsing'
 import type { ExtensionSettings } from '@ext/types/settings'
@@ -98,6 +99,19 @@ async function evaluateAndEnqueue(): Promise<void> {
       await logActivity('xp.penalty', 'xp', { xp: event.xp, domain: event.domain, type: 'browsing_penalty' })
     } else if (event.type === 'warning') {
       await logActivity('browsing.warning', 'browsing', { domain: event.domain })
+    }
+
+    if (event.type === 'warning') {
+      if (notificationsEnabled) {
+        const warningEntry = resolveWarningDomainEntry(progress, event.domain)
+        await sendBrowsingUserMessageToLilyDesktop({
+          browsingType: 'warning',
+          xp: event.xp,
+          domain: event.domain,
+          category: warningEntry?.category,
+        })
+      }
+      continue
     }
 
     if (event.type !== 'good_quest' && event.type !== 'bad_quest') {
@@ -188,6 +202,24 @@ async function evaluateAndEnqueue(): Promise<void> {
       }
     }
   })
+}
+
+function resolveWarningDomainEntry(
+  progress: DailyProgress,
+  domain?: string,
+): DomainTimeEntry | undefined {
+  if (!domain) return undefined
+
+  let topEntry: DomainTimeEntry | undefined
+  for (const entry of Object.values(progress.domainTimes)) {
+    if (entry.domain !== domain) continue
+    if (!entry.isBlocklisted || entry.isGrowth) continue
+    if (!topEntry || entry.totalSeconds > topEntry.totalSeconds) {
+      topEntry = entry
+    }
+  }
+
+  return topEntry
 }
 
 export async function syncBrowsingTimes(): Promise<void> {

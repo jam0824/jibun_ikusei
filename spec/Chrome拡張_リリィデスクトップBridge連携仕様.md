@@ -10,13 +10,13 @@
 
 - `good_quest`
 - `bad_quest`
-
-`warning` はこの連携の対象外とする。
+- `warning`
 
 ## 送信タイミング
 
 - Chrome拡張の `evaluateAndEnqueue()` 内で、既存の `syncQueue.enqueue()` 完了後に送信する
 - Quest / Completion の同期が主経路、Bridge 送信は副次経路とする
+- `warning` は `notificationsEnabled` が有効なときだけ、トースト送信と同じタイミングで送信する
 
 ## 送信先
 
@@ -54,15 +54,17 @@
 - 表示名は `suggestedQuestTitle || domain || "閲覧活動"` を使う
 - 良い閲覧は `「{label}」で+{xp} XPをゲットしました。`
 - バッド閲覧は `「{label}」で{xp} XPのペナルティとなりました。`
+- 警告は `Lily: {domain} をあと10分見続けるとペナルティです。`
+- 警告で `domain` が取れない場合は `Lily: もうすぐ1時間です。このまま続けるか、一度切り上げるか考えてみましょう。` にフォールバックする
 - Quest 作成用のフォールバックタイトルが `game.com での閲覧` のような形式でも、Bridge 本文は `domain` を優先して自然な文面にする
 
 ## metadata
 
-- `browsingType`: `good` または `bad`
+- `browsingType`: `good` / `bad` / `warning`
 - `domain`: 判定対象ドメイン。なければ `null`
 - `category`: 分類カテゴリ。なければ `null`
 - `xp`: 付与または減算した XP
-- `title`: AI 生成クエストタイトル。なければ `null`
+- `title`: AI 生成クエストタイトル。warning では常に `null`
 
 ## 失敗時の扱い
 
@@ -74,10 +76,11 @@
 
 ## テスト観点
 
-- helper 単体で good / bad の本文生成を検証する
+- helper 単体で good / bad / warning の本文生成を検証する
 - title 不在時は `domain`、domain も不在時は `閲覧活動` にフォールバックする
 - fetch 失敗時に throw せず `false` を返す
 - timeout 時に `false` を返す
 - `alarm-handlers` から `good_quest` / `bad_quest` で localhost Bridge 呼び出しが 1 回発生する
-- `warning` では Bridge 呼び出しが発生しない
+- `alarm-handlers` から `warning` でも `notificationsEnabled` 有効時は localhost Bridge 呼び出しが 1 回発生する
+- `notificationsEnabled` が `false` の場合、warning のトーストと Bridge 呼び出しはどちらも発生しない
 - Bridge 送信失敗時も既存の Quest / Completion POST と日次進捗更新が成立する
