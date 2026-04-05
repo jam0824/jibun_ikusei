@@ -145,7 +145,7 @@ export function QuestListScreen() {
       </section>
 
       <section className="mt-4">
-        <div className="flex gap-2 overflow-x-auto pb-1">
+        <div className="scrollbar-hide flex gap-2 overflow-x-auto pb-1">
           {tabs.map((item) => (
             <button
               key={item.key}

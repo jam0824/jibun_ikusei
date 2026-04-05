@@ -392,7 +392,7 @@ export function RecordsScreen() {
       }
     >
       {/* Tab switcher */}
-      <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+      <div className="scrollbar-hide mb-4 flex gap-2 overflow-x-auto pb-1">
         {(
           [
             { key: 'quests', icon: <ScrollText className="h-3.5 w-3.5" />, label: 'クエスト' },
