@@ -91,6 +91,28 @@ function makeEmptyNutrientMap(): NutrientMap {
   ) as NutrientMap
 }
 
+function parseTimestamp(value?: string): number {
+  if (!value) return 0
+  const timestamp = new Date(value).getTime()
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
+
+function isMoreRecentRecord(candidate: NutritionRecord, current: NutritionRecord): boolean {
+  const candidateUpdatedAt = parseTimestamp(candidate.updatedAt)
+  const currentUpdatedAt = parseTimestamp(current.updatedAt)
+  if (candidateUpdatedAt !== currentUpdatedAt) {
+    return candidateUpdatedAt > currentUpdatedAt
+  }
+
+  const candidateCreatedAt = parseTimestamp(candidate.createdAt)
+  const currentCreatedAt = parseTimestamp(current.createdAt)
+  if (candidateCreatedAt !== currentCreatedAt) {
+    return candidateCreatedAt > currentCreatedAt
+  }
+
+  return false
+}
+
 /**
  * 朝・昼・夜などの複数レコードを合算して1件のNutritionRecordを返す
  */
@@ -135,5 +157,9 @@ export function resolveDayNutrition(
   meals: NutritionRecord[],
 ): NutritionRecord {
   if (daily !== null) return daily
-  return aggregateMeals(meals)
+  if (meals.length === 0) return aggregateMeals(meals)
+
+  return meals.reduce((latest, record) =>
+    isMoreRecentRecord(record, latest) ? record : latest,
+  )
 }

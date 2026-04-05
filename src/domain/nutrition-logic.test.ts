@@ -34,7 +34,11 @@ function makeNutrientMap(value: number | null = null): NutrientMap {
   }
 }
 
-function makeRecord(mealType: NutritionRecord['mealType'], nutrients: NutrientMap): NutritionRecord {
+function makeRecord(
+  mealType: NutritionRecord['mealType'],
+  nutrients: NutrientMap,
+  overrides: Partial<Pick<NutritionRecord, 'createdAt' | 'updatedAt'>> = {},
+): NutritionRecord {
   return {
     userId: 'user_1',
     date: '2026-04-04',
@@ -42,6 +46,7 @@ function makeRecord(mealType: NutritionRecord['mealType'], nutrients: NutrientMa
     nutrients,
     createdAt: '2026-04-04T00:00:00+09:00',
     updatedAt: '2026-04-04T00:00:00+09:00',
+    ...overrides,
   }
 }
 
@@ -243,12 +248,38 @@ describe('resolveDayNutrition', () => {
     expect(result.nutrients.protein.threshold).toEqual({ type: 'range', lower: 90, upper: 110 })
   })
 
-  it('1日分がnullの場合は朝昼夜を合算して返却する', () => {
-    const breakfast = makeRecord('breakfast', { ...makeNutrientMap(0), protein: makeEntry(30) })
-    const lunch = makeRecord('lunch', { ...makeNutrientMap(0), protein: makeEntry(40) })
+  it('1日分がnullの場合はupdatedAtが最新の朝昼夜を返却する', () => {
+    const breakfast = makeRecord(
+      'breakfast',
+      { ...makeNutrientMap(0), protein: makeEntry(30) },
+      { updatedAt: '2026-04-04T08:00:00+09:00', createdAt: '2026-04-04T08:00:00+09:00' },
+    )
+    const lunch = makeRecord(
+      'lunch',
+      { ...makeNutrientMap(0), protein: makeEntry(40) },
+      { updatedAt: '2026-04-04T12:00:00+09:00', createdAt: '2026-04-04T12:00:00+09:00' },
+    )
 
     const result = resolveDayNutrition(null, [breakfast, lunch])
-    expect(result.nutrients.protein.value).toBe(70)
+    expect(result.mealType).toBe('lunch')
+    expect(result.nutrients.protein.value).toBe(40)
+  })
+
+  it('updatedAtが同じ場合はcreatedAtが新しい朝昼夜を返却する', () => {
+    const breakfast = makeRecord(
+      'breakfast',
+      { ...makeNutrientMap(0), protein: makeEntry(30) },
+      { updatedAt: '2026-04-04T12:00:00+09:00', createdAt: '2026-04-04T08:00:00+09:00' },
+    )
+    const lunch = makeRecord(
+      'lunch',
+      { ...makeNutrientMap(0), protein: makeEntry(40) },
+      { updatedAt: '2026-04-04T12:00:00+09:00', createdAt: '2026-04-04T09:00:00+09:00' },
+    )
+
+    const result = resolveDayNutrition(null, [breakfast, lunch])
+    expect(result.mealType).toBe('lunch')
+    expect(result.nutrients.protein.value).toBe(40)
   })
 
   it('1日分も朝昼夜もない場合はnullのNutritionRecordを返す', () => {
