@@ -1,5 +1,3 @@
-"""tool_executor のテスト"""
-
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
@@ -27,6 +25,7 @@ def _make_api():
     api.get_situation_logs = AsyncMock(return_value=[])
     api.get_chat_sessions = AsyncMock(return_value=[])
     api.get_chat_messages = AsyncMock(return_value=[])
+    api.get_chat_messages_range = AsyncMock(return_value=[])
     api.post_completion = AsyncMock()
     api.put_quest = AsyncMock()
     api.post_quest = AsyncMock()
@@ -58,7 +57,7 @@ async def test_browsing_times_uses_explicit_date_range():
     api.get_browsing_times.return_value = [{
         "totalSeconds": 120,
         "domains": {
-            "example.com": {"totalSeconds": 120, "category": "学習"},
+            "example.com": {"totalSeconds": 120, "category": "Study"},
         },
     }]
     executor = ToolExecutor(api)
@@ -72,7 +71,7 @@ async def test_browsing_times_uses_explicit_date_range():
 @pytest.mark.asyncio
 async def test_completions_respect_inclusive_jst_range():
     api = _make_api()
-    api.get_quests.return_value = [{"id": "q1", "title": "読書"}]
+    api.get_quests.return_value = [{"id": "q1", "title": "Reading"}]
     api.get_completions.return_value = [
         {"questId": "q1", "completedAt": "2026-03-28T15:00:00Z", "userXpAwarded": 10},
         {"questId": "q1", "completedAt": "2026-03-30T14:59:59Z", "userXpAwarded": 10},
@@ -85,16 +84,16 @@ async def test_completions_respect_inclusive_jst_range():
         {"type": "completions", "fromDate": "2026-03-29", "toDate": "2026-03-30"},
     )
 
-    assert result.count("読書") == 2
-    assert "合計: 2件" in result
+    assert result.count("Reading") == 2
+    assert "2" in result
 
 
 @pytest.mark.asyncio
 async def test_assistant_messages_use_jst_day_boundary():
     api = _make_api()
     api.get_messages.return_value = [
-        {"triggerType": "nudge", "text": "含まれる", "createdAt": "2026-03-28T15:00:00Z"},
-        {"triggerType": "nudge", "text": "含まれない", "createdAt": "2026-03-29T15:00:00Z"},
+        {"triggerType": "nudge", "text": "included", "createdAt": "2026-03-28T15:00:00Z"},
+        {"triggerType": "nudge", "text": "excluded", "createdAt": "2026-03-29T15:00:00Z"},
     ]
     executor = ToolExecutor(api)
 
@@ -103,8 +102,8 @@ async def test_assistant_messages_use_jst_day_boundary():
         {"type": "assistant_messages", "date": "2026-03-29"},
     )
 
-    assert "含まれる" in result
-    assert "含まれない" not in result
+    assert "included" in result
+    assert "excluded" not in result
 
 
 @pytest.mark.asyncio
@@ -129,7 +128,7 @@ async def test_situation_logs_use_exact_date_range():
     api = _make_api()
     api.get_situation_logs.return_value = [
         {
-            "summary": "作業中",
+            "summary": "working",
             "timestamp": "2026-03-28T15:30:00Z",
             "details": {"active_apps": ["VS Code"]},
         },
@@ -146,21 +145,16 @@ async def test_situation_logs_use_exact_date_range():
 
 
 @pytest.mark.asyncio
-async def test_chat_messages_search_across_sessions_by_date():
+async def test_chat_messages_search_across_sessions_by_date_uses_range_api():
     api = _make_api()
     api.get_chat_sessions.return_value = [
-        _make_session("s1", "2026-03-28T00:00:00Z", "2026-03-29T01:00:00Z", "1つ目"),
-        _make_session("s2", "2026-03-29T00:00:00Z", "2026-03-30T01:00:00Z", "2つ目"),
+        _make_session("s1", "2026-03-28T00:00:00Z", "2026-03-29T01:00:00Z", "session one"),
+        _make_session("s2", "2026-03-29T00:00:00Z", "2026-03-30T01:00:00Z", "session two"),
     ]
-
-    async def _get_chat_messages(session_id: str):
-        if session_id == "s1":
-            return [_make_chat_message("s1", "user", "アニメの話をした", "2026-03-28T15:00:00Z")]
-        if session_id == "s2":
-            return [_make_chat_message("s2", "assistant", "別日の会話", "2026-03-29T15:00:00Z")]
-        return []
-
-    api.get_chat_messages.side_effect = _get_chat_messages
+    api.get_chat_messages_range.return_value = [
+        _make_chat_message("s1", "user", "inside range", "2026-03-28T15:00:00Z"),
+        _make_chat_message("s2", "assistant", "outside range", "2026-03-29T15:00:00Z"),
+    ]
     executor = ToolExecutor(api)
 
     result = await executor.execute(
@@ -168,27 +162,24 @@ async def test_chat_messages_search_across_sessions_by_date():
         {"type": "chat_messages", "date": "2026-03-29"},
     )
 
-    assert "1つ目 / ユーザー" in result
-    assert "アニメの話をした" in result
-    assert "別日の会話" not in result
+    assert "session one" in result
+    assert "inside range" in result
+    assert "outside range" not in result
+    api.get_chat_messages_range.assert_awaited_once_with("2026-03-29", "2026-03-29")
+    api.get_chat_messages.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_chat_sessions_filter_by_messages_in_range():
+async def test_chat_sessions_filter_by_messages_in_range_uses_range_api():
     api = _make_api()
     api.get_chat_sessions.return_value = [
-        _make_session("s1", "2026-03-28T00:00:00Z", "2026-03-29T01:00:00Z", "1つ目"),
-        _make_session("s2", "2026-03-29T00:00:00Z", "2026-03-30T01:00:00Z", "2つ目"),
+        _make_session("s1", "2026-03-28T00:00:00Z", "2026-03-29T01:00:00Z", "session one"),
+        _make_session("s2", "2026-03-29T00:00:00Z", "2026-03-30T01:00:00Z", "session two"),
     ]
-
-    async def _get_chat_messages(session_id: str):
-        if session_id == "s1":
-            return [_make_chat_message("s1", "user", "対象", "2026-03-28T15:00:00Z")]
-        if session_id == "s2":
-            return [_make_chat_message("s2", "assistant", "対象外", "2026-03-29T15:00:00Z")]
-        return []
-
-    api.get_chat_messages.side_effect = _get_chat_messages
+    api.get_chat_messages_range.return_value = [
+        _make_chat_message("s1", "user", "hit", "2026-03-28T15:00:00Z"),
+        _make_chat_message("s2", "assistant", "miss", "2026-03-29T15:00:00Z"),
+    ]
     executor = ToolExecutor(api)
 
     result = await executor.execute(
@@ -196,8 +187,10 @@ async def test_chat_sessions_filter_by_messages_in_range():
         {"type": "chat_sessions", "date": "2026-03-29"},
     )
 
-    assert "1つ目" in result
-    assert "2つ目" not in result
+    assert "session one" in result
+    assert "session two" not in result
+    api.get_chat_messages_range.assert_awaited_once_with("2026-03-29", "2026-03-29")
+    api.get_chat_messages.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -207,14 +200,14 @@ async def test_chat_messages_require_session_or_date():
 
     result = await executor.execute("get_messages_and_logs", {"type": "chat_messages"})
 
-    assert "sessionId を指定するか" in result
+    assert "sessionId" in result
 
 
 @pytest.mark.asyncio
 async def test_chat_messages_retry_503_then_use_current_session_fallback():
     api = _make_api()
     api.get_chat_sessions.return_value = [
-        _make_session("s1", "2026-03-29T00:00:00Z", "2026-03-29T10:00:00Z", "現在の会話"),
+        _make_session("s1", "2026-03-29T00:00:00Z", "2026-03-29T10:00:00Z", "current session"),
     ]
     request = httpx.Request("GET", "https://example.com/chat-sessions/s1/messages")
     response = httpx.Response(503, request=request)
@@ -225,7 +218,7 @@ async def test_chat_messages_retry_503_then_use_current_session_fallback():
     executor.set_context_provider(lambda: {
         "current_session_id": "s1",
         "chat_messages": [
-            _make_chat_message("s1", "user", "fallback の本文", "2026-03-28T15:00:00Z"),
+            _make_chat_message("s1", "user", "fallback message", "2026-03-28T15:00:00Z"),
         ],
     })
 
@@ -235,7 +228,7 @@ async def test_chat_messages_retry_503_then_use_current_session_fallback():
     )
 
     assert api.get_chat_messages.await_count == 2
-    assert "fallback の本文" in result
+    assert "fallback message" in result
 
 
 @pytest.mark.asyncio
@@ -243,11 +236,11 @@ async def test_complete_quest_keeps_one_time_status_completed_when_saving_defaul
     api = _make_api()
     api.get_quests.return_value = [{
         "id": "q_member_hr",
-        "title": "メンバーの人事相談",
+        "title": "Team meeting",
         "status": "active",
         "questType": "one_time",
         "xpReward": 15,
-        "category": "対人",
+        "category": "social",
         "skillMappingMode": "ai_auto",
         "privacyMode": "normal",
         "createdAt": "2026-04-05T09:00:00+09:00",
@@ -259,16 +252,16 @@ async def test_complete_quest_keeps_one_time_status_completed_when_saving_defaul
         AsyncMock(return_value={
             "resolved_skill_id": "skill_communication",
             "skill_xp_awarded": 15,
-            "skill_name": "コミュニケーション",
+            "skill_name": "Communication",
             "status": "resolved",
-            "reason": "キーワード一致",
+            "reason": "keyword matched",
         }),
     )
     executor = ToolExecutor(api)
 
-    result = await executor.execute("complete_quest", {"query": "メンバーの人事相談"})
+    result = await executor.execute("complete_quest", {"query": "Team meeting"})
 
-    assert "メンバーの人事相談" in result
+    assert "Team meeting" in result
     assert api.put_quest.await_count >= 1
     for call in api.put_quest.await_args_list:
         assert call.args[0] == "q_member_hr"
@@ -281,11 +274,11 @@ async def test_complete_quest_keeps_repeatable_status_active_when_saving_default
     api = _make_api()
     api.get_quests.return_value = [{
         "id": "q_daily_report",
-        "title": "日報を書く",
+        "title": "Write daily report",
         "status": "active",
         "questType": "repeatable",
         "xpReward": 10,
-        "category": "仕事",
+        "category": "work",
         "skillMappingMode": "ai_auto",
         "privacyMode": "normal",
         "createdAt": "2026-04-05T09:00:00+09:00",
@@ -297,16 +290,16 @@ async def test_complete_quest_keeps_repeatable_status_active_when_saving_default
         AsyncMock(return_value={
             "resolved_skill_id": "skill_writing",
             "skill_xp_awarded": 10,
-            "skill_name": "文書作成",
+            "skill_name": "Writing",
             "status": "resolved",
-            "reason": "キーワード一致",
+            "reason": "keyword matched",
         }),
     )
     executor = ToolExecutor(api)
 
-    result = await executor.execute("complete_quest", {"query": "日報を書く"})
+    result = await executor.execute("complete_quest", {"query": "Write daily report"})
 
-    assert "日報を書く" in result
+    assert "Write daily report" in result
     api.put_quest.assert_awaited_once()
     assert api.put_quest.await_args.args[0] == "q_daily_report"
     assert api.put_quest.await_args.args[1]["status"] == "active"

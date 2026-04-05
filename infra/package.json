@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "build": "tsc",
+    "backfill:chat-index": "node ./scripts/backfill-chat-message-index.mjs",
     "cdk": "cdk",
     "deploy": "cdk deploy",
     "diff": "cdk diff",

@@ -245,6 +245,10 @@ export function getChatMessages(sessionId: string) {
   return request<ChatMessage[]>(`/chat-sessions/${sessionId}/messages`)
 }
 
+export function getChatMessagesRange(from: string, to: string) {
+  return request<ChatMessage[]>(`/chat-messages?from=${from}&to=${to}`)
+}
+
 export function postChatMessage(sessionId: string, message: ChatMessage) {
   return request<ChatMessage>(`/chat-sessions/${sessionId}/messages`, {
     method: 'POST',

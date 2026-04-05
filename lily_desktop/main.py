@@ -347,18 +347,16 @@ class App:
                     latest_record.get("time", ""),
                 )
 
-            if not self.auth.is_configured:
+            if not self.auth.is_configured or not new_records:
                 return
 
-            today = datetime.now(JST).date().isoformat()
-            from_date = (datetime.now(JST).date() - timedelta(days=30)).isoformat()
             try:
-                records = await asyncio.to_thread(query_health_data, from_date, today)
-                if records:
-                    await self.api_client.post_health_data(records)
-                    logger.info("Health Planet クラウド同期完了: %d 件", len(records))
+                await self.api_client.post_health_data(new_records)
+                logger.info("Health Planet cloud sync posted %d records", len(new_records))
+                return
             except Exception:
-                logger.exception("Health Planet クラウド同期に失敗")
+                logger.exception("Health Planet cloud sync failed")
+
         finally:
             self._healthplanet_sync_in_progress = False
 
@@ -418,52 +416,8 @@ class App:
         asyncio.ensure_future(self._generate_and_send_summary())
 
     async def _capture_and_record(self) -> SituationRecord | None:
-        """カメラ画像取得 + デスクトップ状況取得 → ローカル記録"""
+        """カメラ画像取得 + デスクトップ文脈取得の統合版。"""
         return await self._capture_and_record_coordinated()
-
-        from core.active_window import get_active_window_info
-
-        record = SituationRecord()
-        record.timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
-
-        # カメラ画像取得・分析
-        try:
-            frame_png = capture_camera_frame(self._camera_device_index)
-            if frame_png is not None:
-                analysis = await analyze_camera_frame(
-                    api_key=self.config.openai.api_key,
-                    model=self.config.camera.analysis_model,
-                    frame_png=frame_png,
-                )
-                record.camera_summary = analysis.summary
-                record.camera_tags = analysis.tags
-                record.camera_scene_type = analysis.scene_type
-        except Exception:
-            logger.exception("カメラキャプチャ・分析に失敗")
-
-        # デスクトップ状況取得
-        try:
-            ctx = await fetch_desktop_context(
-                api_key=self.config.openai.api_key,
-                model=self.config.openai.screen_analysis_model,
-            )
-            if ctx.analysis:
-                record.desktop_summary = ctx.analysis.summary
-                record.desktop_tags = ctx.analysis.tags
-                record.desktop_activity_type = ctx.analysis.activity_type
-        except Exception:
-            logger.exception("デスクトップ状況取得に失敗")
-
-        # アクティブアプリ取得
-        try:
-            win_info = get_active_window_info()
-            record.active_app = win_info.app_name
-            record.window_title = win_info.window_title[:80]
-        except Exception:
-            logger.exception("アクティブアプリ取得に失敗")
-
-        self.situation_logger.record(record)
-        return record
 
     async def _generate_and_send_summary(self) -> None:
         """30分間の要約を生成してサーバーに送信する"""
@@ -495,64 +449,15 @@ class App:
         asyncio.ensure_future(self._fetch_and_show_desktop_context_coordinated())
 
     async def _fetch_and_show_desktop_context(self) -> None:
-        """デスクトップ状況を取得してログ出力 + 吹き出しに表示（デバッグ用）"""
-        return await self._fetch_and_show_desktop_context_coordinated()
-
-        bus.balloon_show.emit("リリィ", "画面の状況を確認中…")
-        try:
-            ctx = await fetch_desktop_context(
-                api_key=self.config.openai.api_key,
-                model=self.config.openai.screen_analysis_model,
-            )
-            self._last_desktop_context = ctx
-            log_text = format_context_log(ctx)
-            logger.info("\n%s", log_text)
-
-            # 吹き出しにデバッグ結果を表示
-            if ctx.skipped:
-                bus.balloon_show.emit(
-                    "リリィ",
-                    f"[デバッグ] 解析対象外だよ\n{ctx.window_info.exclude_reason}",
-                )
-            elif ctx.error:
-                bus.balloon_show.emit("リリィ", f"[デバッグ] エラー: {ctx.error}")
-            elif ctx.analysis:
-                bus.balloon_show.emit(
-                    "リリィ",
-                    f"[デバッグ] {ctx.analysis.summary}\n"
-                    f"タグ: {', '.join(ctx.analysis.tags)}\n"
-                    f"種別: {ctx.analysis.activity_type}\n"
-                    f"詳細: {ctx.analysis.detail}",
-                )
-        except Exception:
-            logger.exception("デスクトップ状況取得に失敗")
-            bus.balloon_show.emit("リリィ", "[デバッグ] 状況取得に失敗しちゃった…")
+        """デスクトップ文脈取得の統合版。"""
+        await self._fetch_and_show_desktop_context_coordinated()
 
     def _on_camera_capture_requested(self) -> None:
         asyncio.ensure_future(self._debug_capture_and_record_coordinated())
 
     async def _debug_capture_and_record(self) -> None:
-        """カメラ+デスクトップ+アクティブアプリを取得・記録して吹き出しに表示（デバッグ用）"""
-        return await self._debug_capture_and_record_coordinated()
-
-        bus.balloon_show.emit("リリィ", "カメラ・デスクトップ状況を確認中…")
-        try:
-            record = await self._capture_and_record()
-
-            parts = ["[デバッグ] 状況記録完了"]
-            if record.camera_summary:
-                parts.append(f"カメラ: {record.camera_summary}")
-            else:
-                parts.append("カメラ: 取得できず")
-            if record.desktop_summary:
-                parts.append(f"デスクトップ: {record.desktop_summary}")
-            if record.active_app:
-                parts.append(f"アプリ: {record.active_app}")
-
-            bus.balloon_show.emit("リリィ", "\n".join(parts))
-        except Exception:
-            logger.exception("デバッグ: 状況記録に失敗")
-            bus.balloon_show.emit("リリィ", "[デバッグ] 状況記録に失敗しちゃった…")
+        """デバッグ用の状況取得統合版。"""
+        await self._debug_capture_and_record_coordinated()
 
     async def _capture_and_record_coordinated(self) -> SituationRecord | None:
         """共有コーディネータ経由で状況を取得して記録する。"""
@@ -699,54 +604,6 @@ class App:
             )
         except Exception:
             logger.warning("ポーズ自動生成に失敗: category=%s", category)
-
-
-async def async_init(app_instance: App) -> None:
-    """非同期初期化（認証、セッション読み込み）"""
-    if app_instance.auth.is_configured:
-        try:
-            await app_instance.auth.get_id_token()
-            logger.info("Cognito認証成功")
-            await app_instance.session_mgr.create_new_session()
-        except Exception:
-            logger.exception("初期化中にエラー（認証またはセッション読み込み失敗）")
-    else:
-        logger.warning("Cognito認証情報が未設定です。config.yamlを確認してください。")
-
-    # 自動雑談タイマーを開始
-    app_instance.auto_conversation.start()
-
-    # 音声入力の自動開始
-    if app_instance.config.voice.enabled and app_instance.config.voice.google_api_key:
-        app_instance.voice_pipeline = VoicePipeline(
-            config=app_instance.config.voice,
-            loop=asyncio.get_event_loop(),
-        )
-        app_instance.voice_pipeline.start()
-        if app_instance.voice_pipeline.is_running:
-            bus.voice_state_changed.emit(True)
-
-    # TTS の自動開始
-    if app_instance.config.tts.enabled:
-        app_instance.tts_engine = TTSEngine(app_instance.config.tts)
-        app_instance.auto_conversation.set_tts(app_instance.tts_engine)
-        await app_instance.tts_engine.start()
-
-    # カメラシステムの自動開始
-    if app_instance.config.camera.enabled:
-        app_instance.start_camera_system()
-
-    # Health Planet データ同期
-    if app_instance.config.healthplanet.client_id:
-        app_instance.start_healthplanet_timer()
-        app_instance.start_healthplanet_sync()
-
-    # Fitbit データ同期
-    if app_instance.fitbit_sync is not None:
-        try:
-            await app_instance.fitbit_sync.run()
-        except Exception:
-            logger.exception("Fitbit 同期中にエラーが発生しました")
 
 
 _LEGACY_START_HEALTHPLANET_SYNC = App.start_healthplanet_sync

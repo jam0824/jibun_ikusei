@@ -15,11 +15,12 @@ vi.mock('/opt/nodejs/utils.mjs', () => ({
   parseBody: (event) => JSON.parse(event.body),
 }))
 
-export function makeEvent(routeKey, { body, pathParameters } = {}) {
+export function makeEvent(routeKey, { body, pathParameters, queryStringParameters } = {}) {
   return {
     routeKey,
     body: body ? JSON.stringify(body) : undefined,
     pathParameters: pathParameters ?? {},
+    queryStringParameters: queryStringParameters ?? {},
     requestContext: {
       authorizer: { jwt: { claims: { sub: 'test-user-123' } } },
     },

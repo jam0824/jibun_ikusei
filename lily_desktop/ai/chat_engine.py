@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timedelta, timezone
@@ -22,6 +23,7 @@ from data.session_manager import SessionManager
 logger = logging.getLogger(__name__)
 
 JST = timezone(timedelta(hours=9))
+CONTEXT_CACHE_TTL_SECONDS = 30
 
 
 def parse_ai_response(raw: str) -> tuple[str, str]:
@@ -58,6 +60,9 @@ class ChatEngine:
         self._current_session_messages: list[dict[str, Any]] = []
         self._tools: list[dict] | None = None
         self._tool_executor = None
+        self._context_cache: tuple[Any, list[dict], list[dict], list[dict], list[dict]] | None = None
+        self._context_cache_expires_at: datetime | None = None
+        self._last_successful_context: tuple[Any, list[dict], list[dict], list[dict], list[dict]] | None = None
 
     def set_tools(self, tools: list[dict], executor) -> None:
         self._tools = tools
@@ -67,6 +72,13 @@ class ChatEngine:
         set_context_provider = getattr(executor_owner, "set_context_provider", None)
         if callable(set_context_provider):
             set_context_provider(self.get_tool_runtime_context)
+        set_context_invalidator = getattr(executor_owner, "set_context_invalidator", None)
+        if callable(set_context_invalidator):
+            set_context_invalidator(self.invalidate_context_cache)
+
+    def invalidate_context_cache(self) -> None:
+        self._context_cache = None
+        self._context_cache_expires_at = None
 
     def get_tool_runtime_context(self) -> dict[str, Any]:
         session_id = self._session_mgr.current_session_id
@@ -188,8 +200,47 @@ class ChatEngine:
     async def _fetch_context(self):
         """API経由でコンテキスト情報を一括取得"""
         now = datetime.now(JST)
+        if (
+            self._context_cache is not None
+            and self._context_cache_expires_at is not None
+            and now < self._context_cache_expires_at
+        ):
+            return self._context_cache
         from_date = (now - timedelta(days=7)).strftime("%Y-%m-%d")
         to_date = now.strftime("%Y-%m-%d")
+
+        defaults = (None, [], [], [], [])
+        previous = self._last_successful_context or defaults
+        labels = (
+            "user",
+            "skills",
+            "quests",
+            "completions",
+            "activity_logs",
+        )
+
+        results = await asyncio.gather(
+            self._api.get_user(),
+            self._api.get_skills(),
+            self._api.get_quests(),
+            self._api.get_completions(),
+            self._api.get_activity_logs(from_date, to_date),
+            return_exceptions=True,
+        )
+
+        merged: list[Any] = []
+        for index, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.warning("%s蜿門ｾ怜､ｱ謨・", labels[index], exc_info=True)
+                merged.append(previous[index])
+            else:
+                merged.append(result)
+
+        context = tuple(merged)
+        self._context_cache = context
+        self._last_successful_context = context
+        self._context_cache_expires_at = now + timedelta(seconds=CONTEXT_CACHE_TTL_SECONDS)
+        return context
 
         user_data = None
         skills: list[dict] = []

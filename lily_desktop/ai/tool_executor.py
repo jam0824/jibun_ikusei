@@ -270,12 +270,21 @@ class ToolExecutor:
         self,
         api: ApiClient,
         context_provider: RuntimeContextProvider | None = None,
+        context_invalidator: Callable[[], None] | None = None,
     ):
         self._api = api
         self._context_provider = context_provider
+        self._context_invalidator = context_invalidator
 
     def set_context_provider(self, provider: RuntimeContextProvider | None) -> None:
         self._context_provider = provider
+
+    def set_context_invalidator(self, invalidator: Callable[[], None] | None) -> None:
+        self._context_invalidator = invalidator
+
+    def _invalidate_context_cache(self) -> None:
+        if callable(self._context_invalidator):
+            self._context_invalidator()
 
     def _get_runtime_context(self) -> dict[str, Any]:
         if self._context_provider is None:
@@ -388,6 +397,206 @@ class ToolExecutor:
         ]
         loaded, failed_count = await self._load_messages_for_sessions(candidates, fallback_messages)
         return candidates, loaded, failed_count
+
+    async def _load_messages_for_date_range(
+        self,
+        sessions: list[dict[str, Any]],
+        date_filter: ResolvedDateFilter,
+        fallback_messages: list[dict[str, Any]],
+    ) -> tuple[list[LoadedSessionMessages], bool]:
+        try:
+            messages = await self._api.get_chat_messages_range(
+                date_filter.from_date,
+                date_filter.to_date,
+            )
+            range_failed = False
+        except Exception:
+            messages = fallback_messages
+            range_failed = True
+
+        filtered_messages = [
+            message
+            for message in messages
+            if _is_in_jst_date_range(message.get("createdAt", ""), date_filter)
+        ]
+        if not filtered_messages:
+            return [], range_failed
+
+        session_map = {
+            session.get("id"): session
+            for session in sessions
+            if isinstance(session.get("id"), str) and session.get("id")
+        }
+        loaded: list[LoadedSessionMessages] = []
+        for session_id, session_messages in _build_context_messages_by_session(filtered_messages).items():
+            session = session_map.get(session_id)
+            if session is None:
+                latest_at = max(
+                    message.get("createdAt", "")
+                    for message in session_messages
+                )
+                session = {
+                    "id": session_id,
+                    "title": session_id,
+                    "createdAt": session_messages[0].get("createdAt", ""),
+                    "updatedAt": latest_at,
+                }
+            loaded.append(LoadedSessionMessages(session=session, messages=session_messages))
+
+        return loaded, range_failed
+
+    async def _chat_sessions_with_optional_date(
+        self,
+        args: dict[str, Any],
+        fallback_messages: list[dict[str, Any]],
+    ) -> str:
+        try:
+            date_filter = _resolve_optional_jst_date_filter(args)
+        except ValueError as exc:
+            return str(exc)
+
+        try:
+            sessions = await self._api.get_chat_sessions()
+        except Exception:
+            return "chat sessions unavailable"
+
+        if not sessions:
+            return "chat sessions unavailable"
+
+        sessions.sort(key=lambda session: session.get("updatedAt", ""), reverse=True)
+        if date_filter is None:
+            lines = ["Chat sessions", f"Total: {len(sessions)}", ""]
+            for session in sessions[:20]:
+                lines.append(
+                    f"- {session.get('title', '')} ({to_jst(str(session.get('createdAt', '')))}) ID: {session.get('id', '')}"
+                )
+            if len(sessions) > 20:
+                lines.append(f"  ...{len(sessions) - 20} more")
+            return "\\n".join(lines)
+
+        loaded, range_failed = await self._load_messages_for_date_range(
+            sessions,
+            date_filter,
+            fallback_messages,
+        )
+        if not loaded and range_failed:
+            return "chat sessions unavailable"
+        if not loaded:
+            return f"no chat sessions for {date_filter.label}"
+
+        matched = [
+            (
+                entry.session,
+                len(entry.messages),
+                max(message.get("createdAt", "") for message in entry.messages),
+            )
+            for entry in loaded
+        ]
+        matched.sort(key=lambda item: item[2], reverse=True)
+
+        lines = [f"Chat sessions ({date_filter.label})", f"Total: {len(matched)}", ""]
+        for session, count, _ in matched[:20]:
+            lines.append(
+                f"- {session.get('title', '')} ({to_jst(str(session.get('createdAt', '')))}) ID: {session.get('id', '')} / Matches: {count}"
+            )
+        if len(matched) > 20:
+            lines.append(f"  ...{len(matched) - 20} more")
+        return "\\n".join(lines)
+
+    async def _chat_messages_with_optional_date(
+        self,
+        args: dict[str, Any],
+        fallback_messages: list[dict[str, Any]],
+    ) -> str:
+        try:
+            date_filter = _resolve_optional_jst_date_filter(args)
+        except ValueError as exc:
+            return str(exc)
+
+        session_id = _get_text_arg(args, "sessionId")
+        if session_id:
+            session_fallback = [
+                message
+                for message in fallback_messages
+                if message.get("sessionId") == session_id
+            ]
+            try:
+                messages = await self._get_chat_messages_with_retry(session_id)
+            except Exception:
+                if session_fallback:
+                    messages = session_fallback
+                else:
+                    return "chat messages unavailable"
+
+            if date_filter is not None:
+                messages = [
+                    message
+                    for message in messages
+                    if _is_in_jst_date_range(message.get("createdAt", ""), date_filter)
+                ]
+            messages.sort(key=lambda message: message.get("createdAt", ""), reverse=True)
+            if not messages:
+                return "no matching messages"
+
+            session_title = session_id
+            try:
+                sessions = await self._api.get_chat_sessions()
+            except Exception:
+                sessions = []
+            for session in sessions:
+                if session.get("id") == session_id:
+                    session_title = session.get("title") or session_id
+                    break
+
+            lines = [
+                f"Chat messages (session: {session_title} / {_describe_filter(date_filter)})",
+                f"Total: {len(messages)}",
+                "",
+            ]
+            for message in messages[:30]:
+                label = "user" if message.get("role") == "user" else "assistant"
+                content = str(message.get("content", ""))[:100]
+                lines.append(f"- [{label}] {content} ({to_jst(str(message.get('createdAt', '')))})")
+            if len(messages) > 30:
+                lines.append(f"  ...{len(messages) - 30} more")
+            return "\\n".join(lines)
+
+        if date_filter is None:
+            return "sessionId or date / fromDate / toDate is required"
+
+        try:
+            sessions = await self._api.get_chat_sessions()
+        except Exception:
+            return "chat sessions unavailable"
+
+        if not sessions:
+            return f"no chat messages for {date_filter.label}"
+
+        loaded, range_failed = await self._load_messages_for_date_range(
+            sessions,
+            date_filter,
+            fallback_messages,
+        )
+        if not loaded and range_failed:
+            return "chat messages unavailable"
+        if not loaded:
+            return f"no chat messages for {date_filter.label}"
+
+        matched_messages: list[tuple[dict[str, Any], dict[str, Any]]] = []
+        for entry in loaded:
+            for message in entry.messages:
+                matched_messages.append((message, entry.session))
+
+        matched_messages.sort(key=lambda item: item[0].get("createdAt", ""), reverse=True)
+        lines = [f"Chat messages ({date_filter.label})", f"Total: {len(matched_messages)}", ""]
+        for message, session in matched_messages[:30]:
+            label = "user" if message.get("role") == "user" else "assistant"
+            content = str(message.get("content", ""))[:100]
+            session_title = session.get("title") or session.get("id", "")
+            lines.append(f"- [{session_title} / {label}] {content} ({to_jst(str(message.get('createdAt', '')))})")
+        if len(matched_messages) > 30:
+            lines.append(f"  ...{len(matched_messages) - 30} more")
+        return "\\n".join(lines)
 
     async def _browsing_times(self, args: dict[str, Any]) -> str:
         try:
@@ -570,6 +779,11 @@ class ToolExecutor:
         data_type = args.get("type", "assistant_messages")
         runtime_context = self._get_runtime_context()
         fallback_messages = runtime_context["chat_messages"]
+
+        if data_type == "chat_sessions":
+            return await self._chat_sessions_with_optional_date(args, fallback_messages)
+        if data_type == "chat_messages":
+            return await self._chat_messages_with_optional_date(args, fallback_messages)
 
         if data_type == "assistant_messages":
             try:
@@ -893,6 +1107,7 @@ class ToolExecutor:
             )
 
         await self._api.post_completion(completion)
+        self._invalidate_context_cache()
 
         should_persist_default_skill = bool(
             resolution
@@ -940,6 +1155,7 @@ class ToolExecutor:
             "updatedAt": now,
         }
         await self._api.post_quest(quest)
+        self._invalidate_context_cache()
 
         tags = ", ".join(filter(None, [
             "繰り返し" if quest["questType"] == "repeatable" else "一回限り",
@@ -975,6 +1191,7 @@ class ToolExecutor:
 
         if mode == "archive":
             await self._api.put_quest(target_id, {"status": "archived"})
+            self._invalidate_context_cache()
             return f"クエスト「{target_title}」をアーカイブしました。"
 
         completions = await self._api.get_completions()
@@ -986,6 +1203,7 @@ class ToolExecutor:
             return f"クエスト「{target_title}」には完了履歴があるため削除できません。mode='archive'でアーカイブしてください。"
 
         await self._api.delete_quest(target_id)
+        self._invalidate_context_cache()
         return f"クエスト「{target_title}」を削除しました。"
 
     async def _health_data(self, args: dict[str, Any]) -> str:
