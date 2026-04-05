@@ -65,6 +65,29 @@ function calcBarWidth(entry: NutrientEntry): number {
   return Math.min((value / ref) * 100, 100)
 }
 
+function formatNutrientValue(entry: NutrientEntry): string {
+  return entry.value !== null ? `${entry.value} ${entry.unit}` : '未取得'
+}
+
+function formatNutrientThreshold(entry: NutrientEntry): string {
+  const threshold = entry.threshold
+  if (!threshold) return '基準: 未取得'
+
+  if (threshold.type === 'range' && threshold.lower !== undefined && threshold.upper !== undefined) {
+    return `基準: ${threshold.lower}〜${threshold.upper} ${entry.unit}`
+  }
+
+  if (threshold.type === 'min_only' && threshold.lower !== undefined) {
+    return `基準: ${threshold.lower}以上 ${entry.unit}`
+  }
+
+  if (threshold.type === 'max_only' && threshold.upper !== undefined) {
+    return `基準: ${threshold.upper}未満 ${entry.unit}`
+  }
+
+  return '基準: 未取得'
+}
+
 function NutritionView() {
   const [date, setDate] = useState(getTodayJst())
   const [isLoading, setIsLoading] = useState(false)
@@ -156,13 +179,20 @@ function NutritionView() {
             const pct = calcBarWidth(entry)
             const barColor = entry.label ? BAR_COLORS[entry.label] : 'bg-slate-300'
             return (
-              <div key={meta.key} className="flex items-center gap-2">
-                <div className="w-20 shrink-0 text-xs text-slate-600">{meta.name}</div>
-                <div className="flex-1 overflow-hidden rounded-full bg-slate-100" style={{ height: '8px' }}>
-                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+              <div key={meta.key} className="flex items-start gap-3">
+                <div className="w-20 shrink-0 pt-1 text-xs text-slate-600">{meta.name}</div>
+                <div className="min-w-0 flex-1 pt-1">
+                  <div className="overflow-hidden rounded-full bg-slate-100" style={{ height: '7px' }}>
+                    <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                  </div>
                 </div>
-                <div className="w-20 shrink-0 text-right text-xs text-slate-500">
-                  {entry.value !== null ? `${entry.value} ${meta.unit}` : '未取得'}
+                <div className="w-28 shrink-0 text-right">
+                  <div className="text-xs font-medium text-slate-600">
+                    {formatNutrientValue(entry)}
+                  </div>
+                  <div className="mt-0.5 text-[10px] leading-4 text-slate-400">
+                    {formatNutrientThreshold(entry)}
+                  </div>
                 </div>
               </div>
             )
