@@ -2,7 +2,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { hydratePersistedState } from '@/domain/logic'
-import type { PersistedAppState, Quest, QuestCompletion } from '@/domain/types'
+import type {
+  NutrientEntry,
+  NutrientMap,
+  NutritionRecord,
+  PersistedAppState,
+  Quest,
+  QuestCompletion,
+} from '@/domain/types'
 import { HomeScreen } from '@/screens/home-screen'
 import { RecordsScreen } from '@/screens/records-screen'
 import { useAppStore } from '@/store/app-store'
@@ -45,6 +52,56 @@ function createCompletion(
   }
 }
 
+function createNutritionEntry(value: number | null, unit = 'g'): NutrientEntry {
+  return {
+    value,
+    unit,
+    label: null,
+    threshold: null,
+  }
+}
+
+function createNutritionMap(value: number | null = null): NutrientMap {
+  return {
+    energy: createNutritionEntry(value, 'kcal'),
+    protein: createNutritionEntry(value),
+    fat: createNutritionEntry(value),
+    carbs: createNutritionEntry(value),
+    potassium: createNutritionEntry(value, 'mg'),
+    calcium: createNutritionEntry(value, 'mg'),
+    iron: createNutritionEntry(value, 'mg'),
+    vitaminA: createNutritionEntry(value, 'µg'),
+    vitaminE: createNutritionEntry(value, 'mg'),
+    vitaminB1: createNutritionEntry(value, 'mg'),
+    vitaminB2: createNutritionEntry(value, 'mg'),
+    vitaminB6: createNutritionEntry(value, 'mg'),
+    vitaminC: createNutritionEntry(value, 'mg'),
+    fiber: createNutritionEntry(value),
+    saturatedFat: createNutritionEntry(value),
+    salt: createNutritionEntry(value),
+  }
+}
+
+function createNutritionRecord(
+  mealType: NutritionRecord['mealType'],
+  proteinValue: number,
+  updatedAt: string,
+  date = '2026-03-19',
+  createdAt = updatedAt,
+): NutritionRecord {
+  return {
+    userId: 'user_1',
+    date,
+    mealType,
+    nutrients: {
+      ...createNutritionMap(null),
+      protein: createNutritionEntry(proteinValue),
+    },
+    createdAt,
+    updatedAt,
+  }
+}
+
 function resetStore(partial: Partial<PersistedAppState>) {
   const base = hydratePersistedState({
     meta: {
@@ -71,6 +128,8 @@ function resetStore(partial: Partial<PersistedAppState>) {
       openai: { status: 'idle' },
       gemini: { status: 'idle' },
     },
+    nutritionCache: {},
+    fitbitCache: {},
   }))
 }
 
@@ -179,5 +238,40 @@ describe('records screen filters', () => {
     ).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('朝の読書')).toBeInTheDocument()
     expect(screen.queryByText('夜のランニング')).not.toBeInTheDocument()
+  })
+})
+
+describe('records screen nutrition view', () => {
+  beforeEach(() => {
+    resetStore({})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('1日分がない場合は最新登録データを表示する', async () => {
+    const today = new Date()
+    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+    const dayData = {
+      daily: null,
+      breakfast: createNutritionRecord('breakfast', 10.1, `${date}T08:00:00+09:00`, date),
+      lunch: createNutritionRecord('lunch', 20.2, `${date}T12:30:00+09:00`, date),
+      dinner: null,
+    }
+    const fetchNutrition = vi.fn().mockResolvedValue(dayData)
+
+    useAppStore.setState((state) => ({
+      ...state,
+      nutritionCache: { ...state.nutritionCache, [date]: dayData },
+      fetchNutrition,
+    }))
+
+    renderRecords('/records')
+    fireEvent.click(screen.getByRole('button', { name: '栄養' }))
+
+    expect(await screen.findByText('表示元: 最新登録データ（昼）')).toBeInTheDocument()
+    expect(screen.getByText('20.2 g')).toBeInTheDocument()
+    expect(screen.queryByText('30.3 g')).not.toBeInTheDocument()
   })
 })

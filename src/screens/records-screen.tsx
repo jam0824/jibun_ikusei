@@ -10,7 +10,7 @@ import {
 import { NUTRIENT_META } from '@/domain/nutrition-constants'
 import { resolveDayNutrition } from '@/domain/nutrition-logic'
 import type { FitbitSummary } from '@/lib/api-client'
-import type { NutrientEntry, NutrientLabel } from '@/domain/types'
+import type { MealType, NutrientEntry, NutrientLabel } from '@/domain/types'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent } from '@/components/ui'
 import { formatDateTime, isUndoable } from '@/lib/date'
@@ -23,6 +23,13 @@ const BAR_COLORS: Record<NutrientLabel, string> = {
   '不足': 'bg-blue-400',
   '適正': 'bg-green-400',
   '過剰': 'bg-red-400',
+}
+
+const MEAL_TYPE_LABELS: Record<MealType, string> = {
+  daily: '1日分',
+  breakfast: '朝',
+  lunch: '昼',
+  dinner: '夜',
 }
 
 function getTodayJst(): string {
@@ -73,12 +80,23 @@ function NutritionView() {
   }, [date, fetchNutrition])
 
   const dayData = nutritionCache[date]
+  const mealRecords = dayData
+    ? [dayData.breakfast, dayData.lunch, dayData.dinner].filter(
+        (record): record is NonNullable<typeof record> => record !== null,
+      )
+    : []
   const resolved = dayData
     ? resolveDayNutrition(
         dayData.daily,
-        [dayData.breakfast, dayData.lunch, dayData.dinner].filter((r): r is NonNullable<typeof r> => r !== null)
+        mealRecords,
       )
     : null
+  const sourceLabel =
+    dayData?.daily
+      ? `表示元: ${MEAL_TYPE_LABELS.daily}`
+      : mealRecords.length > 0 && resolved && resolved.mealType !== 'daily'
+        ? `表示元: 最新登録データ（${MEAL_TYPE_LABELS[resolved.mealType]}）`
+        : null
 
   return (
     <div className="space-y-3 pb-6">
@@ -126,6 +144,12 @@ function NutritionView() {
         </div>
       ) : (
         <>
+          {sourceLabel ? (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-2 text-xs text-slate-500">
+              {sourceLabel}
+            </div>
+          ) : null}
+
           {/* 栄養素グラフ */}
           {NUTRIENT_META.map((meta) => {
             const entry = resolved.nutrients[meta.key]
