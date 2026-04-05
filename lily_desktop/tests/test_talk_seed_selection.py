@@ -1,4 +1,4 @@
-"""雑談の種選択ロジックのテスト — 6系統均等配分(各約16.7%)の検証"""
+"""雑談の種選択ロジックのテスト — 7系統均等配分の検証"""
 
 import pytest
 
@@ -66,7 +66,13 @@ class TestSelectBestSeed:
         assert result is not None
         assert result.source == "health"
 
-    def test_全カテゴリある場合に6種から選ばれる(self, seed_mgr):
+    def test_booksのみの場合はbooksを返す(self, seed_mgr):
+        seeds = [_make_seed("books")]
+        result = seed_mgr.select_best_seed(seeds)
+        assert result is not None
+        assert result.source == "books"
+
+    def test_全カテゴリある場合に7種から選ばれる(self, seed_mgr):
         seeds = [
             _make_seed("desktop"),
             _make_seed("camera"),
@@ -74,6 +80,7 @@ class TestSelectBestSeed:
             _make_seed("wikimedia_interest"),
             _make_seed("annict"),
             _make_seed("health"),
+            _make_seed("books"),
         ]
         # 200回試行して各sourceが少なくとも1回は選ばれることを確認
         sources_selected = set()
@@ -87,9 +94,10 @@ class TestSelectBestSeed:
         assert "wikimedia_interest" in sources_selected
         assert "annict" in sources_selected
         assert "health" in sources_selected
+        assert "books" in sources_selected
 
     def test_配分がおおよそ正しい(self, seed_mgr):
-        """6系統均等配分（各約16.7%）を統計的に検証"""
+        """7系統均等配分（各約14.3%）を統計的に検証"""
         seeds = [
             _make_seed("desktop"),
             _make_seed("camera"),
@@ -97,16 +105,17 @@ class TestSelectBestSeed:
             _make_seed("wikimedia_interest"),
             _make_seed("annict"),
             _make_seed("health"),
+            _make_seed("books"),
         ]
-        counts = {"desktop": 0, "camera": 0, "wikimedia": 0, "wikimedia_interest": 0, "annict": 0, "health": 0}
+        counts = {"desktop": 0, "camera": 0, "wikimedia": 0, "wikimedia_interest": 0, "annict": 0, "health": 0, "books": 0}
         n = 2000
         for _ in range(n):
             result = seed_mgr.select_best_seed(seeds)
             counts[result.source] += 1
 
-        # 各カテゴリの割合が許容範囲内か（±10%の幅を持たせる、期待値16.7%）
+        # 各カテゴリの割合が許容範囲内か（期待値14.3%に対して広めの許容幅）
         for source, count in counts.items():
-            assert 0.07 < count / n < 0.27, f"{source}: {count/n:.2f}"
+            assert 0.05 < count / n < 0.24, f"{source}: {count/n:.2f}"
 
     def test_クールダウン中の種は除外される(self, seed_mgr):
         seeds = [

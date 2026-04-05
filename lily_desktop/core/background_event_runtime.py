@@ -52,11 +52,13 @@ def register_background_event_handlers(
             app.handle_fitbit_sync_request,
         )
 
-    async def on_chat_auto_talk_due(_event: ChatAutoTalkDue) -> None:
+    async def on_chat_auto_talk_due(event: ChatAutoTalkDue) -> None:
         await job_manager.submit(
             "chat.auto_talk",
             "single_flight_drop",
-            app.auto_conversation.run_auto_talk_job,
+            lambda: app.auto_conversation.run_auto_talk_job(
+                event.forced_source
+            ),
         )
 
     async def on_chat_follow_up(event: ChatFollowUpRequested) -> None:

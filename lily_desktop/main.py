@@ -24,6 +24,7 @@ from core.domain_events import (
     AppStarted,
     CaptureSnapshotRequested,
     CaptureSummaryDue,
+    ChatAutoTalkDue,
     DomainEventHub,
     HealthPlanetSyncRequested,
 )
@@ -151,6 +152,7 @@ class App:
         # デバッグ
         bus.desktop_context_requested.connect(self._on_desktop_context_requested)
         bus.auto_talk_requested.connect(self._on_auto_talk_requested)
+        bus.books_talk_requested.connect(self._on_books_talk_requested)
         bus.camera_capture_requested.connect(self._on_camera_capture_requested)
 
     def _on_user_message(self, text: str) -> None:
@@ -477,6 +479,17 @@ class App:
 
     def _on_auto_talk_requested(self) -> None:
         self.auto_conversation.trigger_now()
+
+    def _on_books_talk_requested(self) -> None:
+        if getattr(self, "event_hub", None) is not None:
+            self.event_hub.publish(
+                ChatAutoTalkDue(
+                    source="auto_conversation.manual_books",
+                    forced_source="books",
+                )
+            )
+            return
+        self.auto_conversation.trigger_books_now()
 
     def _on_desktop_context_requested(self) -> None:
         asyncio.ensure_future(self._fetch_and_show_desktop_context_coordinated())

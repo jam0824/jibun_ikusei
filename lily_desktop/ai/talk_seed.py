@@ -1,4 +1,4 @@
-"""雑談の種マネージャー — 6系統の話題を収集・優先度判定・クールダウン管理"""
+"""雑談の種マネージャー — 7系統の話題を収集・優先度判定・クールダウン管理"""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING
 
 from ai.annict_client import AnnictWork, fetch_seasonal_works
 from ai.camera_analyzer import CameraAnalysis
+from ai.rakuten_books_client import BookTalkCandidate, RakutenBooksClient
 from ai.screen_analyzer import ScreenAnalysis
 from ai.wikimedia_client import WikimediaArticle, fetch_featured_content, fetch_interest_articles
 from core.desktop_context import DesktopContext
@@ -33,7 +34,7 @@ class TalkSeed:
     summary: str = ""
     tags: list[str] = field(default_factory=list)
     freshness: str = "fresh"   # fresh | stale
-    source: str = ""           # desktop | wikimedia | annict
+    source: str = ""           # desktop | wikimedia | annict | books
     lily_perspective: str = "" # リリィ側の切り口
     haruka_perspective: str = ""  # 相方側の切り口
     created_at: str = ""
@@ -53,6 +54,9 @@ class TalkSeedManager:
         camera_analysis_model: str = "gpt-5.4",
         camera_device_index: int = 0,
         interest_topics: list[str] | None = None,
+        rakuten_application_id: str = "",
+        rakuten_access_key: str = "",
+        rakuten_origin: str = "",
         api_client: ApiClient | None = None,
         situation_capture_coordinator: SituationCaptureCoordinator | None = None,
     ):
@@ -63,13 +67,22 @@ class TalkSeedManager:
         self._camera_analysis_model = camera_analysis_model
         self._camera_device_index = camera_device_index
         self._interest_topics: list[str] = interest_topics or []
+        self._rakuten_client = (
+            RakutenBooksClient(
+                application_id=rakuten_application_id,
+                access_key=rakuten_access_key,
+                origin=rakuten_origin,
+            )
+            if rakuten_application_id and rakuten_access_key
+            else None
+        )
         self._api_client = api_client
         self._situation_capture = situation_capture_coordinator or SituationCaptureCoordinator()
         self._used_history: list[tuple[str, datetime]] = []  # (source_key, used_at)
         self._last_camera_analysis: CameraAnalysis | None = None
 
     async def collect_seeds(self) -> list[TalkSeed]:
-        """6系統から雑談の種を並行収集する"""
+        """7系統から雑談の種を並行収集する"""
         seeds: list[TalkSeed] = []
 
         # 並行で取得
@@ -79,6 +92,7 @@ class TalkSeedManager:
         annict_task = asyncio.create_task(self._collect_annict())
         camera_task = asyncio.create_task(self._collect_camera())
         health_task = asyncio.create_task(self._collect_health())
+        books_task = asyncio.create_task(self._collect_books())
 
         desktop_seeds = await desktop_task
         wiki_seeds = await wiki_task
@@ -86,6 +100,7 @@ class TalkSeedManager:
         annict_seeds = await annict_task
         camera_seeds = await camera_task
         health_seeds = await health_task
+        books_seeds = await books_task
 
         seeds.extend(desktop_seeds)
         seeds.extend(wiki_seeds)
@@ -93,11 +108,12 @@ class TalkSeedManager:
         seeds.extend(annict_seeds)
         seeds.extend(camera_seeds)
         seeds.extend(health_seeds)
+        seeds.extend(books_seeds)
 
         logger.info(
-            "雑談の種: desktop=%d wiki=%d wiki_interest=%d annict=%d camera=%d health=%d 合計=%d",
+            "雑談の種: desktop=%d wiki=%d wiki_interest=%d annict=%d camera=%d health=%d books=%d 合計=%d",
             len(desktop_seeds), len(wiki_seeds), len(wiki_interest_seeds),
-            len(annict_seeds), len(camera_seeds), len(health_seeds), len(seeds),
+            len(annict_seeds), len(camera_seeds), len(health_seeds), len(books_seeds), len(seeds),
         )
         return seeds
 
@@ -105,7 +121,7 @@ class TalkSeedManager:
         """話題のバランスを考慮して種を選ぶ。
 
         デスクトップ / カメラ / 注目記事・今日は何の日 / 興味ある分野 /
-        アニメ(Annict) / 健康豆知識 の6カテゴリを均等（各約16.7%）に配分。
+        アニメ(Annict) / 健康豆知識 / 本 の7カテゴリを均等に配分。
         該当カテゴリの種がない場合は、残りのカテゴリで再配分する。
         クールダウン中の種は除外。
         """
@@ -127,6 +143,7 @@ class TalkSeedManager:
         wikimedia_interest_seeds = [s for s in available if s.source == "wikimedia_interest"]
         annict_seeds = [s for s in available if s.source == "annict"]
         health_seeds = [s for s in available if s.source == "health"]
+        books_seeds = [s for s in available if s.source == "books"]
 
         # 利用可能なカテゴリで均等重み付き抽選
         candidates: list[tuple[float, list[TalkSeed]]] = []
@@ -142,6 +159,8 @@ class TalkSeedManager:
             candidates.append((1.0, annict_seeds))
         if health_seeds:
             candidates.append((1.0, health_seeds))
+        if books_seeds:
+            candidates.append((1.0, books_seeds))
 
         if not candidates:
             return None
@@ -415,6 +434,39 @@ class TalkSeedManager:
             logger.exception("健康データの収集に失敗")
             return []
 
+    async def _collect_books(self) -> list[TalkSeed]:
+        """楽天Books の売れ筋から本カテゴリの種を生成する"""
+        if self._rakuten_client is None:
+            return []
+
+        try:
+            genre_name, candidates = await self._rakuten_client.fetch_random_profile_candidates()
+            now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+
+            candidate = _pick_weighted_book_candidate(candidates)
+            if candidate is None:
+                return []
+
+            tags = ["本", genre_name, "売れ筋"]
+            if candidate.author:
+                tags.append(candidate.author)
+
+            return [
+                TalkSeed(
+                    summary=_build_book_summary(candidate),
+                    tags=tags,
+                    freshness="fresh",
+                    source="books",
+                    lily_perspective=f"『{candidate.title}』の内容から気軽に話を広げる",
+                    haruka_perspective=f"『{candidate.title}』に興味を示してテンポよくリアクションする",
+                    created_at=now_str,
+                    _source_key=f"books:{candidate.isbn}",
+                )
+            ]
+        except Exception:
+            logger.exception("本カテゴリの収集に失敗")
+            return []
+
 
 def _camera_lily_perspective(analysis: CameraAnalysis) -> str:
     """カメラ画像に基づくリリィの切り口"""
@@ -466,3 +518,26 @@ def _desktop_haruka_perspective(analysis: ScreenAnalysis) -> str:
         "chatting": "誰と話してるの？気になるー！とちょっかいを出す",
     }
     return perspectives.get(analysis.activity_type, "リリィの話に乗っかってツッコミを入れる")
+
+
+def _pick_weighted_book_candidate(candidates: list[BookTalkCandidate]) -> BookTalkCandidate | None:
+    """売れ筋上位ほど当たりやすい重み付きで1冊選ぶ。"""
+    if not candidates:
+        return None
+
+    total_weight = sum(max(1, 21 - candidate.rank) for candidate in candidates)
+    roll = random.uniform(0, total_weight)
+    cumulative = 0.0
+    for candidate in candidates:
+        cumulative += max(1, 21 - candidate.rank)
+        if roll <= cumulative:
+            return candidate
+
+    return candidates[-1]
+
+
+def _build_book_summary(candidate: BookTalkCandidate) -> str:
+    description = candidate.description
+    if len(description) > 120:
+        description = description[:117].rstrip() + "..."
+    return f"楽天Books売れ筋の本『{candidate.title}』。{description}"

@@ -37,6 +37,7 @@ class EventBus(QObject):
     # デバッグ
     desktop_context_requested = Signal()  # 手動で状況取得を要求
     auto_talk_requested = Signal()        # 手動で雑談を発火
+    books_talk_requested = Signal()       # 手動で本雑談を発火
     camera_capture_requested = Signal()   # 手動でカメラ状況取得を要求
 
 

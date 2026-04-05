@@ -274,3 +274,40 @@ async def test_complete_quest_keeps_one_time_status_completed_when_saving_defaul
         assert call.args[0] == "q_member_hr"
         assert call.args[1]["status"] == "completed"
     assert api.put_quest.await_args_list[-1].args[1]["defaultSkillId"] == "skill_communication"
+
+
+@pytest.mark.asyncio
+async def test_complete_quest_keeps_repeatable_status_active_when_saving_default_skill(monkeypatch):
+    api = _make_api()
+    api.get_quests.return_value = [{
+        "id": "q_daily_report",
+        "title": "日報を書く",
+        "status": "active",
+        "questType": "repeatable",
+        "xpReward": 10,
+        "category": "仕事",
+        "skillMappingMode": "ai_auto",
+        "privacyMode": "normal",
+        "createdAt": "2026-04-05T09:00:00+09:00",
+        "updatedAt": "2026-04-05T09:00:00+09:00",
+    }]
+    monkeypatch.setattr(
+        tool_executor_module,
+        "resolve_skill_for_completion",
+        AsyncMock(return_value={
+            "resolved_skill_id": "skill_writing",
+            "skill_xp_awarded": 10,
+            "skill_name": "文書作成",
+            "status": "resolved",
+            "reason": "キーワード一致",
+        }),
+    )
+    executor = ToolExecutor(api)
+
+    result = await executor.execute("complete_quest", {"query": "日報を書く"})
+
+    assert "日報を書く" in result
+    api.put_quest.assert_awaited_once()
+    assert api.put_quest.await_args.args[0] == "q_daily_report"
+    assert api.put_quest.await_args.args[1]["status"] == "active"
+    assert api.put_quest.await_args.args[1]["defaultSkillId"] == "skill_writing"

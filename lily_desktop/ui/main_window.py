@@ -251,6 +251,12 @@ class MainWindow(QWidget):
         )
         debug_menu.addAction(auto_talk_action)
 
+        books_talk_action = QAction("楽天Books雑談を開始", self)
+        books_talk_action.triggered.connect(
+            lambda: bus.books_talk_requested.emit()
+        )
+        debug_menu.addAction(books_talk_action)
+
         camera_action = QAction("カメラ状況を取得", self)
         camera_action.triggered.connect(
             lambda: bus.camera_capture_requested.emit()
