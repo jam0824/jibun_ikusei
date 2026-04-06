@@ -105,6 +105,7 @@ class ChatConfig:
 @dataclass
 class VoiceConfig:
     enabled: bool = False
+    pause_during_tts: bool = True  # TTS再生中にマイク入力を一時停止するか
     vad_aggressiveness: int = 3       # 0-3, 3が最も厳格（ノイズに強い）
     vad_start_frames: int = 10        # 発話開始に必要な連続音声フレーム数（大きいほど誤検知しにくい）
     vad_end_frames: int = 30          # 発話終了と判定する連続無音フレーム数（大きいほど間を許容）

@@ -147,6 +147,57 @@ def _make_conversation_app():
     return app
 
 
+class _FakeVoicePipeline:
+    def __init__(self, *, is_running: bool = True) -> None:
+        self.is_running = is_running
+        self.pause_calls = 0
+        self.resume_calls = 0
+
+    def pause(self) -> None:
+        self.pause_calls += 1
+
+    def resume(self) -> None:
+        self.resume_calls += 1
+
+
+def test_tts_started_pauses_voice_pipeline_when_enabled():
+    voice_pipeline = _FakeVoicePipeline()
+    app = SimpleNamespace(
+        config=SimpleNamespace(voice=SimpleNamespace(pause_during_tts=True)),
+        voice_pipeline=voice_pipeline,
+    )
+
+    main_mod.App._on_tts_started(app)
+
+    assert voice_pipeline.pause_calls == 1
+
+
+def test_tts_finished_resumes_voice_pipeline_when_enabled():
+    voice_pipeline = _FakeVoicePipeline()
+    app = SimpleNamespace(
+        config=SimpleNamespace(voice=SimpleNamespace(pause_during_tts=True)),
+        voice_pipeline=voice_pipeline,
+    )
+
+    main_mod.App._on_tts_finished(app)
+
+    assert voice_pipeline.resume_calls == 1
+
+
+def test_tts_handlers_leave_voice_pipeline_running_when_pause_disabled():
+    voice_pipeline = _FakeVoicePipeline()
+    app = SimpleNamespace(
+        config=SimpleNamespace(voice=SimpleNamespace(pause_during_tts=False)),
+        voice_pipeline=voice_pipeline,
+    )
+
+    main_mod.App._on_tts_started(app)
+    main_mod.App._on_tts_finished(app)
+
+    assert voice_pipeline.pause_calls == 0
+    assert voice_pipeline.resume_calls == 0
+
+
 @pytest.mark.asyncio
 async def test_periodic_auto_talk_waits_until_follow_up_finishes():
     app = _make_conversation_app()
