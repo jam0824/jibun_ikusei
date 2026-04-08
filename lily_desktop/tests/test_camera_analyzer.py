@@ -165,6 +165,52 @@ async def test_camera_analysis_uses_single_fixed_token_budget():
 
 
 @pytest.mark.asyncio
+async def test_camera_analysis_prompt_prioritizes_people_activity_before_room_context():
+    fake_client = _FakeAsyncClient(
+        [
+            _FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": json.dumps(
+                                    {
+                                        "summary": "人物が机に向かって作業している",
+                                        "tags": ["人物", "作業"],
+                                        "scene_type": "people",
+                                        "detail": "人物が机に向かい、部屋の中は整っている",
+                                    }
+                                )
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {},
+                }
+            )
+        ]
+    )
+
+    with patch("ai.camera_analyzer.httpx.AsyncClient", return_value=fake_client):
+        await analyze_camera_frame(
+            api_key="test",
+            model="test-model",
+            frame_png=_make_test_png(),
+        )
+
+    request = fake_client.calls[0]
+    system_prompt = request["messages"][0]["content"]
+    user_prompt = request["messages"][1]["content"][0]["text"]
+
+    assert "まず人が何をしているかを把握し" in system_prompt
+    assert "部屋や周囲の様子を補足する" in system_prompt
+    assert "人物が写っている場合は、行動・姿勢・向き・手元の作業" in system_prompt
+    assert "人物がいない場合は、そのことを明示" in system_prompt
+    assert "人物は必要なときだけ触れる" not in system_prompt
+    assert "まず人が何をしているか、次に部屋や周囲の様子" in user_prompt
+
+
+@pytest.mark.asyncio
 async def test_truncated_response_raises_without_retry():
     fake_client = _FakeAsyncClient(
         [
