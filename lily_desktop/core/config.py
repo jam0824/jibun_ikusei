@@ -14,6 +14,7 @@ SYS_DIR = _BASE_DIR / "sys"
 DEFAULT_USER_BALLOON_DISPLAY_SECONDS = 8.0
 DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES = 15
 DEFAULT_HTTP_BRIDGE_PORT = 18765
+DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 
 
 def _load_dotenv(path: Path | None = None) -> dict[str, str]:
@@ -67,12 +68,42 @@ def normalize_http_bridge_port(value: object) -> int:
     return port
 
 
+def normalize_ai_provider(value: object) -> str:
+    """Normalize AI provider names while keeping older configs on OpenAI."""
+    if not isinstance(value, str):
+        return "openai"
+    provider = value.strip().lower()
+    if provider in {"openai", "ollama"}:
+        return provider
+    return "openai"
+
+
+def normalize_ai_base_url(value: object) -> str:
+    """Normalize local AI base URLs to scheme://host[:port]."""
+    if not isinstance(value, str):
+        return DEFAULT_OLLAMA_BASE_URL
+    raw = value.strip()
+    if not raw:
+        return DEFAULT_OLLAMA_BASE_URL
+    parts = urlsplit(raw)
+    if parts.scheme and parts.netloc:
+        return f"{parts.scheme}://{parts.netloc}"
+    return raw.rstrip("/")
+
+
 @dataclass
 class OpenAIConfig:
     api_key: str = ""
     chat_model: str = "gpt-5.4"
     image_model: str = "gpt-image-1.5"
     screen_analysis_model: str = "gpt-5.4"
+
+
+@dataclass
+class DesktopConfig:
+    analysis_provider: str = "openai"
+    analysis_base_url: str = DEFAULT_OLLAMA_BASE_URL
+    analysis_model: str = "gpt-5.4"
 
 
 @dataclass
@@ -149,6 +180,23 @@ class CameraConfig:
 
 
 @dataclass
+class LegacyCameraConfig:
+    enabled: bool = False
+    device_name: str = ""
+    interval_seconds: int = 180
+    analysis_provider: str = "openai"
+    analysis_base_url: str = DEFAULT_OLLAMA_BASE_URL
+    analysis_model: str = "gpt-5.4"
+    summary_provider: str = "openai"
+    summary_base_url: str = DEFAULT_OLLAMA_BASE_URL
+    summary_model: str = "gpt-5.4"
+    summary_interval_seconds: int = 1800
+
+
+CameraConfig = LegacyCameraConfig
+
+
+@dataclass
 class DisplayConfig:
     lily_scale: float = 0.3
     haruka_scale: float = 0.7
@@ -186,6 +234,7 @@ class HttpBridgeConfig:
 @dataclass
 class AppConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
+    desktop: DesktopConfig = field(default_factory=DesktopConfig)
     cognito: CognitoConfig = field(default_factory=CognitoConfig)
     annict: AnnictConfig = field(default_factory=AnnictConfig)
     rakuten: RakutenConfig = field(default_factory=RakutenConfig)
@@ -206,6 +255,12 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
     if path.exists():
         with open(path, encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
+
+    openai_raw = raw.get("openai", {}) or {}
+    if not isinstance(openai_raw, dict):
+        openai_raw = {}
+    else:
+        openai_raw = dict(openai_raw)
 
     display_raw = raw.get("display", {}) or {}
     if not isinstance(display_raw, dict):
@@ -234,16 +289,50 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
     http_bridge_raw["port"] = normalize_http_bridge_port(
         http_bridge_raw.get("port", DEFAULT_HTTP_BRIDGE_PORT)
     )
+    camera_raw = raw.get("camera", {}) or {}
+    if not isinstance(camera_raw, dict):
+        camera_raw = {}
+    else:
+        camera_raw = dict(camera_raw)
+    camera_raw["analysis_provider"] = normalize_ai_provider(
+        camera_raw.get("analysis_provider", "openai")
+    )
+    camera_raw["analysis_base_url"] = normalize_ai_base_url(
+        camera_raw.get("analysis_base_url", DEFAULT_OLLAMA_BASE_URL)
+    )
+    camera_raw["summary_provider"] = normalize_ai_provider(
+        camera_raw.get("summary_provider", "openai")
+    )
+    camera_raw["summary_base_url"] = normalize_ai_base_url(
+        camera_raw.get("summary_base_url", DEFAULT_OLLAMA_BASE_URL)
+    )
+    desktop_raw = raw.get("desktop", {}) or {}
+    if not isinstance(desktop_raw, dict):
+        desktop_raw = {}
+    else:
+        desktop_raw = dict(desktop_raw)
+    desktop_raw["analysis_provider"] = normalize_ai_provider(
+        desktop_raw.get("analysis_provider", "openai")
+    )
+    desktop_raw["analysis_base_url"] = normalize_ai_base_url(
+        desktop_raw.get("analysis_base_url", DEFAULT_OLLAMA_BASE_URL)
+    )
+    desktop_model = desktop_raw.get("analysis_model") or openai_raw.get(
+        "screen_analysis_model",
+        OpenAIConfig().screen_analysis_model,
+    )
+    desktop_raw["analysis_model"] = str(desktop_model)
 
     config = AppConfig(
-        openai=OpenAIConfig(**raw.get("openai", {})),
+        openai=OpenAIConfig(**openai_raw),
+        desktop=DesktopConfig(**desktop_raw),
         cognito=CognitoConfig(**raw.get("cognito", {})),
         annict=AnnictConfig(**raw.get("annict", {})),
         rakuten=RakutenConfig(**raw.get("rakuten", {})),
         chat=ChatConfig(**raw.get("chat", {})),
         voice=VoiceConfig(**{k: v for k, v in raw.get("voice", {}).items() if k != "google_api_key"}),
         tts=TTSConfig(**{k: v for k, v in raw.get("tts", {}).items() if k != "gemini_api_key"}),
-        camera=CameraConfig(**raw.get("camera", {})),
+        camera=CameraConfig(**camera_raw),
         display=DisplayConfig(**display_raw),
         talk_seeds=TalkSeedsConfig(**raw.get("talk_seeds", {})),
         healthplanet=HealthPlanetConfig(**healthplanet_raw),

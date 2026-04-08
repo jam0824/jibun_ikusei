@@ -234,3 +234,70 @@ def test_rakuten_config_reads_credentials_from_env(tmp_path, monkeypatch):
     assert config.rakuten.application_id == "app-123"
     assert config.rakuten.access_key == "access-456"
     assert config.rakuten.origin == "https://jam0824.github.io"
+
+
+def test_camera_provider_defaults_to_openai_with_local_ollama_base_urls(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.camera.analysis_provider == "openai"
+    assert config.camera.analysis_base_url == "http://127.0.0.1:11434"
+    assert config.camera.summary_provider == "openai"
+    assert config.camera.summary_base_url == "http://127.0.0.1:11434"
+
+
+def test_camera_provider_settings_are_loaded_from_config(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "camera:\n"
+        "  analysis_provider: ollama\n"
+        "  analysis_base_url: http://localhost:11434/\n"
+        "  analysis_model: gemma4:e4b\n"
+        "  summary_provider: ollama\n"
+        "  summary_base_url: http://127.0.0.1:11434\n"
+        "  summary_model: gemma4:e4b\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.camera.analysis_provider == "ollama"
+    assert config.camera.analysis_base_url == "http://localhost:11434"
+    assert config.camera.analysis_model == "gemma4:e4b"
+    assert config.camera.summary_provider == "ollama"
+    assert config.camera.summary_base_url == "http://127.0.0.1:11434"
+    assert config.camera.summary_model == "gemma4:e4b"
+
+
+def test_desktop_provider_settings_are_loaded_from_config(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "desktop:\n"
+        "  analysis_provider: ollama\n"
+        "  analysis_base_url: http://localhost:11434/\n"
+        "  analysis_model: gemma4:e4b\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.desktop.analysis_provider == "ollama"
+    assert config.desktop.analysis_base_url == "http://localhost:11434"
+    assert config.desktop.analysis_model == "gemma4:e4b"
+
+
+def test_desktop_provider_defaults_to_legacy_openai_screen_model(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "openai:\n"
+        "  screen_analysis_model: gpt-5.4-mini\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.desktop.analysis_provider == "openai"
+    assert config.desktop.analysis_base_url == "http://127.0.0.1:11434"
+    assert config.desktop.analysis_model == "gpt-5.4-mini"

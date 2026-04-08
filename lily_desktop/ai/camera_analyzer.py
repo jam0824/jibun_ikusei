@@ -1,8 +1,7 @@
-"""Camera image analysis via OpenAI vision."""
+"""Camera image analysis via OpenAI or Ollama vision."""
 
 from __future__ import annotations
 
-import base64
 import json
 import logging
 from dataclasses import dataclass, field
@@ -13,6 +12,13 @@ import cv2
 import httpx
 import numpy as np
 
+from ai.provider_chat import (
+    build_vision_chat_request,
+    extract_chat_finish_reason,
+    extract_chat_response_text,
+    normalize_provider,
+)
+
 logger = logging.getLogger(__name__)
 
 JST = timezone(timedelta(hours=9))
@@ -21,28 +27,28 @@ _HTTP_TIMEOUT_SECONDS = 45.0
 _MAX_COMPLETION_TOKENS = 900
 
 _SYSTEM_PROMPT = """\
-あなたはカメラ画像を分析するアシスタントです。
-カメラ画像の情報から、人がどこで何をしているか、また周囲の状況を分析してください。
+あなたはカメラ画像を見て、まず人が何をしているかを把握し、次に部屋や周囲の様子を補足するアシスタントです。
+人物が写っている場合は、行動・姿勢・向き・手元の作業など、画像から確実に分かる内容を優先して説明してください。
+人物がいない場合は、そのことを明示したうえで、部屋や周囲の様子を説明してください。
 
-以下の JSON 形式だけで返してください。説明文は不要です。
+必ず次の JSON 形式だけで返してください。
 {
-  "summary": "状況の要約。日本語で0〜80文字",
-  "tags": ["特徴タグ1", "特徴タグ2"],
+  "summary": "人の行動を優先した50文字以内の要約",
+  "tags": ["行動タグ1", "場所タグ1"],
   "scene_type": "outdoor | indoor | weather | people | animal | quiet | other",
-  "detail": "もう少し詳しい説明。日本語で0〜150文字"
+  "detail": "まず人物の様子、次に部屋や周囲の様子を書く150文字以内の補足"
 }
 
-分析の方針:
-- 嘘や決めつけは避ける
-- 曖昧なら曖昧とする
-- 見えていない情報は推測しすぎない
-- 人物は特定しない
-- 健康や感情は断定しない
-- 音は聞こえない
-
-要点:
-- 状況を簡潔明瞭に分析すること
+ルール:
+- 人物がいるときは summary の中心を人物の行動にする
+- 部屋の様子は補足として扱う
+- 推測しすぎず、画像から分かることを優先する
+- 年齢・職業・関係性などの属性推定はしない
+- 音は写っていないので推測しない
+- 最後まで JSON だけを返す
 """
+
+_USER_PROMPT = "このカメラ画像について、まず人が何をしているか、次に部屋や周囲の様子を日本語で簡潔に分析してください。"
 
 
 @dataclass
@@ -59,46 +65,43 @@ class CameraAnalysis:
 async def analyze_camera_frame(
     *,
     api_key: str,
+    provider: str = "openai",
+    base_url: str = "",
     model: str,
     frame_png: bytes,
 ) -> CameraAnalysis:
     """Analyze one camera frame and return a structured summary."""
 
-    resized_png = _resize_frame_png(frame_png, max_long_edge=_MAX_IMAGE_LONG_EDGE)
-    b64_image = base64.b64encode(resized_png).decode("ascii")
+    normalized_provider = normalize_provider(provider)
 
-    user_content: list[dict[str, Any]] = [
-        {
-            "type": "text",
-            "text": "このカメラ画像から、周囲の状況や人の行動を日本語で分析してください。",
-        },
-        {
-            "type": "image_url",
-            "image_url": {
-                "url": f"data:image/png;base64,{b64_image}",
-                "detail": "low",
-            },
-        },
-    ]
-
-    # Use a single bounded request to avoid stacking billed retries.
     payload = await _post_camera_analysis(
         api_key=api_key,
+        provider=normalized_provider,
+        base_url=base_url,
         model=model,
-        user_content=user_content,
+        image_pngs=[frame_png],
         max_completion_tokens=_MAX_COMPLETION_TOKENS,
     )
 
     usage = payload.get("usage", {})
-    logger.info("カメラ分析API usage: %s", usage)
+    if normalized_provider == "ollama":
+        usage = {
+            "prompt_eval_count": payload.get("prompt_eval_count"),
+            "eval_count": payload.get("eval_count"),
+        }
+    logger.info("Camera analysis API usage: %s", usage)
 
-    choice = payload.get("choices", [{}])[0]
-    message = choice.get("message", {})
-    content = _normalize_chat_content(message.get("content"))
-    finish_reason = choice.get("finish_reason", "unknown")
-    reasoning = _normalize_chat_content(message.get("reasoning_content"))
+    content = extract_chat_response_text(normalized_provider, payload)
+    finish_reason = extract_chat_finish_reason(normalized_provider, payload)
+    reasoning = ""
+    if normalized_provider == "openai":
+        choice = payload.get("choices", [{}])[0]
+        message = choice.get("message", {})
+        reasoning = _normalize_chat_content(message.get("reasoning_content"))
+
     logger.info(
-        "カメラ分析API応答: finish_reason=%s content_length=%d reasoning_length=%d max_completion_tokens=%d content=%s",
+        "Camera analysis finished: provider=%s finish_reason=%s content_length=%d reasoning_length=%d max_completion_tokens=%d content=%s",
+        normalized_provider,
         finish_reason,
         len(content),
         len(reasoning),
@@ -118,27 +121,28 @@ async def analyze_camera_frame(
 async def _post_camera_analysis(
     *,
     api_key: str,
+    provider: str,
+    base_url: str,
     model: str,
-    user_content: list[dict[str, Any]],
+    image_pngs: list[bytes],
     max_completion_tokens: int,
 ) -> dict[str, Any]:
-    body = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        "max_completion_tokens": max_completion_tokens,
-    }
+    request = build_vision_chat_request(
+        provider=provider,
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        system_prompt=_SYSTEM_PROMPT,
+        user_text=_USER_PROMPT,
+        image_pngs=image_pngs,
+        max_completion_tokens=max_completion_tokens,
+    )
 
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
         resp = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
-            json=body,
+            request.url,
+            headers=request.headers,
+            json=request.body,
         )
 
     if not resp.is_success:
@@ -217,7 +221,7 @@ def _parse_analysis(raw: str) -> CameraAnalysis:
             timestamp=now,
         )
     except json.JSONDecodeError:
-        logger.warning("カメラ分析結果のパースに失敗: %s", raw[:200])
+        logger.warning("Camera analysis JSON parse failed: %s", raw[:200])
         return CameraAnalysis(
             summary=raw[:50] if raw else "分析失敗",
             timestamp=now,

@@ -23,6 +23,8 @@ class DesktopContext:
 async def fetch_desktop_context(
     *,
     api_key: str,
+    provider: str = "openai",
+    base_url: str = "",
     model: str,
 ) -> DesktopContext:
     """デスクトップの現在の状況を取得・解析する。
@@ -63,6 +65,8 @@ async def fetch_desktop_context(
     try:
         ctx.analysis = await analyze_screenshot(
             api_key=api_key,
+            provider=provider,
+            base_url=base_url,
             model=model,
             screenshot_png=screenshot,
             window_context=window_context,
