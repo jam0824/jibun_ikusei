@@ -74,7 +74,7 @@ class App:
         self.api_client = ApiClient(self.auth)
         self.session_mgr = SessionManager(self.api_client)
         self.pose_mgr = PoseManager()
-        self.tool_executor = ToolExecutor(self.api_client)
+        self.tool_executor = ToolExecutor(self.api_client, config=self.config)
         self.chat_engine = ChatEngine(
             self.config, self.api_client, self.session_mgr
         )

@@ -14,7 +14,9 @@ from typing import Any, Callable
 import httpx
 
 from api.api_client import ApiClient
+from core.config import AppConfig
 from core.skill_resolution import resolve_skill_for_completion
+from core.skill_resolution import resolve_skill_for_completion_with_ai
 from health.healthplanet_client import query_health_data
 
 logger = logging.getLogger(__name__)
@@ -269,12 +271,15 @@ class ToolExecutor:
     def __init__(
         self,
         api: ApiClient,
+        config: AppConfig | None = None,
         context_provider: RuntimeContextProvider | None = None,
         context_invalidator: Callable[[], None] | None = None,
     ):
         self._api = api
+        self._config = config
         self._context_provider = context_provider
         self._context_invalidator = context_invalidator
+        self._background_tasks: set[asyncio.Task[Any]] = set()
 
     def set_context_provider(self, provider: RuntimeContextProvider | None) -> None:
         self._context_provider = provider
@@ -285,6 +290,23 @@ class ToolExecutor:
     def _invalidate_context_cache(self) -> None:
         if callable(self._context_invalidator):
             self._context_invalidator()
+
+    def _can_use_openai_skill_resolution(self, quest: dict[str, Any]) -> bool:
+        return bool(
+            self._config
+            and self._config.openai.api_key
+            and quest.get("privacyMode") != "no_ai"
+        )
+
+    def _start_background_task(self, coroutine: Any) -> None:
+        task = asyncio.create_task(coroutine)
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def wait_for_background_tasks(self) -> None:
+        if not self._background_tasks:
+            return
+        await asyncio.gather(*list(self._background_tasks))
 
     def _get_runtime_context(self) -> dict[str, Any]:
         if self._context_provider is None:
@@ -1043,7 +1065,7 @@ class ToolExecutor:
     async def _complete_quest(self, args: dict[str, Any]) -> str:
         query = args.get("query")
         if not query:
-            return "クエストを特定するための検索クエリを指定してください。"
+            return "クエストを特定するために、対象クエリを指定してください。"
 
         quests = await self._api.get_quests()
         active_quests = [quest for quest in quests if quest.get("status") == "active"]
@@ -1060,51 +1082,79 @@ class ToolExecutor:
 
         if not best or best_score < 0.2:
             names = "、".join(f"「{quest.get('title', '')}」" for quest in active_quests[:10])
-            return f"「{query}」に該当するアクティブなクエストが見つかりません。\n現在のアクティブクエスト: {names or 'なし'}"
+            return (
+                f"「{query}」に該当するアクティブなクエストが見つかりません。"
+                f"\n現在のアクティブクエスト: {names or 'なし'}"
+            )
 
         quest_id = best["id"]
         quest_title = best.get("title", "")
         xp_reward = best.get("xpReward", 10)
         quest_type = best.get("questType", "repeatable")
+        note = args.get("note")
         now = datetime.now(JST).isoformat()
 
-        resolution = None
         try:
             skills, dictionary = await asyncio.gather(
                 self._api.get_skills(),
                 self._api.get_dictionary(),
             )
-            resolution = await resolve_skill_for_completion(
-                best,
-                args.get("note"),
-                skills,
-                dictionary,
-                self._api,
-            )
         except Exception:
-            logger.warning("スキル解決に失敗、pendingで続行", exc_info=True)
+            logger.warning("skill resolution prerequisites failed", exc_info=True)
+            skills, dictionary = [], []
+
+        should_defer_ai_resolution = self._can_use_openai_skill_resolution(best) and not (
+            best.get("skillMappingMode") == "fixed"
+            or (best.get("skillMappingMode") == "ai_auto" and best.get("defaultSkillId"))
+        )
+
+        resolution: dict[str, Any] | None = None
+        if not should_defer_ai_resolution:
+            try:
+                resolution = await resolve_skill_for_completion(
+                    best,
+                    note,
+                    skills,
+                    dictionary,
+                    self._api,
+                )
+            except Exception:
+                logger.warning("skill resolution failed", exc_info=True)
+                resolution = {
+                    "resolved_skill_id": None,
+                    "skill_xp_awarded": 0,
+                    "skill_name": "",
+                    "status": "unclassified",
+                    "reason": "スキル解決に失敗しました。",
+                    "candidate_skill_ids": [],
+                }
 
         completion: dict[str, Any] = {
             "id": f"completion_{uuid.uuid4().hex[:12]}",
             "questId": quest_id,
             "clientRequestId": f"req_{uuid.uuid4().hex[:12]}",
             "completedAt": now,
-            "note": args.get("note"),
+            "note": note,
             "userXpAwarded": xp_reward,
             "createdAt": now,
         }
 
         skill_msg = ""
-        if resolution and resolution.get("resolved_skill_id"):
+        if should_defer_ai_resolution:
+            completion["skillResolutionStatus"] = "pending"
+        elif resolution and resolution.get("resolved_skill_id"):
             completion["resolvedSkillId"] = resolution["resolved_skill_id"]
             completion["skillXpAwarded"] = resolution["skill_xp_awarded"]
             completion["skillResolutionStatus"] = "resolved"
             completion["resolutionReason"] = resolution.get("reason", "")
+            completion["candidateSkillIds"] = []
             skill_msg = f" [スキル: {resolution.get('skill_name', '')}]"
         else:
             completion["skillResolutionStatus"] = (
-                resolution.get("status", "pending") if resolution else "pending"
+                resolution.get("status", "unclassified") if resolution else "unclassified"
             )
+            completion["resolutionReason"] = resolution.get("reason", "") if resolution else ""
+            completion["candidateSkillIds"] = resolution.get("candidate_skill_ids", []) if resolution else []
 
         await self._api.post_completion(completion)
         self._invalidate_context_cache()
@@ -1116,9 +1166,11 @@ class ToolExecutor:
         )
         quest_updates: dict[str, Any] | None = None
         if quest_type == "one_time" or should_persist_default_skill:
-            quest_updates = {**best, "updatedAt": now}
+            quest_updates = {"updatedAt": now}
             if quest_type == "one_time":
                 quest_updates["status"] = "completed"
+            elif should_persist_default_skill:
+                quest_updates["status"] = best.get("status", "active")
             if should_persist_default_skill:
                 quest_updates["defaultSkillId"] = resolution["resolved_skill_id"]
 
@@ -1129,9 +1181,115 @@ class ToolExecutor:
                 try:
                     await self._api.put_quest(quest_id, quest_updates)
                 except Exception:
-                    logger.warning("defaultSkillId の保存に失敗", exc_info=True)
+                    logger.warning("defaultSkillId update failed", exc_info=True)
+
+        if should_defer_ai_resolution:
+            self._start_background_task(
+                self._resolve_completion_skill_in_background(
+                    completion["id"],
+                    quest_id,
+                    note,
+                )
+            )
 
         return f"クエスト「{quest_title}」をクリアしました！ +{xp_reward} XP{skill_msg}"
+
+    async def _resolve_completion_skill_in_background(
+        self,
+        completion_id: str,
+        quest_id: str,
+        note: str | None,
+    ) -> None:
+        if not self._config or not self._config.openai.api_key:
+            return
+
+        try:
+            quests, completions, skills, dictionary = await asyncio.gather(
+                self._api.get_quests(),
+                self._api.get_completions(),
+                self._api.get_skills(),
+                self._api.get_dictionary(),
+            )
+        except Exception:
+            logger.warning("background skill resolution prerequisites failed", exc_info=True)
+            return
+
+        quest = next((entry for entry in quests if entry.get("id") == quest_id), None)
+        completion = next((entry for entry in completions if entry.get("id") == completion_id), None)
+        if not quest or not completion or completion.get("undoneAt") or completion.get("resolvedSkillId"):
+            return
+
+        try:
+            resolution = await resolve_skill_for_completion_with_ai(
+                quest,
+                note,
+                skills,
+                dictionary,
+                self._api,
+                api_key=self._config.openai.api_key,
+                model=self._config.openai.chat_model,
+            )
+        except Exception:
+            logger.warning("background AI skill resolution failed, falling back locally", exc_info=True)
+            try:
+                resolution = await resolve_skill_for_completion(
+                    quest,
+                    note,
+                    skills,
+                    dictionary,
+                    self._api,
+                )
+            except Exception:
+                logger.warning("background local skill resolution fallback failed", exc_info=True)
+                return
+
+        try:
+            latest_completions = await self._api.get_completions()
+            latest_quests = await self._api.get_quests()
+        except Exception:
+            logger.warning("background skill resolution refresh failed", exc_info=True)
+            return
+
+        latest_completion = next((entry for entry in latest_completions if entry.get("id") == completion_id), None)
+        latest_quest = next((entry for entry in latest_quests if entry.get("id") == quest_id), None)
+        if not latest_completion or not latest_quest:
+            return
+        if latest_completion.get("undoneAt") or latest_completion.get("resolvedSkillId"):
+            return
+
+        completion_updates: dict[str, Any] = {
+            "skillResolutionStatus": resolution.get("status", "unclassified"),
+            "resolutionReason": resolution.get("reason", ""),
+            "candidateSkillIds": resolution.get("candidate_skill_ids", []),
+        }
+        if resolution.get("status") == "resolved" and resolution.get("resolved_skill_id"):
+            completion_updates["resolvedSkillId"] = resolution["resolved_skill_id"]
+            completion_updates["skillXpAwarded"] = resolution.get("skill_xp_awarded", 0)
+
+        try:
+            await self._api.put_completion(completion_id, completion_updates)
+        except Exception:
+            logger.warning("background completion update failed", exc_info=True)
+            return
+
+        if (
+            resolution.get("status") == "resolved"
+            and resolution.get("resolved_skill_id")
+            and latest_quest.get("skillMappingMode") != "ask_each_time"
+        ):
+            try:
+                await self._api.put_quest(
+                    quest_id,
+                    {
+                        "status": latest_quest.get("status", "active"),
+                        "defaultSkillId": resolution["resolved_skill_id"],
+                        "updatedAt": datetime.now(JST).isoformat(),
+                    },
+                )
+            except Exception:
+                logger.warning("background defaultSkillId update failed", exc_info=True)
+
+        self._invalidate_context_cache()
 
     async def _create_quest(self, args: dict[str, Any]) -> str:
         title = args.get("title")

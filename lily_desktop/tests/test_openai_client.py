@@ -8,7 +8,12 @@ from unittest.mock import patch
 
 import pytest
 
-from ai.openai_client import TextResult, ToolCallsResult, send_chat_message
+from ai.openai_client import (
+    TextResult,
+    ToolCallsResult,
+    request_openai_json,
+    send_chat_message,
+)
 
 
 class _FakeResponse:
@@ -225,3 +230,29 @@ async def test_empty_response_raises_when_text_and_tool_calls_are_missing():
                 model="test-model",
                 messages=[{"role": "user", "content": "hello"}],
             )
+
+
+@pytest.mark.asyncio
+async def test_request_openai_json_serializes_input_payload():
+    fake_client = _FakeAsyncClient(
+        [
+            _FakeResponse(
+                {
+                    "status": "completed",
+                    "output_text": '{"action":"unclassified","skillName":"未分類","category":"健康","confidence":0.4,"reason":"fallback","candidateSkills":["食事管理"]}',
+                }
+            )
+        ]
+    )
+
+    with patch("ai.openai_client.httpx.AsyncClient", return_value=fake_client):
+        result = await request_openai_json(
+            api_key="test",
+            model="test-model",
+            schema_name="skill_resolution",
+            schema={"type": "object"},
+            input_payload={"quest": {"title": "食後のかかと上げ"}},
+        )
+
+    assert result["action"] == "unclassified"
+    assert fake_client.calls[0]["input"][1]["content"][0]["text"] == '{"quest": {"title": "食後のかかと上げ"}}'
