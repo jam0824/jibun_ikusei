@@ -1,4 +1,4 @@
-"""Shared camera/desktop capture coordination for situation features."""
+"""Shared camera and desktop capture coordination for situation features."""
 
 from __future__ import annotations
 
@@ -12,9 +12,9 @@ from core.desktop_context import DesktopContext, fetch_desktop_context
 
 logger = logging.getLogger(__name__)
 
-_SITUATION_CAPTURE_SKIP_REASON = "状況取得はすでに実行中です"
-_CAMERA_CAPTURE_SKIP_REASON = "カメラ状況取得はすでに実行中です"
-_DESKTOP_CAPTURE_SKIP_REASON = "デスクトップ状況取得はすでに実行中です"
+_SITUATION_CAPTURE_SKIP_REASON = "Situation capture is already running."
+_CAMERA_CAPTURE_SKIP_REASON = "Camera capture is already running."
+_DESKTOP_CAPTURE_SKIP_REASON = "Desktop capture is already running."
 
 
 @dataclass
@@ -55,6 +55,8 @@ class SituationCaptureCoordinator:
         camera_model: str,
         screen_model: str,
         camera_device_index: int,
+        camera_provider: str = "openai",
+        camera_base_url: str = "",
     ) -> SituationCaptureResult:
         """Capture camera and desktop together for situation logging."""
 
@@ -74,6 +76,8 @@ class SituationCaptureCoordinator:
         try:
             camera = await self._capture_camera_locked(
                 api_key=api_key,
+                provider=camera_provider,
+                base_url=camera_base_url,
                 model=camera_model,
                 device_index=camera_device_index,
             )
@@ -92,6 +96,8 @@ class SituationCaptureCoordinator:
         api_key: str,
         model: str,
         device_index: int,
+        provider: str = "openai",
+        base_url: str = "",
     ) -> CameraCaptureAttempt:
         """Capture camera analysis only, skipping if another camera capture is active."""
 
@@ -105,6 +111,8 @@ class SituationCaptureCoordinator:
         try:
             return await self._capture_camera_locked(
                 api_key=api_key,
+                provider=provider,
+                base_url=base_url,
                 model=model,
                 device_index=device_index,
             )
@@ -135,22 +143,26 @@ class SituationCaptureCoordinator:
         self,
         *,
         api_key: str,
+        provider: str,
+        base_url: str,
         model: str,
         device_index: int,
     ) -> CameraCaptureAttempt:
         try:
             frame_png = capture_camera_frame(device_index)
             if frame_png is None:
-                return CameraCaptureAttempt(error="カメラフレームを取得できませんでした")
+                return CameraCaptureAttempt(error="Failed to capture a camera frame.")
 
             analysis = await analyze_camera_frame(
                 api_key=api_key,
+                provider=provider,
+                base_url=base_url,
                 model=model,
                 frame_png=frame_png,
             )
             return CameraCaptureAttempt(analysis=analysis)
         except Exception as exc:
-            logger.exception("カメラ状況取得に失敗")
+            logger.exception("Camera capture failed")
             return CameraCaptureAttempt(error=str(exc))
 
     async def _capture_desktop_locked(
@@ -163,5 +175,5 @@ class SituationCaptureCoordinator:
             ctx = await fetch_desktop_context(api_key=api_key, model=model)
             return DesktopCaptureAttempt(context=ctx)
         except Exception as exc:
-            logger.exception("デスクトップ状況取得に失敗")
+            logger.exception("Desktop capture failed")
             return DesktopCaptureAttempt(error=str(exc))

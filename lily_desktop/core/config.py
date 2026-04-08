@@ -14,6 +14,7 @@ SYS_DIR = _BASE_DIR / "sys"
 DEFAULT_USER_BALLOON_DISPLAY_SECONDS = 8.0
 DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES = 15
 DEFAULT_HTTP_BRIDGE_PORT = 18765
+DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 
 
 def _load_dotenv(path: Path | None = None) -> dict[str, str]:
@@ -65,6 +66,29 @@ def normalize_http_bridge_port(value: object) -> int:
     if port <= 0 or port > 65535:
         return DEFAULT_HTTP_BRIDGE_PORT
     return port
+
+
+def normalize_ai_provider(value: object) -> str:
+    """Normalize AI provider names while keeping older configs on OpenAI."""
+    if not isinstance(value, str):
+        return "openai"
+    provider = value.strip().lower()
+    if provider in {"openai", "ollama"}:
+        return provider
+    return "openai"
+
+
+def normalize_ai_base_url(value: object) -> str:
+    """Normalize local AI base URLs to scheme://host[:port]."""
+    if not isinstance(value, str):
+        return DEFAULT_OLLAMA_BASE_URL
+    raw = value.strip()
+    if not raw:
+        return DEFAULT_OLLAMA_BASE_URL
+    parts = urlsplit(raw)
+    if parts.scheme and parts.netloc:
+        return f"{parts.scheme}://{parts.netloc}"
+    return raw.rstrip("/")
 
 
 @dataclass
@@ -146,6 +170,23 @@ class CameraConfig:
     analysis_model: str = "gpt-5.4"  # カメラ画像分析AIモデル
     summary_model: str = "gpt-5.4"  # 30分要約AIモデル
     summary_interval_seconds: int = 1800  # サーバー要約間隔（秒）— デフォルト30分
+
+
+@dataclass
+class LegacyCameraConfig:
+    enabled: bool = False
+    device_name: str = ""
+    interval_seconds: int = 180
+    analysis_provider: str = "openai"
+    analysis_base_url: str = DEFAULT_OLLAMA_BASE_URL
+    analysis_model: str = "gpt-5.4"
+    summary_provider: str = "openai"
+    summary_base_url: str = DEFAULT_OLLAMA_BASE_URL
+    summary_model: str = "gpt-5.4"
+    summary_interval_seconds: int = 1800
+
+
+CameraConfig = LegacyCameraConfig
 
 
 @dataclass
@@ -234,6 +275,23 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
     http_bridge_raw["port"] = normalize_http_bridge_port(
         http_bridge_raw.get("port", DEFAULT_HTTP_BRIDGE_PORT)
     )
+    camera_raw = raw.get("camera", {}) or {}
+    if not isinstance(camera_raw, dict):
+        camera_raw = {}
+    else:
+        camera_raw = dict(camera_raw)
+    camera_raw["analysis_provider"] = normalize_ai_provider(
+        camera_raw.get("analysis_provider", "openai")
+    )
+    camera_raw["analysis_base_url"] = normalize_ai_base_url(
+        camera_raw.get("analysis_base_url", DEFAULT_OLLAMA_BASE_URL)
+    )
+    camera_raw["summary_provider"] = normalize_ai_provider(
+        camera_raw.get("summary_provider", "openai")
+    )
+    camera_raw["summary_base_url"] = normalize_ai_base_url(
+        camera_raw.get("summary_base_url", DEFAULT_OLLAMA_BASE_URL)
+    )
 
     config = AppConfig(
         openai=OpenAIConfig(**raw.get("openai", {})),
@@ -243,7 +301,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         chat=ChatConfig(**raw.get("chat", {})),
         voice=VoiceConfig(**{k: v for k, v in raw.get("voice", {}).items() if k != "google_api_key"}),
         tts=TTSConfig(**{k: v for k, v in raw.get("tts", {}).items() if k != "gemini_api_key"}),
-        camera=CameraConfig(**raw.get("camera", {})),
+        camera=CameraConfig(**camera_raw),
         display=DisplayConfig(**display_raw),
         talk_seeds=TalkSeedsConfig(**raw.get("talk_seeds", {})),
         healthplanet=HealthPlanetConfig(**healthplanet_raw),

@@ -119,6 +119,8 @@ class App:
         self._last_situation_capture_skip_reason = ""
         self.situation_logger = SituationLogger(
             openai_api_key=self.config.openai.api_key,
+            summary_provider=self.config.camera.summary_provider,
+            summary_base_url=self.config.camera.summary_base_url,
             summary_model=self.config.camera.summary_model,
         )
         self.http_bridge: LocalHttpBridge | None = None
@@ -535,6 +537,8 @@ class App:
 
         capture = await self.situation_capture.capture_for_record(
             api_key=self.config.openai.api_key,
+            camera_provider=self.config.camera.analysis_provider,
+            camera_base_url=self.config.camera.analysis_base_url,
             camera_model=self.config.camera.analysis_model,
             screen_model=self.config.openai.screen_analysis_model,
             camera_device_index=self._camera_device_index,

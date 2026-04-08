@@ -146,6 +146,8 @@ class AutoConversation:
             screen_analysis_model=config.openai.screen_analysis_model,
             annict_access_token=config.annict.access_token,
             camera_enabled=config.camera.enabled,
+            camera_analysis_provider=getattr(config.camera, "analysis_provider", "openai"),
+            camera_analysis_base_url=getattr(config.camera, "analysis_base_url", ""),
             camera_analysis_model=config.camera.analysis_model,
             interest_topics=config.talk_seeds.interest_topics,
             rakuten_application_id=getattr(rakuten_cfg, "application_id", ""),

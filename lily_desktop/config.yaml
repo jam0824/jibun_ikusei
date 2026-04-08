@@ -4,72 +4,76 @@ openai:
   screen_analysis_model: gpt-5.4
 chat:
   auto_talk_interval_minutes: 15
-  auto_talk_min_turns: 3        # 掛け合いの最小ターン数
-  auto_talk_max_turns: 5        # 掛け合いの最大ターン数
-  follow_up_min_extra: 1        # ユーザー発言後の追加往復 最小
-  follow_up_max_extra: 3        # ユーザー発言後の追加往復 最大
+  auto_talk_min_turns: 3
+  auto_talk_max_turns: 5
+  follow_up_min_extra: 1
+  follow_up_max_extra: 3
 display:
   lily_scale: 0.3
   haruka_scale: 0.65
-  user_balloon_display_seconds: 15.0  # 手入力/音声認識の表示秒数（再起動後に反映）
+  user_balloon_display_seconds: 15.0
   window_x: -1927
   window_y: 2515
 voice:
   enabled: true
-  pause_during_tts: false    # trueなら読み上げ中はマイクを一時停止、falseなら読み上げ中も音声で割り込み可能
+  pause_during_tts: false
   device_name: マイク (Yeti Nano)
   vad_aggressiveness: 3
-  vad_start_frames: 8      # 発話開始判定に必要な連続音声フレーム数（大きい=誤検知しにくい）
-  vad_end_frames: 30        # 発話終了判定の連続無音フレーム数（大きい=間を許容）
-  max_speech_seconds: 8      # 最大発話時間（秒）— これを超えると認識を打ち切る
-  volume_threshold_enabled: false  # RMS音量閾値判定を使うか（falseにすると全音量を通過させる）
-  volume_threshold: 500     # 音量閾値(RMS) — これ以下の音量は無視（スピーカー音除去用、volume_threshold_enabled: true の時のみ有効）
-  use_wake_words: false      # ウェイクワードを使うか（falseなら全音声に応答）
-  wake_words:                # この中のいずれかが含まれている時だけ応答する
+  vad_start_frames: 8
+  vad_end_frames: 30
+  max_speech_seconds: 8
+  volume_threshold_enabled: false
+  volume_threshold: 500
+  use_wake_words: false
+  wake_words:
     - リリィ
     - リリー
-  wake_word_aliases:         # リリィに変換する誤認識パターン
+  wake_word_aliases:
     - DD
     - D D
     - ギリー
     - 3 D
-  ignore_words:              # このワードが含まれていたら返答生成に送らない
+  ignore_words:
     - alexa
     - Alexa
     - アレクサ
     - アレックス
     - RX
     - rx
-  speaker_verification_enabled: true  # 話者照合を使うか（enroll_speaker.py でプロファイルを作成してから有効化）
-  speaker_profile_path: speaker_profile.pt  # 話者プロファイルのパス
-  speaker_verification_threshold: 0.36  # 照合閾値（コサイン類似度、0〜1）
+  speaker_verification_enabled: true
+  speaker_profile_path: speaker_profile.pt
+  speaker_verification_threshold: 0.36
 camera:
   enabled: true
   device_name: USB 2.0 Camera
-  interval_seconds: 300            # カメラキャプチャ間隔（秒）
-  analysis_model: gpt-5.4          # カメラ画像分析AI
-  summary_model: gpt-5.4           # 30分要約AI
-  summary_interval_seconds: 1800   # サーバー要約間隔（秒）
+  interval_seconds: 300
+  analysis_provider: ollama
+  analysis_base_url: http://127.0.0.1:11434
+  analysis_model: gemma4:e4b
+  summary_provider: ollama
+  summary_base_url: http://127.0.0.1:11434
+  summary_model: gemma4:e4b
+  summary_interval_seconds: 1800
 talk_seeds:
   interest_topics:
-    - 科学
+    - 哲学
     - オカルト
-    - 宇宙
+    - 神話
 tts:
   enabled: true
   voicevox_url: http://localhost:50021
-  lily_engine: voicevox              # voicevox or gemini
-  lily_speaker_id: 20              # VOICEVOX用
-  lily_gemini_voice: Zephyr        # Gemini TTS用
-  haruka_engine: voicevox            # voicevox or gemini
-  haruka_speaker_id: 3             # VOICEVOX用
-  haruka_gemini_voice: Achernar        # Gemini TTS用
+  lily_engine: voicevox
+  lily_speaker_id: 20
+  lily_gemini_voice: Zephyr
+  haruka_engine: voicevox
+  haruka_speaker_id: 3
+  haruka_gemini_voice: Achernar
   gemini_model: gemini-2.5-flash-preview-tts
 healthplanet:
-  sync_interval_minutes: 15  # 起動時に即時同期し、その後はこの分間隔で再同期
+  sync_interval_minutes: 15
 fitbit:
   enabled: true
-  config_file: fitbit_config.json  # lily_desktop/ 直下に配置（.gitignore 済み）
+  config_file: fitbit_config.json
 http_bridge:
   enabled: true
   port: 18765

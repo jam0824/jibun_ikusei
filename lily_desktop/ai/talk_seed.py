@@ -52,6 +52,8 @@ class TalkSeedManager:
         screen_analysis_model: str,
         annict_access_token: str = "",
         camera_enabled: bool = False,
+        camera_analysis_provider: str = "openai",
+        camera_analysis_base_url: str = "",
         camera_analysis_model: str = "gpt-5.4",
         camera_device_index: int = 0,
         interest_topics: list[str] | None = None,
@@ -65,6 +67,8 @@ class TalkSeedManager:
         self._screen_analysis_model = screen_analysis_model
         self._annict_access_token = annict_access_token
         self._camera_enabled = camera_enabled
+        self._camera_analysis_provider = camera_analysis_provider
+        self._camera_analysis_base_url = camera_analysis_base_url
         self._camera_analysis_model = camera_analysis_model
         self._camera_device_index = camera_device_index
         self._interest_topics: list[str] = interest_topics or []
@@ -341,6 +345,8 @@ class TalkSeedManager:
         try:
             attempt = await self._situation_capture.capture_camera(
                 api_key=self._openai_api_key,
+                provider=self._camera_analysis_provider,
+                base_url=self._camera_analysis_base_url,
                 model=self._camera_analysis_model,
                 device_index=self._camera_device_index,
             )
