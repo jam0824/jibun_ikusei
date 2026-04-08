@@ -16,6 +16,7 @@ display:
   window_y: 2515
 voice:
   enabled: true
+  pause_during_tts: false    # trueなら読み上げ中はマイクを一時停止、falseなら読み上げ中も音声で割り込み可能
   device_name: マイク (Yeti Nano)
   vad_aggressiveness: 3
   vad_start_frames: 8      # 発話開始判定に必要な連続音声フレーム数（大きい=誤検知しにくい）
@@ -37,6 +38,8 @@ voice:
     - Alexa
     - アレクサ
     - アレックス
+    - RX
+    - rx
   speaker_verification_enabled: true  # 話者照合を使うか（enroll_speaker.py でプロファイルを作成してから有効化）
   speaker_profile_path: speaker_profile.pt  # 話者プロファイルのパス
   speaker_verification_threshold: 0.36  # 照合閾値（コサイン類似度、0〜1）

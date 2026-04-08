@@ -183,6 +183,28 @@ def test_http_bridge_invalid_port_falls_back_to_default(tmp_path):
     assert config.http_bridge.port == DEFAULT_HTTP_BRIDGE_PORT
 
 
+def test_voice_pause_during_tts_defaults_to_true(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.voice.pause_during_tts is True
+
+
+def test_voice_pause_during_tts_uses_config_value(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "voice:\n"
+        "  pause_during_tts: false\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.voice.pause_during_tts is False
+
+
 def test_rakuten_config_defaults_when_missing(tmp_path, monkeypatch):
     config_path = tmp_path / "config.yaml"
     config_path.write_text("", encoding="utf-8")

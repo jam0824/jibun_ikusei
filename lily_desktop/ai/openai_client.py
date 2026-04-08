@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
 from typing import Any
 
@@ -12,6 +13,11 @@ from core.constants import MAX_HISTORY_MESSAGES
 
 _RETRYABLE = {408, 429, 500, 502, 503, 504}
 _MAX_COMPLETION_TOKENS = 900
+_DEFAULT_JSON_SYSTEM_PROMPT = (
+    "You are the structured-output engine for a self-growth app. "
+    "Return only valid JSON that strictly matches the provided schema. "
+    "Do not include markdown or extra commentary."
+)
 
 
 @dataclass
@@ -153,3 +159,145 @@ async def send_chat_message(
             return TextResult(content=content)
 
     raise last_error or Exception("OpenAI Chat request failed.")
+
+
+def _extract_openai_responses_text(payload: dict[str, Any]) -> str:
+    output_text = payload.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text
+
+    output = payload.get("output")
+    if not isinstance(output, list):
+        raise Exception("OpenAI response text was empty.")
+
+    refusal_text: str | None = None
+    for item in output:
+        if not isinstance(item, dict):
+            continue
+        content = item.get("content")
+        if not isinstance(content, list):
+            continue
+        for fragment in content:
+            if not isinstance(fragment, dict):
+                continue
+            text = fragment.get("text")
+            if isinstance(text, str) and text.strip():
+                return text
+            refusal = fragment.get("refusal")
+            if isinstance(refusal, str) and refusal.strip():
+                refusal_text = refusal
+
+    if refusal_text:
+        raise Exception(f"OpenAI refused the request: {refusal_text}")
+
+    status = payload.get("status")
+    if isinstance(status, str) and status != "completed":
+        raise Exception(f"OpenAI response did not complete successfully: {status}")
+
+    raise Exception("OpenAI response text was empty.")
+
+
+def _format_openai_error_detail(resp: httpx.Response) -> str:
+    text = resp.text[:500].strip()
+    if not text:
+        return ""
+
+    try:
+        payload = resp.json()
+    except Exception:
+        return text
+
+    if isinstance(payload, dict):
+        error = payload.get("error")
+        if isinstance(error, dict):
+            message = error.get("message")
+            err_type = error.get("type")
+            err_code = error.get("code")
+            if isinstance(message, str) and message:
+                extras = "/".join(str(value) for value in (err_type, err_code) if value)
+                return f"{message} ({extras})" if extras else message
+
+    return text
+
+
+async def request_openai_json(
+    *,
+    api_key: str,
+    model: str,
+    schema_name: str,
+    schema: dict[str, Any],
+    input_payload: dict[str, Any],
+    system_prompt: str = _DEFAULT_JSON_SYSTEM_PROMPT,
+    max_output_tokens: int = 300,
+) -> dict[str, Any]:
+    """Call the OpenAI Responses API and return parsed JSON text."""
+
+    last_error: Exception | None = None
+
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        body = {
+            "model": model,
+            "input": [
+                {
+                    "role": "system",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": system_prompt,
+                        },
+                    ],
+                },
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "input_text",
+                            "text": json.dumps(input_payload, ensure_ascii=False),
+                        },
+                    ],
+                },
+            ],
+            "text": {
+                "format": {
+                    "type": "json_schema",
+                    "name": schema_name,
+                    "schema": schema,
+                    "strict": True,
+                },
+            },
+            "max_output_tokens": max_output_tokens,
+        }
+
+        for attempt in range(1, 4):
+            try:
+                resp = await client.post(
+                    "https://api.openai.com/v1/responses",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}",
+                    },
+                    json=body,
+                )
+            except httpx.RequestError as exc:
+                last_error = exc
+                if attempt < 3:
+                    await asyncio.sleep(0.3 * attempt)
+                    continue
+                raise
+
+            if not resp.is_success:
+                detail = _format_openai_error_detail(resp)
+                last_error = Exception(
+                    f"OpenAI request failed: {resp.status_code}"
+                    f"{f' - {detail}' if detail else ''}"
+                )
+                if attempt < 3 and resp.status_code in _RETRYABLE:
+                    await asyncio.sleep(0.3 * attempt)
+                    continue
+                raise last_error
+
+            payload = resp.json()
+            raw_text = _extract_openai_responses_text(payload)
+            return json.loads(raw_text)
+
+    raise last_error or Exception("OpenAI request failed.")

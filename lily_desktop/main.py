@@ -74,7 +74,7 @@ class App:
         self.api_client = ApiClient(self.auth)
         self.session_mgr = SessionManager(self.api_client)
         self.pose_mgr = PoseManager()
-        self.tool_executor = ToolExecutor(self.api_client)
+        self.tool_executor = ToolExecutor(self.api_client, config=self.config)
         self.chat_engine = ChatEngine(
             self.config, self.api_client, self.session_mgr
         )
@@ -274,12 +274,20 @@ class App:
 
     def _on_tts_started(self) -> None:
         """TTS再生開始 → マイク一時停止"""
-        if self.voice_pipeline is not None and self.voice_pipeline.is_running:
+        if (
+            self.config.voice.pause_during_tts
+            and self.voice_pipeline is not None
+            and self.voice_pipeline.is_running
+        ):
             self.voice_pipeline.pause()
 
     def _on_tts_finished(self) -> None:
         """TTS再生終了 → マイク再開"""
-        if self.voice_pipeline is not None and self.voice_pipeline.is_running:
+        if (
+            self.config.voice.pause_during_tts
+            and self.voice_pipeline is not None
+            and self.voice_pipeline.is_running
+        ):
             self.voice_pipeline.resume()
 
     def _on_tts_toggle(self) -> None:

@@ -1,4 +1,4 @@
-import { QueryCommand, PutCommand, DeleteCommand } from "@aws-sdk/lib-dynamodb";
+import { QueryCommand, PutCommand, DeleteCommand, GetCommand } from "@aws-sdk/lib-dynamodb";
 import { db, TABLE_NAME, getUserId, response, parseBody } from "/opt/nodejs/utils.mjs";
 
 export const handler = async (event) => {
@@ -31,7 +31,17 @@ export const handler = async (event) => {
       const id = event.pathParameters.id;
       const updates = parseBody(event);
       const now = new Date().toISOString();
-      const item = { ...updates, id, updatedAt: now };
+      const existing = await db.send(new GetCommand({
+        TableName: TABLE_NAME,
+        Key: { PK: pk, SK: `QUEST#${id}` },
+      }));
+      const item = {
+        ...(existing.Item ?? {}),
+        ...updates,
+        id,
+        createdAt: existing.Item?.createdAt ?? updates.createdAt ?? now,
+        updatedAt: now,
+      };
       await db.send(new PutCommand({
         TableName: TABLE_NAME,
         Item: { PK: pk, SK: `QUEST#${id}`, ...item },

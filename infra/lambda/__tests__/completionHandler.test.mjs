@@ -24,12 +24,15 @@ describe('completionHandler', () => {
 
   describe('POST /completions', () => {
     it('creates completion and updates user XP', async () => {
-      // 1st call: GetCommand for USER#profile
-      mockSend.mockResolvedValueOnce({
-        Item: { PK: 'user#test', SK: 'USER#profile', totalXp: 50, level: 1, createdAt: '2024-01-01' },
-      })
-      // 2nd call: TransactWriteCommand
-      mockSend.mockResolvedValueOnce({})
+      mockSend
+        .mockResolvedValueOnce({ Item: undefined })
+        .mockResolvedValueOnce({
+          Item: { PK: 'user#test', SK: 'QUEST#q1', id: 'q1', title: 'Quest 1', status: 'active' },
+        })
+        .mockResolvedValueOnce({
+          Item: { PK: 'user#test', SK: 'USER#profile', totalXp: 50, level: 1, createdAt: '2024-01-01' },
+        })
+        .mockResolvedValueOnce({})
 
       const body = { id: 'c1', questId: 'q1', userXpAwarded: 10 }
       const { statusCode, body: resBody } = parseResponse(
@@ -43,11 +46,15 @@ describe('completionHandler', () => {
     })
 
     it('detects user level up', async () => {
-      // User at 95 XP, gets 10 → 105 XP → level 2
-      mockSend.mockResolvedValueOnce({
-        Item: { totalXp: 95, level: 1, createdAt: '2024-01-01' },
-      })
-      mockSend.mockResolvedValueOnce({})
+      mockSend
+        .mockResolvedValueOnce({ Item: undefined })
+        .mockResolvedValueOnce({
+          Item: { PK: 'user#test', SK: 'QUEST#q1', id: 'q1', title: 'Quest 1', status: 'active' },
+        })
+        .mockResolvedValueOnce({
+          Item: { totalXp: 95, level: 1, createdAt: '2024-01-01' },
+        })
+        .mockResolvedValueOnce({})
 
       const body = { id: 'c2', questId: 'q1', userXpAwarded: 10 }
       const { body: resBody } = parseResponse(
@@ -60,28 +67,35 @@ describe('completionHandler', () => {
     })
 
     it('updates skill XP when resolvedSkillId provided', async () => {
-      // 1st: user profile
-      mockSend.mockResolvedValueOnce({
-        Item: { totalXp: 0, level: 1, createdAt: '2024-01-01' },
-      })
-      // 2nd: skill lookup
-      mockSend.mockResolvedValueOnce({
-        Item: { PK: 'user#test', SK: 'SKILL#s1', id: 's1', name: 'JS', totalXp: 40, level: 1 },
-      })
-      // 3rd: transact write
-      mockSend.mockResolvedValueOnce({})
+      mockSend
+        .mockResolvedValueOnce({ Item: undefined })
+        .mockResolvedValueOnce({
+          Item: { PK: 'user#test', SK: 'QUEST#q1', id: 'q1', title: 'Quest 1', status: 'active' },
+        })
+        .mockResolvedValueOnce({
+          Item: { totalXp: 0, level: 1, createdAt: '2024-01-01' },
+        })
+        .mockResolvedValueOnce({
+          Item: { PK: 'user#test', SK: 'SKILL#s1', id: 's1', name: 'JS', totalXp: 40, level: 1 },
+        })
+        .mockResolvedValueOnce({})
 
       const body = { id: 'c3', questId: 'q1', userXpAwarded: 5, resolvedSkillId: 's1', skillXpAwarded: 15 }
       const { body: resBody } = parseResponse(
         await handler(makeEvent('POST /completions', { body }))
       )
 
-      expect(resBody.skillLevelUp).toBe(true) // 40 + 15 = 55 → level 2
+      expect(resBody.skillLevelUp).toBe(true)
     })
 
     it('handles new user with no existing profile', async () => {
-      mockSend.mockResolvedValueOnce({ Item: undefined }) // no profile
-      mockSend.mockResolvedValueOnce({}) // transact write
+      mockSend
+        .mockResolvedValueOnce({ Item: undefined })
+        .mockResolvedValueOnce({
+          Item: { PK: 'user#test', SK: 'QUEST#q1', id: 'q1', title: 'Quest 1', status: 'active' },
+        })
+        .mockResolvedValueOnce({ Item: undefined })
+        .mockResolvedValueOnce({})
 
       const body = { id: 'c4', questId: 'q1', userXpAwarded: 10 }
       const { statusCode, body: resBody } = parseResponse(
@@ -91,6 +105,19 @@ describe('completionHandler', () => {
       expect(statusCode).toBe(201)
       expect(resBody.totalXp).toBe(10)
       expect(resBody.level).toBe(1)
+    })
+
+    it('rejects completions that reference a missing quest', async () => {
+      mockSend
+        .mockResolvedValueOnce({ Item: undefined })
+        .mockResolvedValueOnce({ Item: undefined })
+
+      const { statusCode, body } = parseResponse(
+        await handler(makeEvent('POST /completions', { body: { id: 'c5', questId: 'missing', userXpAwarded: 5 } }))
+      )
+
+      expect(statusCode).toBe(400)
+      expect(body.error).toBe('クエストが見つからないか、完了できない状態です。')
     })
   })
 

@@ -52,6 +52,16 @@ export const handler = async (event) => {
       }
 
       // ユーザーの現在のXPを取得
+      const questResult = await db.send(new GetCommand({
+        TableName: TABLE_NAME,
+        Key: { PK: pk, SK: `QUEST#${body.questId}` },
+      }));
+      const quest = questResult.Item;
+      const questStatus = quest?.status ?? "active";
+      if (!quest || !quest.title || questStatus !== "active") {
+        return response(400, { error: "クエストが見つからないか、完了できない状態です。" });
+      }
+
       const userResult = await db.send(new GetCommand({
         TableName: TABLE_NAME,
         Key: { PK: pk, SK: "USER#profile" },

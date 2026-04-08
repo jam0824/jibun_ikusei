@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 import httpx
@@ -27,10 +28,21 @@ def _make_api():
     api.get_chat_messages = AsyncMock(return_value=[])
     api.get_chat_messages_range = AsyncMock(return_value=[])
     api.post_completion = AsyncMock()
+    api.put_completion = AsyncMock()
+    api.post_skill = AsyncMock()
     api.put_quest = AsyncMock()
     api.post_quest = AsyncMock()
     api.delete_quest = AsyncMock()
     return api
+
+
+def _make_config(api_key: str = ""):
+    return SimpleNamespace(
+        openai=SimpleNamespace(
+            api_key=api_key,
+            chat_model="gpt-5.4",
+        )
+    )
 
 
 def _make_session(session_id: str, created_at: str, updated_at: str, title: str) -> dict:
@@ -304,3 +316,221 @@ async def test_complete_quest_keeps_repeatable_status_active_when_saving_default
     assert api.put_quest.await_args.args[0] == "q_daily_report"
     assert api.put_quest.await_args.args[1]["status"] == "active"
     assert api.put_quest.await_args.args[1]["defaultSkillId"] == "skill_writing"
+
+
+@pytest.mark.asyncio
+async def test_complete_quest_saves_pending_then_updates_to_resolved_in_background(monkeypatch):
+    api = _make_api()
+    quest = {
+        "id": "q_heel_raise",
+        "title": "Heel raise after meals",
+        "status": "active",
+        "questType": "repeatable",
+        "xpReward": 3,
+        "category": "health",
+        "skillMappingMode": "ai_auto",
+        "privacyMode": "normal",
+        "createdAt": "2026-04-05T09:00:00+09:00",
+        "updatedAt": "2026-04-05T09:00:00+09:00",
+    }
+    stored_completion: dict[str, str] = {}
+
+    async def post_completion(completion: dict):
+        stored_completion.clear()
+        stored_completion.update(completion)
+        return {}
+
+    async def get_completions():
+        return [dict(stored_completion)] if stored_completion else []
+
+    api.get_quests.return_value = [quest]
+    api.get_completions.side_effect = get_completions
+    api.get_skills.return_value = [{"id": "skill_exercise", "name": "Exercise", "category": "health", "status": "active"}]
+    api.get_dictionary.return_value = []
+    api.post_completion.side_effect = post_completion
+    monkeypatch.setattr(
+        tool_executor_module,
+        "resolve_skill_for_completion_with_ai",
+        AsyncMock(return_value={
+            "resolved_skill_id": "skill_exercise",
+            "skill_xp_awarded": 3,
+            "skill_name": "Exercise",
+            "status": "resolved",
+            "reason": "ai matched",
+            "candidate_skill_ids": [],
+        }),
+    )
+    executor = ToolExecutor(api, config=_make_config(api_key="sk-test"))
+
+    result = await executor.execute("complete_quest", {"query": "Heel raise after meals"})
+
+    assert "Heel raise after meals" in result
+    assert stored_completion["skillResolutionStatus"] == "pending"
+    assert "resolvedSkillId" not in stored_completion
+
+    await executor.wait_for_background_tasks()
+
+    api.put_completion.assert_awaited_once()
+    assert api.put_completion.await_args.args[0] == stored_completion["id"]
+    assert api.put_completion.await_args.args[1]["skillResolutionStatus"] == "resolved"
+    assert api.put_completion.await_args.args[1]["resolvedSkillId"] == "skill_exercise"
+    api.put_quest.assert_awaited_once()
+    assert api.put_quest.await_args.args[0] == "q_heel_raise"
+    assert api.put_quest.await_args.args[1]["defaultSkillId"] == "skill_exercise"
+
+
+@pytest.mark.asyncio
+async def test_complete_quest_saves_pending_then_updates_to_needs_confirmation_in_background(monkeypatch):
+    api = _make_api()
+    quest = {
+        "id": "q_heel_raise",
+        "title": "Heel raise after meals",
+        "status": "active",
+        "questType": "repeatable",
+        "xpReward": 3,
+        "category": "health",
+        "skillMappingMode": "ai_auto",
+        "privacyMode": "normal",
+        "createdAt": "2026-04-05T09:00:00+09:00",
+        "updatedAt": "2026-04-05T09:00:00+09:00",
+    }
+    stored_completion: dict[str, str] = {}
+
+    async def post_completion(completion: dict):
+        stored_completion.clear()
+        stored_completion.update(completion)
+        return {}
+
+    async def get_completions():
+        return [dict(stored_completion)] if stored_completion else []
+
+    api.get_quests.return_value = [quest]
+    api.get_completions.side_effect = get_completions
+    api.get_skills.return_value = []
+    api.get_dictionary.return_value = []
+    api.post_completion.side_effect = post_completion
+    monkeypatch.setattr(
+        tool_executor_module,
+        "resolve_skill_for_completion_with_ai",
+        AsyncMock(return_value={
+            "resolved_skill_id": None,
+            "skill_xp_awarded": 0,
+            "skill_name": "",
+            "status": "needs_confirmation",
+            "reason": "ai needs confirmation",
+            "candidate_skill_ids": ["skill_stretching", "skill_balance"],
+        }),
+    )
+    executor = ToolExecutor(api, config=_make_config(api_key="sk-test"))
+
+    await executor.execute("complete_quest", {"query": "Heel raise after meals"})
+    await executor.wait_for_background_tasks()
+
+    api.put_completion.assert_awaited_once()
+    assert api.put_completion.await_args.args[1]["skillResolutionStatus"] == "needs_confirmation"
+    assert api.put_completion.await_args.args[1]["candidateSkillIds"] == [
+        "skill_stretching",
+        "skill_balance",
+    ]
+    api.put_quest.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_complete_quest_background_resolution_falls_back_to_local_result(monkeypatch):
+    api = _make_api()
+    quest = {
+        "id": "q_heel_raise",
+        "title": "Heel raise after meals",
+        "status": "active",
+        "questType": "repeatable",
+        "xpReward": 3,
+        "category": "health",
+        "skillMappingMode": "ai_auto",
+        "privacyMode": "normal",
+        "createdAt": "2026-04-05T09:00:00+09:00",
+        "updatedAt": "2026-04-05T09:00:00+09:00",
+    }
+    stored_completion: dict[str, str] = {}
+
+    async def post_completion(completion: dict):
+        stored_completion.clear()
+        stored_completion.update(completion)
+        return {}
+
+    async def get_completions():
+        return [dict(stored_completion)] if stored_completion else []
+
+    api.get_quests.return_value = [quest]
+    api.get_completions.side_effect = get_completions
+    api.get_skills.return_value = []
+    api.get_dictionary.return_value = []
+    api.post_completion.side_effect = post_completion
+    monkeypatch.setattr(
+        tool_executor_module,
+        "resolve_skill_for_completion_with_ai",
+        AsyncMock(side_effect=RuntimeError("openai down")),
+    )
+    monkeypatch.setattr(
+        tool_executor_module,
+        "resolve_skill_for_completion",
+        AsyncMock(return_value={
+            "resolved_skill_id": None,
+            "skill_xp_awarded": 0,
+            "skill_name": "",
+            "status": "unclassified",
+            "reason": "fallback result",
+            "candidate_skill_ids": [],
+        }),
+    )
+    executor = ToolExecutor(api, config=_make_config(api_key="sk-test"))
+
+    await executor.execute("complete_quest", {"query": "Heel raise after meals"})
+    await executor.wait_for_background_tasks()
+
+    api.put_completion.assert_awaited_once()
+    assert api.put_completion.await_args.args[1]["skillResolutionStatus"] == "unclassified"
+    assert api.put_completion.await_args.args[1]["resolutionReason"] == "fallback result"
+    api.put_quest.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_complete_quest_background_resolution_skips_undone_completion(monkeypatch):
+    api = _make_api()
+    quest = {
+        "id": "q_heel_raise",
+        "title": "Heel raise after meals",
+        "status": "active",
+        "questType": "repeatable",
+        "xpReward": 3,
+        "category": "health",
+        "skillMappingMode": "ai_auto",
+        "privacyMode": "normal",
+        "createdAt": "2026-04-05T09:00:00+09:00",
+        "updatedAt": "2026-04-05T09:00:00+09:00",
+    }
+    api.get_quests.return_value = [quest]
+    api.get_completions.return_value = [{
+        "id": "completion_1",
+        "questId": "q_heel_raise",
+        "completedAt": "2026-04-08T19:04:00+09:00",
+        "undoneAt": "2026-04-08T19:05:00+09:00",
+        "skillResolutionStatus": "pending",
+    }]
+    monkeypatch.setattr(
+        tool_executor_module,
+        "resolve_skill_for_completion_with_ai",
+        AsyncMock(return_value={
+            "resolved_skill_id": "skill_exercise",
+            "skill_xp_awarded": 3,
+            "skill_name": "Exercise",
+            "status": "resolved",
+            "reason": "ai matched",
+            "candidate_skill_ids": [],
+        }),
+    )
+    executor = ToolExecutor(api, config=_make_config(api_key="sk-test"))
+
+    await executor._resolve_completion_skill_in_background("completion_1", "q_heel_raise", None)
+
+    api.put_completion.assert_not_awaited()
+    api.put_quest.assert_not_awaited()

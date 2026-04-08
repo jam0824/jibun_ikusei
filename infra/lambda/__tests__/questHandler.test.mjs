@@ -51,7 +51,19 @@ describe('questHandler', () => {
 
   describe('PUT /quests/{id}', () => {
     it('updates a quest', async () => {
-      mockSend.mockResolvedValueOnce({})
+      mockSend
+        .mockResolvedValueOnce({
+          Item: {
+            PK: 'user#test',
+            SK: 'QUEST#q1',
+            id: 'q1',
+            title: 'Quest 1',
+            questType: 'repeatable',
+            status: 'active',
+            createdAt: '2024-01-01T00:00:00.000Z',
+          },
+        })
+        .mockResolvedValueOnce({})
 
       const updates = { title: 'Updated Quest' }
       const result = await handler(
@@ -62,7 +74,45 @@ describe('questHandler', () => {
       expect(statusCode).toBe(200)
       expect(body.id).toBe('q1')
       expect(body.title).toBe('Updated Quest')
+      expect(body.questType).toBe('repeatable')
+      expect(body.status).toBe('active')
+      expect(body.createdAt).toBe('2024-01-01T00:00:00.000Z')
       expect(body.updatedAt).toBeDefined()
+    })
+
+    it('preserves existing fields when only status is updated', async () => {
+      mockSend
+        .mockResolvedValueOnce({
+          Item: {
+            PK: 'user#test',
+            SK: 'QUEST#q1',
+            id: 'q1',
+            title: 'Quest 1',
+            description: 'Original description',
+            questType: 'one_time',
+            status: 'active',
+            xpReward: 10,
+            createdAt: '2024-01-01T00:00:00.000Z',
+          },
+        })
+        .mockResolvedValueOnce({})
+
+      const { statusCode, body } = parseResponse(
+        await handler(
+          makeEvent('PUT /quests/{id}', {
+            body: { status: 'completed' },
+            pathParameters: { id: 'q1' },
+          })
+        )
+      )
+
+      expect(statusCode).toBe(200)
+      expect(body.id).toBe('q1')
+      expect(body.title).toBe('Quest 1')
+      expect(body.description).toBe('Original description')
+      expect(body.questType).toBe('one_time')
+      expect(body.status).toBe('completed')
+      expect(body.xpReward).toBe(10)
     })
   })
 

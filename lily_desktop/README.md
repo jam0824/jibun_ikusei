@@ -80,6 +80,9 @@ display:
 
 healthplanet:
   sync_interval_minutes: 15  # 起動時に即時同期し、その後はこの分間隔で再同期
+
+voice:
+  pause_during_tts: true  # false にするとリリィたちの発話中もマイクで割り込みできる
 ```
 
 ### 4. 起動する
