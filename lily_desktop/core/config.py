@@ -100,6 +100,13 @@ class OpenAIConfig:
 
 
 @dataclass
+class DesktopConfig:
+    analysis_provider: str = "openai"
+    analysis_base_url: str = DEFAULT_OLLAMA_BASE_URL
+    analysis_model: str = "gpt-5.4"
+
+
+@dataclass
 class CognitoConfig:
     email: str = ""
     password: str = ""
@@ -227,6 +234,7 @@ class HttpBridgeConfig:
 @dataclass
 class AppConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
+    desktop: DesktopConfig = field(default_factory=DesktopConfig)
     cognito: CognitoConfig = field(default_factory=CognitoConfig)
     annict: AnnictConfig = field(default_factory=AnnictConfig)
     rakuten: RakutenConfig = field(default_factory=RakutenConfig)
@@ -247,6 +255,12 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
     if path.exists():
         with open(path, encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
+
+    openai_raw = raw.get("openai", {}) or {}
+    if not isinstance(openai_raw, dict):
+        openai_raw = {}
+    else:
+        openai_raw = dict(openai_raw)
 
     display_raw = raw.get("display", {}) or {}
     if not isinstance(display_raw, dict):
@@ -292,9 +306,26 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
     camera_raw["summary_base_url"] = normalize_ai_base_url(
         camera_raw.get("summary_base_url", DEFAULT_OLLAMA_BASE_URL)
     )
+    desktop_raw = raw.get("desktop", {}) or {}
+    if not isinstance(desktop_raw, dict):
+        desktop_raw = {}
+    else:
+        desktop_raw = dict(desktop_raw)
+    desktop_raw["analysis_provider"] = normalize_ai_provider(
+        desktop_raw.get("analysis_provider", "openai")
+    )
+    desktop_raw["analysis_base_url"] = normalize_ai_base_url(
+        desktop_raw.get("analysis_base_url", DEFAULT_OLLAMA_BASE_URL)
+    )
+    desktop_model = desktop_raw.get("analysis_model") or openai_raw.get(
+        "screen_analysis_model",
+        OpenAIConfig().screen_analysis_model,
+    )
+    desktop_raw["analysis_model"] = str(desktop_model)
 
     config = AppConfig(
-        openai=OpenAIConfig(**raw.get("openai", {})),
+        openai=OpenAIConfig(**openai_raw),
+        desktop=DesktopConfig(**desktop_raw),
         cognito=CognitoConfig(**raw.get("cognito", {})),
         annict=AnnictConfig(**raw.get("annict", {})),
         rakuten=RakutenConfig(**raw.get("rakuten", {})),

@@ -50,6 +50,8 @@ class TalkSeedManager:
         *,
         openai_api_key: str,
         screen_analysis_model: str,
+        desktop_analysis_provider: str = "openai",
+        desktop_analysis_base_url: str = "",
         annict_access_token: str = "",
         camera_enabled: bool = False,
         camera_analysis_provider: str = "openai",
@@ -65,6 +67,8 @@ class TalkSeedManager:
     ):
         self._openai_api_key = openai_api_key
         self._screen_analysis_model = screen_analysis_model
+        self._desktop_analysis_provider = desktop_analysis_provider
+        self._desktop_analysis_base_url = desktop_analysis_base_url
         self._annict_access_token = annict_access_token
         self._camera_enabled = camera_enabled
         self._camera_analysis_provider = camera_analysis_provider
@@ -283,6 +287,8 @@ class TalkSeedManager:
         try:
             attempt = await self._situation_capture.capture_desktop(
                 api_key=self._openai_api_key,
+                provider=self._desktop_analysis_provider,
+                base_url=self._desktop_analysis_base_url,
                 model=self._screen_analysis_model,
             )
             if attempt.skipped:

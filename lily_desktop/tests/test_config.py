@@ -269,3 +269,35 @@ def test_camera_provider_settings_are_loaded_from_config(tmp_path):
     assert config.camera.summary_provider == "ollama"
     assert config.camera.summary_base_url == "http://127.0.0.1:11434"
     assert config.camera.summary_model == "gemma4:e4b"
+
+
+def test_desktop_provider_settings_are_loaded_from_config(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "desktop:\n"
+        "  analysis_provider: ollama\n"
+        "  analysis_base_url: http://localhost:11434/\n"
+        "  analysis_model: gemma4:e4b\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.desktop.analysis_provider == "ollama"
+    assert config.desktop.analysis_base_url == "http://localhost:11434"
+    assert config.desktop.analysis_model == "gemma4:e4b"
+
+
+def test_desktop_provider_defaults_to_legacy_openai_screen_model(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "openai:\n"
+        "  screen_analysis_model: gpt-5.4-mini\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.desktop.analysis_provider == "openai"
+    assert config.desktop.analysis_base_url == "http://127.0.0.1:11434"
+    assert config.desktop.analysis_model == "gpt-5.4-mini"

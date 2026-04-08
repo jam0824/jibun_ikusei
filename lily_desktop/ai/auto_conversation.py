@@ -141,9 +141,24 @@ class AutoConversation:
         self._session_mgr = session_mgr
         self._event_hub = event_hub
         rakuten_cfg = getattr(config, "rakuten", None)
+        desktop_cfg = getattr(config, "desktop", None)
         self._seed_mgr = TalkSeedManager(
             openai_api_key=config.openai.api_key,
-            screen_analysis_model=config.openai.screen_analysis_model,
+            screen_analysis_model=getattr(
+                desktop_cfg,
+                "analysis_model",
+                config.openai.screen_analysis_model,
+            ),
+            desktop_analysis_provider=getattr(
+                desktop_cfg,
+                "analysis_provider",
+                "openai",
+            ),
+            desktop_analysis_base_url=getattr(
+                desktop_cfg,
+                "analysis_base_url",
+                "",
+            ),
             annict_access_token=config.annict.access_token,
             camera_enabled=config.camera.enabled,
             camera_analysis_provider=getattr(config.camera, "analysis_provider", "openai"),

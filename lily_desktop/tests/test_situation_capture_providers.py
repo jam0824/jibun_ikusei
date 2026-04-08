@@ -68,3 +68,38 @@ async def test_record_capture_passes_camera_provider_settings(monkeypatch):
     assert kwargs["provider"] == "ollama"
     assert kwargs["base_url"] == "http://127.0.0.1:11434"
     assert kwargs["model"] == "gemma4:e4b"
+
+
+@pytest.mark.asyncio
+async def test_record_capture_passes_desktop_provider_settings(monkeypatch):
+    import core.situation_capture as mod
+
+    coordinator = SituationCaptureCoordinator()
+
+    def fake_capture_camera_frame(device_index: int) -> bytes:
+        return b"frame"
+
+    analyze_camera_frame = AsyncMock(return_value=_make_camera_analysis())
+    fetch_desktop_context = AsyncMock(return_value=_make_desktop_context())
+
+    monkeypatch.setattr(mod, "capture_camera_frame", fake_capture_camera_frame)
+    monkeypatch.setattr(mod, "analyze_camera_frame", analyze_camera_frame)
+    monkeypatch.setattr(mod, "fetch_desktop_context", fetch_desktop_context)
+
+    result = await coordinator.capture_for_record(
+        api_key="",
+        camera_provider="ollama",
+        camera_base_url="http://127.0.0.1:11434",
+        camera_model="gemma4:e4b",
+        screen_model="screen-model",
+        camera_device_index=0,
+        screen_provider="ollama",
+        screen_base_url="http://127.0.0.1:11434",
+    )
+
+    assert result.desktop.context is not None
+    fetch_desktop_context.assert_awaited_once()
+    kwargs = fetch_desktop_context.await_args.kwargs
+    assert kwargs["provider"] == "ollama"
+    assert kwargs["base_url"] == "http://127.0.0.1:11434"
+    assert kwargs["model"] == "screen-model"

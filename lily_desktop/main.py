@@ -534,13 +534,20 @@ class App:
         record = SituationRecord()
         record.timestamp = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
         self._last_situation_capture_skip_reason = ""
+        desktop_cfg = getattr(self.config, "desktop", None)
 
         capture = await self.situation_capture.capture_for_record(
             api_key=self.config.openai.api_key,
             camera_provider=self.config.camera.analysis_provider,
             camera_base_url=self.config.camera.analysis_base_url,
             camera_model=self.config.camera.analysis_model,
-            screen_model=self.config.openai.screen_analysis_model,
+            screen_provider=getattr(desktop_cfg, "analysis_provider", "openai"),
+            screen_base_url=getattr(desktop_cfg, "analysis_base_url", ""),
+            screen_model=getattr(
+                desktop_cfg,
+                "analysis_model",
+                self.config.openai.screen_analysis_model,
+            ),
             camera_device_index=self._camera_device_index,
         )
         if capture.skipped:
@@ -573,9 +580,16 @@ class App:
         """共有コーディネータ経由でデスクトップ状況を取得して表示する。"""
         bus.balloon_show.emit("リリィ", "画面の状況を確認中…")
         try:
+            desktop_cfg = getattr(self.config, "desktop", None)
             attempt = await self.situation_capture.capture_desktop(
                 api_key=self.config.openai.api_key,
-                model=self.config.openai.screen_analysis_model,
+                provider=getattr(desktop_cfg, "analysis_provider", "openai"),
+                base_url=getattr(desktop_cfg, "analysis_base_url", ""),
+                model=getattr(
+                    desktop_cfg,
+                    "analysis_model",
+                    self.config.openai.screen_analysis_model,
+                ),
             )
             if attempt.skipped:
                 bus.balloon_show.emit(

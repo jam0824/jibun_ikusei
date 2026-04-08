@@ -57,6 +57,8 @@ class SituationCaptureCoordinator:
         camera_device_index: int,
         camera_provider: str = "openai",
         camera_base_url: str = "",
+        screen_provider: str = "openai",
+        screen_base_url: str = "",
     ) -> SituationCaptureResult:
         """Capture camera and desktop together for situation logging."""
 
@@ -83,6 +85,8 @@ class SituationCaptureCoordinator:
             )
             desktop = await self._capture_desktop_locked(
                 api_key=api_key,
+                provider=screen_provider,
+                base_url=screen_base_url,
                 model=screen_model,
             )
             return SituationCaptureResult(camera=camera, desktop=desktop)
@@ -123,6 +127,8 @@ class SituationCaptureCoordinator:
         self,
         *,
         api_key: str,
+        provider: str = "openai",
+        base_url: str = "",
         model: str,
     ) -> DesktopCaptureAttempt:
         """Capture desktop analysis only, skipping if another desktop capture is active."""
@@ -135,7 +141,12 @@ class SituationCaptureCoordinator:
 
         await self._desktop_lock.acquire()
         try:
-            return await self._capture_desktop_locked(api_key=api_key, model=model)
+            return await self._capture_desktop_locked(
+                api_key=api_key,
+                provider=provider,
+                base_url=base_url,
+                model=model,
+            )
         finally:
             self._desktop_lock.release()
 
@@ -169,10 +180,17 @@ class SituationCaptureCoordinator:
         self,
         *,
         api_key: str,
+        provider: str,
+        base_url: str,
         model: str,
     ) -> DesktopCaptureAttempt:
         try:
-            ctx = await fetch_desktop_context(api_key=api_key, model=model)
+            ctx = await fetch_desktop_context(
+                api_key=api_key,
+                provider=provider,
+                base_url=base_url,
+                model=model,
+            )
             return DesktopCaptureAttempt(context=ctx)
         except Exception as exc:
             logger.exception("Desktop capture failed")

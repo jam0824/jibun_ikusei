@@ -1,46 +1,55 @@
-"""スクリーンショット解析 — GPT Vision で状況要約と話題タグを生成する"""
+"""Desktop screenshot analysis via OpenAI or Ollama vision."""
 
 from __future__ import annotations
 
-import base64
+import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from typing import Any
 
 import httpx
 
+from ai.provider_chat import (
+    build_vision_chat_request,
+    extract_chat_finish_reason,
+    extract_chat_response_text,
+    normalize_provider,
+)
+
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = """\
-あなたはデスクトップの状況を分析するアシスタントです。
-スクリーンショットを見て、ユーザーが今何をしているかを要約してください。
+JST = timezone(timedelta(hours=9))
+_HTTP_TIMEOUT_SECONDS = 30.0
+_MAX_COMPLETION_TOKENS = 500
 
-以下のJSON形式で回答してください。他の文章は不要です。
+_SYSTEM_PROMPT = """\
+You analyze a desktop screenshot and return only JSON.
+Return this schema exactly:
 {
-  "summary": "状況の要約（1〜2文、30文字以内）",
-  "tags": ["話題タグ1", "話題タグ2"],
+  "summary": "A short situation summary in natural Japanese within 50 characters",
+  "tags": ["tag1", "tag2"],
   "activity_type": "coding | reading | browsing | watching | gaming | chatting | idle | other",
-  "detail": "もう少し詳しい状況説明（50文字以内）"
+  "detail": "A more detailed explanation in natural Japanese within 150 characters"
 }
 
-要約の例:
-- 「コーディングしている」
-- 「ドキュメントを読んでいる」
-- 「調べものをしている」
-- 「動画で休憩している」
-- 「ゲームをプレイしている」
-- 「しばらく操作が止まっている」
-
-注意:
-- 画面上の個人情報、パスワード、メッセージ内容は要約に含めないこと
-- コードの具体的な内容は含めず、何の作業をしているかだけを要約すること
-- ブラウザのURLやタブの中身をそのまま引用しないこと
+Rules:
+- Infer the user's current activity from the visible content.
+- Use the active-window context as a hint, but prioritize what is visible in the screenshot.
+- Do not quote page text, source code, personal data, or secrets verbatim.
+- If the screen is unclear, use the closest safe category and explain briefly.
+- Write summary, detail, and tag values in natural Japanese.
 """
+
+_USER_PROMPT = (
+    "Analyze the user's current desktop activity from this screenshot and return only JSON."
+)
 
 
 @dataclass
 class ScreenAnalysis:
-    """スクリーンショット解析結果"""
+    """Parsed desktop screenshot analysis."""
+
     summary: str = ""
     tags: list[str] = field(default_factory=list)
     activity_type: str = "other"
@@ -52,82 +61,102 @@ class ScreenAnalysis:
 async def analyze_screenshot(
     *,
     api_key: str,
+    provider: str = "openai",
+    base_url: str = "",
     model: str,
     screenshot_png: bytes,
     window_context: str = "",
 ) -> ScreenAnalysis:
-    """スクリーンショットをGPT Visionで解析して状況要約を返す。
+    """Analyze one screenshot and return a structured summary."""
 
-    Args:
-        api_key: OpenAI APIキー
-        model: 使用するモデル名 (例: "gpt-5.4")
-        screenshot_png: PNG画像のバイト列
-        window_context: アクティブウィンドウの補足情報（アプリ名等）
-
-    Returns:
-        ScreenAnalysis: 解析結果
-    """
-    b64_image = base64.b64encode(screenshot_png).decode("ascii")
-
-    user_content: list[dict] = []
+    normalized_provider = normalize_provider(provider)
+    prompt_parts: list[str] = []
     if window_context:
-        user_content.append({
-            "type": "text",
-            "text": f"アクティブウィンドウ情報: {window_context}",
-        })
-    user_content.append({
-        "type": "text",
-        "text": "このスクリーンショットからユーザーの現在の状況を要約してください。",
-    })
-    user_content.append({
-        "type": "image_url",
-        "image_url": {
-            "url": f"data:image/png;base64,{b64_image}",
-            "detail": "low",
-        },
-    })
+        prompt_parts.append(f"Active window context: {window_context}")
+    prompt_parts.append(_USER_PROMPT)
 
-    body = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        "max_completion_tokens": 300,
-    }
+    payload = await _post_screen_analysis(
+        api_key=api_key,
+        provider=normalized_provider,
+        base_url=base_url,
+        model=model,
+        screenshot_png=screenshot_png,
+        user_text="\n".join(prompt_parts),
+    )
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    usage: dict[str, Any] = payload.get("usage", {})
+    if normalized_provider == "ollama":
+        usage = {
+            "prompt_eval_count": payload.get("prompt_eval_count"),
+            "eval_count": payload.get("eval_count"),
+        }
+    logger.info("Screen analysis API usage: %s", usage)
+
+    content = extract_chat_response_text(normalized_provider, payload)
+    finish_reason = extract_chat_finish_reason(normalized_provider, payload)
+    logger.info(
+        "Screen analysis finished: provider=%s finish_reason=%s content_length=%d max_completion_tokens=%d content=%s",
+        normalized_provider,
+        finish_reason,
+        len(content),
+        _MAX_COMPLETION_TOKENS,
+        content[:200],
+    )
+
+    if finish_reason == "length":
+        raise Exception("Screen analysis response was truncated.")
+
+    if content:
+        return _parse_analysis(content)
+
+    raise Exception("Screen analysis response was empty.")
+
+
+async def _post_screen_analysis(
+    *,
+    api_key: str,
+    provider: str,
+    base_url: str,
+    model: str,
+    screenshot_png: bytes,
+    user_text: str,
+) -> dict[str, Any]:
+    request = build_vision_chat_request(
+        provider=provider,
+        api_key=api_key,
+        model=model,
+        base_url=base_url,
+        system_prompt=_SYSTEM_PROMPT,
+        user_text=user_text,
+        image_pngs=[screenshot_png],
+        max_completion_tokens=_MAX_COMPLETION_TOKENS,
+    )
+    if provider == "ollama":
+        request.body["think"] = False
+
+    async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
         resp = await client.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {api_key}",
-            },
-            json=body,
+            request.url,
+            headers=request.headers,
+            json=request.body,
         )
 
     if not resp.is_success:
         detail = resp.text[:200]
         raise Exception(f"Screen analysis failed: {resp.status_code} - {detail}")
 
-    payload = resp.json()
-    content = payload["choices"][0]["message"]["content"]
-
-    return _parse_analysis(content)
+    return resp.json()
 
 
 def _parse_analysis(raw: str) -> ScreenAnalysis:
-    """AIレスポンスをパースしてScreenAnalysisに変換する"""
-    import json
+    """Parse the AI JSON payload into ScreenAnalysis."""
 
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    now = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
 
-    # JSON部分を抽出（```json ... ``` でラップされている場合にも対応）
     cleaned = raw.strip()
     if cleaned.startswith("```"):
-        # コードブロックを除去
         lines = cleaned.split("\n")
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [line for line in lines if not line.strip().startswith("```")]
         cleaned = "\n".join(lines)
 
     try:
@@ -140,7 +169,7 @@ def _parse_analysis(raw: str) -> ScreenAnalysis:
             timestamp=now,
         )
     except json.JSONDecodeError:
-        logger.warning("解析結果のパースに失敗: %s", raw[:200])
+        logger.warning("Screen analysis JSON parse failed: %s", raw[:200])
         return ScreenAnalysis(
             summary=raw[:50] if raw else "解析失敗",
             timestamp=now,
