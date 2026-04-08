@@ -71,14 +71,13 @@ async def analyze_camera_frame(
     """Analyze one camera frame and return a structured summary."""
 
     normalized_provider = normalize_provider(provider)
-    resized_png = _resize_frame_png(frame_png, max_long_edge=_MAX_IMAGE_LONG_EDGE)
 
     payload = await _post_camera_analysis(
         api_key=api_key,
         provider=normalized_provider,
         base_url=base_url,
         model=model,
-        image_pngs=[resized_png],
+        image_pngs=[frame_png],
         max_completion_tokens=_MAX_COMPLETION_TOKENS,
     )
 

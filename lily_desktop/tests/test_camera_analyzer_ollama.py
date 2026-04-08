@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from collections.abc import Sequence
 from typing import Any
@@ -89,6 +90,42 @@ async def test_camera_analysis_uses_ollama_chat_api_with_images():
     assert request["json"]["stream"] is False
     assert request["json"]["options"]["num_predict"] == 900
     assert request["json"]["messages"][1]["images"]
+
+
+@pytest.mark.asyncio
+async def test_camera_analysis_sends_original_image_without_resizing():
+    fake_client = _FakeAsyncClient(
+        [
+            _FakeResponse(
+                {
+                    "message": {
+                        "content": json.dumps(
+                            {
+                                "summary": "Large outdoor scene",
+                                "tags": ["outdoor"],
+                                "scene_type": "outdoor",
+                                "detail": "A wide view is visible",
+                            }
+                        )
+                    },
+                    "done_reason": "stop",
+                }
+            )
+        ]
+    )
+    original_png = _make_test_png(width=1000, height=600)
+
+    with patch("ai.camera_analyzer.httpx.AsyncClient", return_value=fake_client):
+        await analyze_camera_frame(
+            api_key="",
+            provider="ollama",
+            base_url="http://127.0.0.1:11434",
+            model="gemma4:e4b",
+            frame_png=original_png,
+        )
+
+    encoded_image = fake_client.calls[0]["json"]["messages"][1]["images"][0]
+    assert base64.b64decode(encoded_image) == original_png
 
 
 @pytest.mark.asyncio
