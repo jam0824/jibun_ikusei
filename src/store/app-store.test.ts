@@ -3,6 +3,8 @@ import * as domainLogic from '@/domain/logic'
 import { hydratePersistedState } from '@/domain/logic'
 import type { Quest, SkillResolutionResult } from '@/domain/types'
 import * as aiLib from '@/lib/ai'
+import * as api from '@/lib/api-client'
+import * as storage from '@/lib/storage'
 import { playAudioUrl } from '@/lib/tts'
 import { useAppStore } from '@/store/app-store'
 
@@ -287,5 +289,136 @@ describe('app store', () => {
       ? store.skills.find((skill) => skill.id === completion.resolvedSkillId)
       : undefined
     expect(resolvedSkill?.name).toBe('!!!')
+  })
+
+  it('rolls back an optimistic completion when the server rejects a stale quest', async () => {
+    const state = useAppStore.getState()
+    const skill = state.skills[0]
+    expect(skill).toBeTruthy()
+
+    const now = new Date().toISOString()
+    const quest: Quest = {
+      id: 'quest_stale_completion',
+      title: '削除済みクエストの再現',
+      description: 'stale quest rollback test',
+      questType: 'one_time',
+      xpReward: 4,
+      category: 'その他',
+      skillMappingMode: 'fixed',
+      fixedSkillId: skill!.id,
+      status: 'active',
+      privacyMode: 'normal',
+      pinned: false,
+      createdAt: now,
+      updatedAt: now,
+    }
+
+    useAppStore.getState().upsertQuest(quest)
+
+    const postCompletionSpy = vi
+      .spyOn(api, 'postCompletion')
+      .mockRejectedValueOnce(new api.ApiError('/completions', 400, { error: 'missing quest' }))
+    const getQuestsSpy = vi.spyOn(api, 'getQuests').mockResolvedValueOnce([])
+    const putUserSpy = vi.spyOn(api, 'putUser').mockResolvedValue({ updated: true })
+
+    const result = await useAppStore.getState().completeQuest(quest.id, {
+      completedAt: now,
+      sourceScreen: 'home',
+    })
+
+    expect(result.completionId).toBeTruthy()
+
+    await vi.waitFor(() => {
+      const store = useAppStore.getState()
+      expect(store.completions.find((entry) => entry.id === result.completionId)).toBeUndefined()
+      expect(store.assistantMessages.find((entry) => entry.completionId === result.completionId)).toBeUndefined()
+      expect(store.quests.find((entry) => entry.id === quest.id)).toBeUndefined()
+      expect(store.personalSkillDictionary.some((entry) => entry.phrase === quest.title)).toBe(false)
+      expect(store.user.totalXp).toBe(0)
+    })
+
+    expect(postCompletionSpy).toHaveBeenCalledTimes(1)
+    expect(getQuestsSpy).toHaveBeenCalledTimes(1)
+    expect(putUserSpy).not.toHaveBeenCalled()
+  })
+
+  it('drops local-only orphan completions after cloud sync during initialize', async () => {
+    const completedAt = '2026-04-09T09:11:00+09:00'
+    const local = hydratePersistedState({
+      meta: {
+        schemaVersion: 1,
+        seededSampleData: true,
+      },
+      quests: [],
+      completions: [
+        {
+          id: 'completion_orphan_local',
+          questId: 'quest_missing_local',
+          clientRequestId: 'req_orphan_local',
+          completedAt,
+          userXpAwarded: 2,
+          skillResolutionStatus: 'pending',
+          assistantMessageId: 'msg_orphan_local',
+          createdAt: completedAt,
+        },
+      ],
+      assistantMessages: [
+        {
+          id: 'msg_orphan_local',
+          triggerType: 'quest_completed',
+          mood: 'bright',
+          text: 'orphan completion message',
+          completionId: 'completion_orphan_local',
+          createdAt: completedAt,
+        },
+      ],
+      skills: [],
+      personalSkillDictionary: [],
+    })
+
+    vi.spyOn(storage, 'loadPersistedState').mockReturnValue(local)
+    vi.spyOn(storage, 'loadFromCloud').mockResolvedValue({
+      user: local.user,
+      settings: local.settings,
+      aiConfig: local.aiConfig,
+      meta: local.meta,
+      quests: [],
+      completions: [],
+      skills: [],
+      personalSkillDictionary: [],
+      assistantMessages: [],
+    })
+
+    useAppStore.setState((state) => ({
+      ...state,
+      ...hydratePersistedState({
+        meta: {
+          schemaVersion: 1,
+          seededSampleData: true,
+        },
+        quests: [],
+        completions: [],
+        skills: [],
+        assistantMessages: [],
+        personalSkillDictionary: [],
+      }),
+      hydrated: false,
+      importMode: 'merge',
+      currentEffectCompletionId: undefined,
+      busyQuestId: undefined,
+      connectionState: {
+        openai: { status: 'idle' },
+        gemini: { status: 'idle' },
+      },
+    }))
+
+    useAppStore.getState().initialize()
+
+    await vi.waitFor(() => {
+      const store = useAppStore.getState()
+      expect(store.completions.find((entry) => entry.id === 'completion_orphan_local')).toBeUndefined()
+      expect(store.assistantMessages.find((entry) => entry.id === 'msg_orphan_local')).toBeUndefined()
+      expect(store.user.totalXp).toBe(0)
+    })
   })
 })

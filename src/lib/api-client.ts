@@ -15,6 +15,20 @@ import { getIdToken } from '@/lib/auth'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL as string
 
+export class ApiError extends Error {
+  status: number
+  path: string
+  body?: unknown
+
+  constructor(path: string, status: number, body?: unknown) {
+    super(`API error: ${status} ${path}`)
+    this.name = 'ApiError'
+    this.status = status
+    this.path = path
+    this.body = body
+  }
+}
+
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const token = await getIdToken()
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -23,10 +37,20 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     headers,
     ...options,
   })
+  const raw = await res.text()
+  const body = raw
+    ? (() => {
+        try {
+          return JSON.parse(raw)
+        } catch {
+          return raw
+        }
+      })()
+    : undefined
   if (!res.ok) {
-    throw new Error(`API error: ${res.status} ${path}`)
+    throw new ApiError(path, res.status, body)
   }
-  return res.json() as Promise<T>
+  return body as T
 }
 
 // ユーザー

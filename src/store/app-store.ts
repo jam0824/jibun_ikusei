@@ -151,6 +151,88 @@ function mergeArrayById<T extends { id: string; updatedAt?: string; createdAt?: 
   return Array.from(map.values())
 }
 
+function isRejectedCompletionQuestError(error: unknown) {
+  return error instanceof api.ApiError && error.status === 400 && error.path === '/completions'
+}
+
+function cleanupLocalOnlyOrphanCompletions(
+  merged: PersistedAppState,
+  cloud: Partial<PersistedAppState>,
+): PersistedAppState {
+  const cloudCompletionIds = new Set((cloud.completions ?? []).map((completion) => completion.id))
+  const questIds = new Set(merged.quests.map((quest) => quest.id))
+  const orphanCompletionIds = new Set(
+    merged.completions
+      .filter((completion) => !cloudCompletionIds.has(completion.id) && !questIds.has(completion.questId))
+      .map((completion) => completion.id),
+  )
+
+  if (orphanCompletionIds.size === 0) {
+    return merged
+  }
+
+  const orphanMessageIds = new Set(
+    merged.completions
+      .filter((completion) => orphanCompletionIds.has(completion.id))
+      .map((completion) => completion.assistantMessageId)
+      .filter((value): value is string => Boolean(value)),
+  )
+
+  return reconcileState({
+    ...merged,
+    completions: merged.completions.filter((completion) => !orphanCompletionIds.has(completion.id)),
+    assistantMessages: merged.assistantMessages.filter(
+      (message) =>
+        !orphanMessageIds.has(message.id) &&
+        !(message.completionId && orphanCompletionIds.has(message.completionId)),
+    ),
+  })
+}
+
+function buildRolledBackCompletionState(params: {
+  current: PersistedAppState
+  completionId: string
+  fallbackQuest: Quest
+  replacementQuest: Quest | null
+  createdSkillIds: string[]
+  createdDictionaryEntryIds: string[]
+}) {
+  const {
+    current,
+    completionId,
+    fallbackQuest,
+    replacementQuest,
+    createdSkillIds,
+    createdDictionaryEntryIds,
+  } = params
+  const completion = current.completions.find((entry) => entry.id === completionId)
+  const relatedMessageIds = new Set(
+    [completion?.assistantMessageId].filter((value): value is string => Boolean(value)),
+  )
+
+  const nextQuests =
+    replacementQuest === null
+      ? current.quests.filter((entry) => entry.id !== fallbackQuest.id)
+      : current.quests.some((entry) => entry.id === fallbackQuest.id)
+        ? current.quests.map((entry) => (entry.id === fallbackQuest.id ? replacementQuest : entry))
+        : [replacementQuest, ...current.quests]
+
+  return reconcileState({
+    ...current,
+    quests: nextQuests,
+    completions: current.completions.filter((entry) => entry.id !== completionId),
+    skills: current.skills.filter((entry) => !createdSkillIds.includes(entry.id)),
+    personalSkillDictionary: current.personalSkillDictionary.filter(
+      (entry) => !createdDictionaryEntryIds.includes(entry.id),
+    ),
+    assistantMessages: current.assistantMessages.filter(
+      (message) =>
+        !relatedMessageIds.has(message.id) &&
+        !(message.completionId && message.completionId === completionId),
+    ),
+  })
+}
+
 function buildCompletionFallbackMessage(state: PersistedAppState, completion: QuestCompletion) {
   const quest = state.quests.find((entry) => entry.id === completion.questId)
   if (!quest) {
@@ -284,18 +366,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return (cloudVal.updatedAt ?? '') > (localVal.updatedAt ?? '') ? cloudVal : localVal
       }
 
-      const merged = ensureSystemQuests(reconcileState({
-        ...local,
-        user: pickNewer(local.user, cloud.user as typeof local.user | undefined),
-        settings: pickNewer(local.settings, cloud.settings as typeof local.settings | undefined),
-        aiConfig: local.aiConfig, // APIキーはローカル優先
-        meta: local.meta,
-        quests: mergeArrayById(local.quests, cloud.quests ?? []),
-        completions: mergeArrayById(local.completions, cloud.completions ?? []),
-        skills: mergeArrayById(local.skills, cloud.skills ?? []),
-        personalSkillDictionary: mergeArrayById(local.personalSkillDictionary, cloud.personalSkillDictionary ?? []),
-        assistantMessages: mergeArrayById(local.assistantMessages, cloud.assistantMessages ?? []),
-      }))
+      const merged = cleanupLocalOnlyOrphanCompletions(
+        ensureSystemQuests(reconcileState({
+          ...local,
+          user: pickNewer(local.user, cloud.user as typeof local.user | undefined),
+          settings: pickNewer(local.settings, cloud.settings as typeof local.settings | undefined),
+          aiConfig: local.aiConfig, // APIキーはローカル優先
+          meta: local.meta,
+          quests: mergeArrayById(local.quests, cloud.quests ?? []),
+          completions: mergeArrayById(local.completions, cloud.completions ?? []),
+          skills: mergeArrayById(local.skills, cloud.skills ?? []),
+          personalSkillDictionary: mergeArrayById(local.personalSkillDictionary, cloud.personalSkillDictionary ?? []),
+          assistantMessages: mergeArrayById(local.assistantMessages, cloud.assistantMessages ?? []),
+        })),
+        cloud,
+      )
       const hydrated = maybeCreatePeriodicMessages(merged)
       persistState(hydrated)
       set({
@@ -594,6 +679,12 @@ export const useAppStore = create<AppStore>((set, get) => ({
         entry.id === completion.id ? { ...entry, assistantMessageId: fallbackMessage.id } : entry,
       ),
     })
+    const createdSkillIds = nextState.skills
+      .filter((skill) => !state.skills.some((entry) => entry.id === skill.id))
+      .map((skill) => skill.id)
+    const createdDictionaryEntryIds = nextState.personalSkillDictionary
+      .filter((entry) => !state.personalSkillDictionary.some((currentEntry) => currentEntry.id === entry.id))
+      .map((entry) => entry.id)
 
     persistState(nextState)
     set({
@@ -606,7 +697,51 @@ export const useAppStore = create<AppStore>((set, get) => ({
     void (async () => {
       try {
         const comp = nextState.completions.find((e) => e.id === completionId)
-        if (comp) await api.postCompletion(comp).catch(() => undefined)
+        if (comp) {
+          try {
+            await api.postCompletion(comp)
+          } catch (err) {
+            if (!isRejectedCompletionQuestError(err)) {
+              throw err
+            }
+
+            let replacementQuest: Quest | null = quest
+            try {
+              const cloudQuests = await api.getQuests()
+              replacementQuest = cloudQuests.find((entry) => entry.id === questId) ?? null
+            } catch {
+              replacementQuest = quest
+            }
+
+            const latestState = get()
+            const rolledBack = buildRolledBackCompletionState({
+              current: toPersistedState(latestState),
+              completionId,
+              fallbackQuest: quest,
+              replacementQuest,
+              createdSkillIds,
+              createdDictionaryEntryIds,
+            })
+
+            recentQuestRequests.delete(recentKey)
+            persistState(rolledBack)
+            set({
+              ...rolledBack,
+              busyQuestId: latestState.busyQuestId === questId ? undefined : latestState.busyQuestId,
+              currentEffectCompletionId:
+                latestState.currentEffectCompletionId === completionId
+                  ? undefined
+                  : latestState.currentEffectCompletionId,
+            })
+            logActivity('sync.error', 'error', {
+              context: 'quest.complete.sync.rollback',
+              message: err instanceof Error ? err.message : String(err),
+              completionId,
+              questId,
+            })
+            return
+          }
+        }
         await api.putUser(nextState.user).catch(() => undefined)
         // ワンタイムクエストの status 変更を同期
         if (quest.questType === 'one_time') {
