@@ -98,6 +98,16 @@ def _get_text_arg(args: dict[str, Any], key: str) -> str | None:
     return trimmed or None
 
 
+def _is_daily_quest(quest: dict[str, Any]) -> bool:
+    return quest.get("questType") == "repeatable" and quest.get("isDaily") is True
+
+
+def _get_quest_type_label(quest: dict[str, Any]) -> str:
+    if quest.get("questType") == "one_time":
+        return "一回限り"
+    return "デイリー" if _is_daily_quest(quest) else "繰り返し"
+
+
 def _parse_jst_date(date_key: str) -> date_cls | None:
     try:
         return datetime.strptime(date_key, "%Y-%m-%d").date()
@@ -711,7 +721,7 @@ class ToolExecutor:
             lines = ["【クエスト一覧】", f"合計: {len(quests)}件", ""]
             for quest in quests[:20]:
                 tags = ", ".join(filter(None, [
-                    "繰り返し" if quest.get("questType") == "repeatable" else "一回限り",
+                    _get_quest_type_label(quest),
                     quest.get("status", ""),
                     quest.get("category", ""),
                 ]))
@@ -1297,11 +1307,12 @@ class ToolExecutor:
             return "クエストのタイトルを指定してください。"
 
         now = datetime.now(JST).isoformat()
+        quest_type = args.get("questType", "repeatable")
         quest = {
             "id": f"quest_{uuid.uuid4().hex[:12]}",
             "title": title,
             "description": args.get("description"),
-            "questType": args.get("questType", "repeatable"),
+            "questType": quest_type,
             "xpReward": args.get("xpReward", 10),
             "category": args.get("category"),
             "skillMappingMode": "ai_auto",
@@ -1312,11 +1323,13 @@ class ToolExecutor:
             "createdAt": now,
             "updatedAt": now,
         }
+        if quest_type == "repeatable" and args.get("isDaily") is True:
+            quest["isDaily"] = True
         await self._api.post_quest(quest)
         self._invalidate_context_cache()
 
         tags = ", ".join(filter(None, [
-            "繰り返し" if quest["questType"] == "repeatable" else "一回限り",
+            _get_quest_type_label(quest),
             quest.get("category", ""),
             f"XP: {quest['xpReward']}",
         ]))

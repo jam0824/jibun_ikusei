@@ -302,6 +302,12 @@ describe('CHAT_TOOLS', () => {
     expect(tool?.function.parameters.properties).toHaveProperty('toDate')
     expect(tool?.function.parameters.required).not.toContain('period')
   })
+
+  it('exposes isDaily on create_quest tool', () => {
+    const tool = CHAT_TOOLS.find((entry) => entry.function.name === 'create_quest')
+    expect(tool).toBeDefined()
+    expect(tool?.function.parameters.properties).toHaveProperty('isDaily')
+  })
 })
 
 describe('get_browsing_times', () => {
@@ -409,6 +415,17 @@ describe('get_quest_data', () => {
     expect(result).toContain('Daily Run')
     expect(result).toContain('TypeScript Book')
     expect(result).not.toContain('Archived Quest')
+  })
+
+  it('shows daily repeatable quests with a daily label', async () => {
+    const ctx = createContext()
+    ctx.appState.quests = ctx.appState.quests.map((quest) =>
+      quest.id === 'q1' ? { ...quest, isDaily: true } : quest,
+    )
+
+    const result = await executeTool('get_quest_data', { type: 'quests', status: 'active' }, ctx)
+
+    expect(result).toContain('デイリー')
   })
 
   it('filters completions on a JST day boundary', async () => {
@@ -681,6 +698,29 @@ describe('mutating tools', () => {
     expect(result).toContain('Stretch')
     expect(mockUpsertQuest).toHaveBeenCalledTimes(1)
     expect(mockUpsertQuest.mock.calls[0][0].questType).toBe('repeatable')
+  })
+
+  it('creates a daily repeatable quest when isDaily is true', async () => {
+    const result = await executeTool(
+      'create_quest',
+      { title: 'Morning Review', questType: 'repeatable', isDaily: true },
+      createContext(),
+    )
+
+    expect(result).toContain('デイリー')
+    expect(mockUpsertQuest).toHaveBeenCalledTimes(1)
+    expect(mockUpsertQuest.mock.calls[0][0].isDaily).toBe(true)
+  })
+
+  it('does not keep isDaily on one-time quests', async () => {
+    await executeTool(
+      'create_quest',
+      { title: 'Finish Tax Form', questType: 'one_time', isDaily: true },
+      createContext(),
+    )
+
+    expect(mockUpsertQuest).toHaveBeenCalledTimes(1)
+    expect(mockUpsertQuest.mock.calls[0][0]).not.toHaveProperty('isDaily')
   })
 
   it('archives a quest', async () => {

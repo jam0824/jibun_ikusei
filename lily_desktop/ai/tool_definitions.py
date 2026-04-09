@@ -188,6 +188,10 @@ CHAT_TOOLS: list[dict] = [
                         "enum": ["repeatable", "one_time"],
                         "description": "クエスト種別。repeatable=繰り返し（デフォルト）、one_time=一回限り",
                     },
+                    "isDaily": {
+                        "type": "boolean",
+                        "description": "repeatable のときだけ true でデイリーにする",
+                    },
                     "xpReward": {
                         "type": "number",
                         "description": "獲得XP（デフォルト: 10）",
