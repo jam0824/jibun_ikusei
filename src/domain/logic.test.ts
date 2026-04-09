@@ -40,6 +40,42 @@ describe('domain logic', () => {
     expect(availability.canComplete).toBe(false)
   })
 
+  it('keeps daily repeatable quests on the normal repeatable availability rules', () => {
+    const now = new Date().toISOString()
+    const quest = {
+      id: 'quest_daily_repeatable',
+      title: '朝のストレッチ',
+      description: '',
+      questType: 'repeatable',
+      xpReward: 5,
+      category: '運動',
+      skillMappingMode: 'fixed',
+      cooldownMinutes: 30,
+      dailyCompletionCap: 2,
+      isDaily: true,
+      status: 'active',
+      privacyMode: 'normal',
+      pinned: false,
+      createdAt: now,
+      updatedAt: now,
+    } as const
+
+    const availability = getQuestAvailability(quest, [
+      {
+        id: 'completion_daily_repeatable',
+        questId: quest.id,
+        clientRequestId: 'req_daily_repeatable',
+        completedAt: now,
+        userXpAwarded: 5,
+        skillResolutionStatus: 'resolved' as const,
+        createdAt: now,
+      },
+    ])
+
+    expect(availability.state).toBe('cooling_down')
+    expect(availability.canComplete).toBe(false)
+  })
+
   it('uses dictionary match for local skill resolution', () => {
     const state = hydratePersistedState()
     const quest = state.quests.find((entry) => entry.title === '読書する')
@@ -397,6 +433,73 @@ describe('domain logic', () => {
     expect(repeatable?.dailyCompletionCap).toBe(10)
     expect(oneTime?.cooldownMinutes).toBeUndefined()
     expect(oneTime?.dailyCompletionCap).toBeUndefined()
+  })
+
+  it('treats missing isDaily as a non-daily repeatable quest on hydrate', () => {
+    const now = new Date().toISOString()
+    const state = hydratePersistedState({
+      meta: {
+        schemaVersion: 1,
+        seededSampleData: true,
+      },
+      quests: [
+        {
+          id: 'quest_repeatable_without_daily',
+          title: 'repeatable',
+          description: '',
+          questType: 'repeatable',
+          xpReward: 5,
+          category: '学習',
+          skillMappingMode: 'ai_auto',
+          cooldownMinutes: 15,
+          dailyCompletionCap: 3,
+          status: 'active',
+          privacyMode: 'normal',
+          pinned: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    })
+
+    const quest = state.quests.find((entry) => entry.id === 'quest_repeatable_without_daily') as
+      | (typeof state.quests)[number] & { isDaily?: boolean }
+      | undefined
+
+    expect(quest?.isDaily).toBeUndefined()
+  })
+
+  it('strips isDaily from one-time quests on hydrate', () => {
+    const now = new Date().toISOString()
+    const state = hydratePersistedState({
+      meta: {
+        schemaVersion: 1,
+        seededSampleData: true,
+      },
+      quests: [
+        {
+          id: 'quest_one_time_daily_invalid',
+          title: 'one-time',
+          description: '',
+          questType: 'one_time',
+          xpReward: 8,
+          category: '生活',
+          skillMappingMode: 'ai_auto',
+          isDaily: true,
+          status: 'active',
+          privacyMode: 'normal',
+          pinned: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      ],
+    })
+
+    const quest = state.quests.find((entry) => entry.id === 'quest_one_time_daily_invalid') as
+      | (typeof state.quests)[number] & { isDaily?: boolean }
+      | undefined
+
+    expect(quest?.isDaily).toBeUndefined()
   })
 
   it('normalizes imported repeatable limits before merge result is returned', () => {

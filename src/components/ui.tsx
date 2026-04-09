@@ -121,18 +121,25 @@ export function Select({ className, ...props }: SelectHTMLAttributes<HTMLSelectE
 export function Switch({
   checked,
   onCheckedChange,
+  className,
+  type,
+  ...props
 }: {
   checked: boolean
   onCheckedChange: (next: boolean) => void
-}) {
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'onChange' | 'children'>) {
   return (
     <button
-      type="button"
+      type={type ?? 'button'}
+      role="switch"
+      aria-checked={checked}
       onClick={() => onCheckedChange(!checked)}
       className={cn(
         'relative inline-flex h-7 w-12 items-center rounded-full transition',
         checked ? 'bg-violet-600' : 'bg-slate-200',
+        className,
       )}
+      {...props}
     >
       <span
         className={cn(

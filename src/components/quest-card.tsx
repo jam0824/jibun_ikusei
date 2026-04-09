@@ -1,6 +1,6 @@
 import { Clock3, Globe, Pin } from 'lucide-react'
 import type { Quest, QuestAvailability, Skill } from '@/domain/types'
-import { getQuestStatusTone } from '@/domain/logic'
+import { getQuestStatusTone, getQuestTypeLabel } from '@/domain/logic'
 import { Badge, Button, Card, CardContent } from '@/components/ui'
 
 function getXpLabel(xp: number): string {
@@ -70,7 +70,7 @@ export function QuestCard({
             <div className="mt-1 text-xs text-slate-500">{quest.description || '説明はまだありません'}</div>
             <div className="mt-3 flex flex-wrap items-center gap-2">
               {skill ? <Badge>{skill.name}</Badge> : <Badge tone="outline">未設定</Badge>}
-              <Badge tone="outline">{quest.questType === 'repeatable' ? '繰り返し' : '単発'}</Badge>
+              <Badge tone="outline">{getQuestTypeLabel(quest)}</Badge>
               {isBrowsing && quest.browsingCategory ? (
                 <Badge tone="outline">{quest.browsingCategory}</Badge>
               ) : null}

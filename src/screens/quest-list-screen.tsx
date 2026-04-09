@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { Filter, Search, Settings2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
-import { getQuestAvailability, getQuestIdsWithActiveCompletions } from '@/domain/logic'
+import { getQuestAvailability, getQuestIdsWithActiveCompletions, isDailyQuest } from '@/domain/logic'
 import { QuestCompleteModal } from '@/components/quest-complete-modal'
 import { QuestCard } from '@/components/quest-card'
 import { Screen } from '@/components/layout'
@@ -10,10 +10,10 @@ import { Button, Card, CardContent, Input } from '@/components/ui'
 import { useAppStore } from '@/store/app-store'
 
 const tabs = [
-  { key: 'today', label: '今日' },
-  { key: 'all', label: 'すべて' },
+  { key: 'daily', label: 'デイリー' },
   { key: 'repeatable', label: '繰り返し' },
   { key: 'one_time', label: '単発' },
+  { key: 'all', label: 'すべて' },
   { key: 'completed', label: '完了済み' },
   { key: 'archived', label: 'アーカイブ' },
 ] as const
@@ -21,7 +21,7 @@ const tabs = [
 export function QuestListScreen() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
-  const [tab, setTab] = useState<(typeof tabs)[number]['key']>('today')
+  const [tab, setTab] = useState<(typeof tabs)[number]['key']>('daily')
   const [query, setQuery] = useState('')
   const { quests, completions, skills, completeQuest, reopenQuest } = useAppStore(
     useShallow((state) => ({
@@ -53,12 +53,11 @@ export function QuestListScreen() {
       .filter((quest) => tab === 'archived' ? quest.status === 'archived' : quest.status !== 'archived')
       .filter((quest) => {
         if (tab === 'archived') return true
-        const availability = getQuestAvailability(quest, completions)
-        if (tab === 'today') {
-          return (availability.canComplete || availability.state === 'expired' || quest.pinned) && quest.source !== 'browsing'
+        if (tab === 'daily') {
+          return isDailyQuest(quest) && quest.source !== 'browsing'
         }
         if (tab === 'repeatable') {
-          return quest.questType === 'repeatable' && quest.source !== 'browsing'
+          return quest.questType === 'repeatable' && !isDailyQuest(quest) && quest.source !== 'browsing'
         }
         if (tab === 'one_time') {
           return quest.questType === 'one_time' && quest.status !== 'completed' && quest.source !== 'browsing'
@@ -103,9 +102,9 @@ export function QuestListScreen() {
       <div className="grid grid-cols-3 gap-3">
         <Card>
           <CardContent className="p-4">
-            <div className="text-xs text-slate-500">今日の候補</div>
+            <div className="text-xs text-slate-500">デイリー</div>
             <div className="mt-1 text-xl font-black text-slate-900">
-              {quests.filter((quest) => getQuestAvailability(quest, completions).canComplete).length}件
+              {quests.filter((quest) => quest.status !== 'archived' && isDailyQuest(quest) && quest.source !== 'browsing').length}件
             </div>
           </CardContent>
         </Card>
@@ -121,7 +120,7 @@ export function QuestListScreen() {
           <CardContent className="p-4">
             <div className="text-xs text-slate-500">繰り返し</div>
             <div className="mt-1 text-xl font-black text-slate-900">
-              {quests.filter((quest) => quest.questType === 'repeatable').length}件
+              {quests.filter((quest) => quest.status !== 'archived' && quest.questType === 'repeatable' && !isDailyQuest(quest) && quest.source !== 'browsing').length}件
             </div>
           </CardContent>
         </Card>

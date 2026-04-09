@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { BookOpen, CheckCircle2, Clock3, PencilLine, Sparkles, X } from 'lucide-react'
 import type { Quest } from '@/domain/types'
+import { getQuestTypeLabel } from '@/domain/logic'
 import { fromRelativeOption } from '@/lib/date'
 import { Badge, Button, Card, CardContent, Textarea } from '@/components/ui'
 
@@ -64,7 +65,7 @@ export function QuestCompleteModal({
                 <div className="mt-1 text-sm text-slate-500">{quest.description || '説明はまだありません'}</div>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {quest.category ? <Badge>{quest.category}</Badge> : null}
-                  <Badge tone="outline">{quest.questType === 'repeatable' ? '繰り返し' : '単発'}</Badge>
+                  <Badge tone="outline">{getQuestTypeLabel(quest)}</Badge>
                 </div>
               </div>
             </div>

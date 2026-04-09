@@ -427,6 +427,7 @@ function normalizeQuestConstraints(quest: Quest): Quest {
   if (quest.questType !== 'repeatable') {
     return {
       ...quest,
+      isDaily: undefined,
       cooldownMinutes: undefined,
       dailyCompletionCap: undefined,
     }
@@ -437,6 +438,7 @@ function normalizeQuestConstraints(quest: Quest): Quest {
 
   return {
     ...quest,
+    isDaily: quest.isDaily === true ? true : undefined,
     cooldownMinutes:
       cooldown === undefined ? undefined : clamp(cooldown, MIN_REPEATABLE_COOLDOWN, MAX_REPEATABLE_COOLDOWN),
     dailyCompletionCap:
@@ -575,6 +577,18 @@ export function getWeekActiveCompletions(
 
 export function getQuestIdsWithActiveCompletions(completions: QuestCompletion[]) {
   return new Set(getActiveCompletions(completions).map((completion) => completion.questId))
+}
+
+export function isDailyQuest(quest: Quest) {
+  return quest.questType === 'repeatable' && quest.isDaily === true
+}
+
+export function getQuestTypeLabel(quest: Quest) {
+  if (quest.questType === 'one_time') {
+    return '単発'
+  }
+
+  return isDailyQuest(quest) ? 'デイリー' : '繰り返し'
 }
 
 export function getQuestCompletions(completions: QuestCompletion[], questId: string) {
@@ -913,6 +927,7 @@ export function buildQuestDraft(quest?: Quest): Quest {
     title: '',
     description: '',
     questType: 'repeatable',
+    isDaily: undefined,
     xpReward: 5,
     category: '学習',
     skillMappingMode: 'ai_auto',
