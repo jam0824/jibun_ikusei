@@ -421,4 +421,36 @@ describe('app store', () => {
       expect(store.user.totalXp).toBe(0)
     })
   })
+
+  it('syncs the meal system quest before posting its completion', async () => {
+    const mealQuest = useAppStore.getState().quests.find((entry) => entry.systemKey === 'meal_register')
+    expect(mealQuest).toBeTruthy()
+
+    const now = new Date().toISOString()
+    const postQuestSpy = vi.spyOn(api, 'postQuest').mockResolvedValue({
+      ...mealQuest!,
+      updatedAt: now,
+    })
+    const postCompletionSpy = vi.spyOn(api, 'postCompletion').mockResolvedValue({})
+    const putUserSpy = vi.spyOn(api, 'putUser').mockResolvedValue({ updated: true })
+
+    const result = await useAppStore.getState().completeQuest(mealQuest!.id, {
+      completedAt: now,
+      sourceScreen: 'meal',
+    })
+
+    expect(result.completionId).toBeTruthy()
+
+    await vi.waitFor(() => {
+      expect(postQuestSpy).toHaveBeenCalledTimes(1)
+      expect(postCompletionSpy).toHaveBeenCalledTimes(1)
+    })
+
+    expect(postQuestSpy.mock.invocationCallOrder[0]).toBeLessThan(postCompletionSpy.mock.invocationCallOrder[0])
+    expect(postQuestSpy).toHaveBeenCalledWith(expect.objectContaining({
+      id: mealQuest!.id,
+      systemKey: 'meal_register',
+    }))
+    expect(putUserSpy).toHaveBeenCalled()
+  })
 })

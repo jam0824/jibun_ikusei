@@ -696,6 +696,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     // バックグラウンドで個別APIにデータを同期
     void (async () => {
       try {
+        const questForSync = nextState.quests.find((entry) => entry.id === questId) ?? quest
+        if (questForSync.systemKey) {
+          await api.postQuest(questForSync)
+        }
         const comp = nextState.completions.find((e) => e.id === completionId)
         if (comp) {
           try {
