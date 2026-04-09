@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { buildTemplateSkillResolution, getProviderConfig, hasUsableAi } from '@/domain/logic'
+import { buildTemplateSkillResolution, getProviderConfig, getQuestTypeLabel, hasUsableAi } from '@/domain/logic'
 import type {
   AiConfig,
   LilyMessageResult,
@@ -718,7 +718,7 @@ export function buildLilyChatSystemPromptLegacy(params: {
         const parts = [`- ${q.title}`]
         if (q.category) parts.push(`カテゴリ: ${q.category}`)
         parts.push(`XP: ${q.xpReward}`)
-        parts.push(q.questType === 'repeatable' ? '繰り返し' : '一回限り')
+        parts.push(getQuestTypeLabel(q))
         return parts.join('、')
       }).join('\n')
     : 'まだクエストがありません'
@@ -807,7 +807,7 @@ export function buildLilyChatSystemPrompt(params: {
           const parts = [`- ${quest.title}`]
           if (quest.category) parts.push(`カテゴリ: ${quest.category}`)
           parts.push(`XP: ${quest.xpReward}`)
-          parts.push(quest.questType === 'repeatable' ? '繰り返し' : '一回限り')
+          parts.push(getQuestTypeLabel(quest))
           return parts.join('、')
         })
         .join('\n')

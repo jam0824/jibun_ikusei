@@ -65,6 +65,7 @@ export interface Quest {
   title: string
   description?: string
   questType: QuestType
+  isDaily?: boolean
   xpReward: number
   category?: string
   skillMappingMode: SkillMappingMode

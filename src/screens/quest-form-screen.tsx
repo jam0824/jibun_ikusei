@@ -12,7 +12,7 @@ import {
   MIN_REPEATABLE_DAILY_CAP,
   QUEST_CATEGORIES,
 } from '@/domain/constants'
-import { toDateTimeLocalValue } from '@/lib/date'
+import { nowIso, toDateTimeLocalValue } from '@/lib/date'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Select, Switch, Textarea } from '@/components/ui'
 import { useAppStore } from '@/store/app-store'
@@ -59,9 +59,12 @@ export function QuestFormScreen() {
   const update = <K extends keyof Quest>(key: K, value: Quest[K]) => {
     setError(undefined)
     setForm((current) => {
-      const next = { ...current, [key]: value, updatedAt: new Date().toISOString() }
+      const next = { ...current, [key]: value, updatedAt: nowIso() }
       if (key === 'privacyMode' && value === 'no_ai' && next.skillMappingMode !== 'fixed') {
         next.skillMappingMode = 'fixed'
+      }
+      if (key === 'questType' && value === 'one_time') {
+        next.isDaily = undefined
       }
       return next
     })
@@ -108,11 +111,13 @@ export function QuestFormScreen() {
       form.questType === 'one_time'
         ? {
             ...form,
+            isDaily: undefined,
             cooldownMinutes: undefined,
             dailyCompletionCap: undefined,
           }
         : {
             ...form,
+            isDaily: form.isDaily === true ? true : undefined,
             cooldownMinutes: Math.trunc(form.cooldownMinutes ?? MIN_REPEATABLE_COOLDOWN),
             dailyCompletionCap: Math.trunc(form.dailyCompletionCap ?? MIN_REPEATABLE_DAILY_CAP),
           }
@@ -355,6 +360,22 @@ export function QuestFormScreen() {
       <section className="mt-5">
         <div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">詳細設定</div>
         <div className="space-y-3">
+          {form.questType === 'repeatable' ? (
+            <Card>
+              <CardContent className="flex items-center justify-between gap-4 p-4">
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">デイリー</div>
+                  <div className="mt-1 text-xs text-slate-500">クエスト一覧の「デイリー」に表示します。</div>
+                </div>
+                <Switch
+                  aria-label="デイリー"
+                  checked={form.isDaily === true}
+                  onCheckedChange={(checked) => update('isDaily', checked ? true : undefined)}
+                />
+              </CardContent>
+            </Card>
+          ) : null}
+
           <Card>
             <CardContent className="flex items-center justify-between gap-4 p-4">
               <div>

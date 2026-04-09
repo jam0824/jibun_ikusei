@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 import ai.tool_executor as tool_executor_module
+from ai.tool_definitions import CHAT_TOOLS
 from ai.tool_executor import ToolExecutor
 
 
@@ -63,6 +64,12 @@ def _make_chat_message(session_id: str, role: str, content: str, created_at: str
     }
 
 
+def test_create_quest_tool_definition_exposes_is_daily():
+    tool = next(entry for entry in CHAT_TOOLS if entry["function"]["name"] == "create_quest")
+
+    assert "isDaily" in tool["function"]["parameters"]["properties"]
+
+
 @pytest.mark.asyncio
 async def test_browsing_times_uses_explicit_date_range():
     api = _make_api()
@@ -98,6 +105,57 @@ async def test_completions_respect_inclusive_jst_range():
 
     assert result.count("Reading") == 2
     assert "2" in result
+
+
+@pytest.mark.asyncio
+async def test_get_quest_data_labels_daily_repeatable_quests():
+    api = _make_api()
+    api.get_quests.return_value = [{
+        "id": "q1",
+        "title": "Morning Review",
+        "questType": "repeatable",
+        "isDaily": True,
+        "xpReward": 10,
+        "status": "active",
+        "createdAt": "2026-04-05T09:00:00+09:00",
+        "updatedAt": "2026-04-05T09:00:00+09:00",
+    }]
+    executor = ToolExecutor(api)
+
+    result = await executor.execute("get_quest_data", {"type": "quests"})
+
+    assert "Morning Review" in result
+    assert "デイリー" in result
+
+
+@pytest.mark.asyncio
+async def test_create_quest_posts_daily_flag_for_repeatable_quest():
+    api = _make_api()
+    executor = ToolExecutor(api)
+
+    result = await executor.execute(
+        "create_quest",
+        {"title": "Morning Review", "questType": "repeatable", "isDaily": True},
+    )
+
+    assert "Morning Review" in result
+    assert "デイリー" in result
+    api.post_quest.assert_awaited_once()
+    assert api.post_quest.await_args.args[0]["isDaily"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_quest_does_not_keep_daily_flag_for_one_time_quest():
+    api = _make_api()
+    executor = ToolExecutor(api)
+
+    await executor.execute(
+        "create_quest",
+        {"title": "Submit expense report", "questType": "one_time", "isDaily": True},
+    )
+
+    api.post_quest.assert_awaited_once()
+    assert "isDaily" not in api.post_quest.await_args.args[0]
 
 
 @pytest.mark.asyncio

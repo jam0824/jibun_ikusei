@@ -16,7 +16,7 @@ import type {
 import { aggregateByCategory, aggregateDomains } from '@/lib/browsing-aggregator'
 import { NUTRIENT_META } from '@/domain/nutrition-constants'
 import { formatSeconds } from '@/lib/time-format'
-import { maskApiKey } from '@/domain/logic'
+import { getQuestTypeLabel, maskApiKey } from '@/domain/logic'
 import { createId } from '@/lib/utils'
 import { useAppStore } from '@/store/app-store'
 import type {
@@ -690,6 +690,10 @@ export const CHAT_TOOLS = [
             enum: ['repeatable', 'one_time'],
             description: 'クエスト種別。repeatable=繰り返し（デフォルト）、one_time=一回限り',
           },
+          isDaily: {
+            type: 'boolean',
+            description: 'repeatable のときだけ true でデイリーにする',
+          },
           xpReward: {
             type: 'number',
             description: '獲得XP（デフォルト: 10）',
@@ -982,7 +986,7 @@ function executeGetQuestData(args: ToolArgs, context: ToolContext): string {
 
     for (const q of quests.slice(0, 20)) {
       const tags = [
-        q.questType === 'repeatable' ? '繰り返し' : '一回限り',
+        getQuestTypeLabel(q),
         q.status,
         q.category ?? '',
         q.pinned ? '📌' : '',
@@ -1484,11 +1488,12 @@ function executeCreateQuest(args: Record<string, unknown>): string {
   const title = args.title as string | undefined
   if (!title) return 'クエストのタイトルを指定してください。'
 
+  const questType = (args.questType as Quest['questType']) ?? 'repeatable'
   const quest: Quest = {
     id: createId('quest'),
     title,
     description: (args.description as string) ?? undefined,
-    questType: (args.questType as Quest['questType']) ?? 'repeatable',
+    questType,
     xpReward: (args.xpReward as number) ?? 10,
     category: (args.category as string) ?? undefined,
     skillMappingMode: 'ai_auto',
@@ -1498,12 +1503,13 @@ function executeCreateQuest(args: Record<string, unknown>): string {
     status: 'active',
     createdAt: '',
     updatedAt: '',
+    ...(questType === 'repeatable' && args.isDaily === true ? { isDaily: true } : {}),
   }
 
   useAppStore.getState().upsertQuest(quest)
 
   const tags = [
-    quest.questType === 'repeatable' ? '繰り返し' : '一回限り',
+    getQuestTypeLabel(quest),
     quest.category ?? '',
     `XP: ${quest.xpReward}`,
   ].filter(Boolean).join(', ')
