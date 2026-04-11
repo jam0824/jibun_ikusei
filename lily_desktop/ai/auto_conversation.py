@@ -384,6 +384,14 @@ class AutoConversation:
                     "何の話かが伝わるひと言から始めてください。"
                 )
 
+        if seed.source == "camera":
+            context_parts.append("")
+            context_parts.append("【カメラ話題の話し方】")
+            context_parts.append(
+                "この話題はカメラ由来でも、「カメラに映ってる」「画像で見ると」などのメタな言い方はしないこと。"
+                "二人がその場の外や周囲を一緒に見ているように自然に話してください。"
+            )
+
         if conv_history:
             context_parts.append("")
             context_parts.append("【これまでの掛け合い】")
@@ -430,11 +438,30 @@ class AutoConversation:
             )
 
         system = _HARUKA_SYSTEM.format(haruka_base=haruka_base)
-        user_msg = (
-            f"【これまでの掛け合い】\n{history_text}\n\n"
-            f"【雑談の種】\n- 話題: {seed.summary}\n- あなたの切り口: {seed.haruka_perspective}\n\n"
-            f"上の流れを踏まえて、自然に反応してください。"
+        user_parts = [
+            "【これまでの掛け合い】",
+            history_text,
+            "",
+            "【雑談の種】",
+            f"- 話題: {seed.summary}",
+            f"- あなたの切り口: {seed.haruka_perspective}",
+        ]
+        if seed.source == "camera":
+            user_parts.extend(
+                [
+                    "",
+                    "【カメラ話題の話し方】",
+                    "この話題はカメラ由来でも、「映ってる」「カメラ越しに」などのメタな言い方は避け、"
+                    "二人が今その場を見ているように自然に反応してください。",
+                ]
+            )
+        user_parts.extend(
+            [
+                "",
+                "上の流れを踏まえて、自然に反応してください。",
+            ]
         )
+        user_msg = "\n".join(user_parts)
 
         try:
             result = await send_chat_message(
