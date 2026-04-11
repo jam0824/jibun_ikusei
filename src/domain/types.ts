@@ -133,7 +133,16 @@ export interface AssistantMessage {
   text: string
   audioUrl?: string
   completionId?: string
+  periodKey?: string
   createdAt: string
+}
+
+export interface WeeklyReflectionCache {
+  weekKey: string
+  comment: string
+  recommendations: string[]
+  generatedAt: string
+  provider: 'openai' | 'template'
 }
 
 export interface AppMeta {
@@ -141,6 +150,7 @@ export interface AppMeta {
   seededSampleData: boolean
   lastDailySummaryDate?: string
   lastWeeklyReflectionWeek?: string
+  latestWeeklyReflection?: WeeklyReflectionCache
   lastNotificationCheckDate?: string
   notificationPermission?: 'default' | 'granted' | 'denied' | 'unsupported'
 }

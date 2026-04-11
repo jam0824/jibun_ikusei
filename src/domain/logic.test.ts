@@ -3,6 +3,7 @@ import {
   buildTemplateSkillResolution,
   getCompletionCelebration,
   getFilteredActiveCompletions,
+  getPreviousWeekReflectionSummary,
   getQuestCompletionRanking,
   getQuestAvailability,
   getQuestIdsWithActiveCompletions,
@@ -715,5 +716,312 @@ describe('domain logic', () => {
       expect(state.aiConfig.providers.gemini.ttsModel).toBe('gemini-2.5-flash-preview-tts')
       expect(state.aiConfig.providers.gemini.voice).toBe('Zephyr')
     }
+  })
+
+  it('builds the previous-week reflection summary from manual quests only', () => {
+    const state = hydratePersistedState({
+      meta: {
+        schemaVersion: 1,
+        seededSampleData: true,
+      },
+      quests: [
+        {
+          id: 'quest_daily',
+          title: 'Morning stretch',
+          description: '',
+          questType: 'repeatable',
+          isDaily: true,
+          xpReward: 3,
+          category: 'Health',
+          skillMappingMode: 'fixed',
+          fixedSkillId: 'skill_habit',
+          cooldownMinutes: 0,
+          dailyCompletionCap: 7,
+          status: 'active',
+          privacyMode: 'normal',
+          pinned: false,
+          createdAt: '2026-04-01T09:00:00+09:00',
+          updatedAt: '2026-04-01T09:00:00+09:00',
+        },
+        {
+          id: 'quest_focus',
+          title: 'Deep work',
+          description: '',
+          questType: 'repeatable',
+          xpReward: 8,
+          category: 'Work',
+          skillMappingMode: 'fixed',
+          fixedSkillId: 'skill_focus',
+          cooldownMinutes: 0,
+          dailyCompletionCap: 10,
+          status: 'active',
+          privacyMode: 'normal',
+          pinned: false,
+          createdAt: '2026-04-01T09:00:00+09:00',
+          updatedAt: '2026-04-01T09:00:00+09:00',
+        },
+        {
+          id: 'quest_browsing',
+          title: 'Good browsing',
+          description: '',
+          questType: 'repeatable',
+          xpReward: 20,
+          category: 'Browsing',
+          skillMappingMode: 'fixed',
+          fixedSkillId: 'skill_focus',
+          cooldownMinutes: 0,
+          dailyCompletionCap: 10,
+          status: 'active',
+          privacyMode: 'normal',
+          pinned: false,
+          source: 'browsing',
+          browsingType: 'good',
+          createdAt: '2026-04-01T09:00:00+09:00',
+          updatedAt: '2026-04-01T09:00:00+09:00',
+        },
+      ],
+      skills: [
+        {
+          id: 'skill_habit',
+          name: 'Habit',
+          normalizedName: 'habit',
+          category: 'Health',
+          level: 1,
+          totalXp: 0,
+          source: 'manual',
+          status: 'active',
+          createdAt: '2026-04-01T09:00:00+09:00',
+          updatedAt: '2026-04-01T09:00:00+09:00',
+        },
+        {
+          id: 'skill_focus',
+          name: 'Focus',
+          normalizedName: 'focus',
+          category: 'Work',
+          level: 1,
+          totalXp: 0,
+          source: 'manual',
+          status: 'active',
+          createdAt: '2026-04-01T09:00:00+09:00',
+          updatedAt: '2026-04-01T09:00:00+09:00',
+        },
+      ],
+      completions: [
+        {
+          id: 'daily_mon',
+          questId: 'quest_daily',
+          clientRequestId: 'req_daily_mon',
+          completedAt: '2026-04-06T08:00:00+09:00',
+          userXpAwarded: 3,
+          skillXpAwarded: 3,
+          resolvedSkillId: 'skill_habit',
+          skillResolutionStatus: 'resolved',
+          createdAt: '2026-04-06T08:00:00+09:00',
+        },
+        {
+          id: 'focus_tue',
+          questId: 'quest_focus',
+          clientRequestId: 'req_focus_tue',
+          completedAt: '2026-04-07T09:00:00+09:00',
+          userXpAwarded: 8,
+          skillXpAwarded: 8,
+          resolvedSkillId: 'skill_focus',
+          skillResolutionStatus: 'resolved',
+          createdAt: '2026-04-07T09:00:00+09:00',
+        },
+        {
+          id: 'daily_wed',
+          questId: 'quest_daily',
+          clientRequestId: 'req_daily_wed',
+          completedAt: '2026-04-08T08:00:00+09:00',
+          userXpAwarded: 3,
+          skillXpAwarded: 3,
+          resolvedSkillId: 'skill_habit',
+          skillResolutionStatus: 'resolved',
+          createdAt: '2026-04-08T08:00:00+09:00',
+        },
+        {
+          id: 'browsing_thu',
+          questId: 'quest_browsing',
+          clientRequestId: 'req_browsing_thu',
+          completedAt: '2026-04-09T10:00:00+09:00',
+          userXpAwarded: 20,
+          skillXpAwarded: 20,
+          resolvedSkillId: 'skill_focus',
+          skillResolutionStatus: 'resolved',
+          createdAt: '2026-04-09T10:00:00+09:00',
+        },
+        {
+          id: 'daily_fri',
+          questId: 'quest_daily',
+          clientRequestId: 'req_daily_fri',
+          completedAt: '2026-04-10T08:00:00+09:00',
+          userXpAwarded: 3,
+          skillXpAwarded: 3,
+          resolvedSkillId: 'skill_habit',
+          skillResolutionStatus: 'resolved',
+          createdAt: '2026-04-10T08:00:00+09:00',
+        },
+        {
+          id: 'focus_sat',
+          questId: 'quest_focus',
+          clientRequestId: 'req_focus_sat',
+          completedAt: '2026-04-11T09:00:00+09:00',
+          userXpAwarded: 8,
+          skillXpAwarded: 8,
+          resolvedSkillId: 'skill_focus',
+          skillResolutionStatus: 'resolved',
+          createdAt: '2026-04-11T09:00:00+09:00',
+        },
+        {
+          id: 'focus_undone',
+          questId: 'quest_focus',
+          clientRequestId: 'req_focus_undone',
+          completedAt: '2026-04-12T09:00:00+09:00',
+          userXpAwarded: 8,
+          skillXpAwarded: 8,
+          resolvedSkillId: 'skill_focus',
+          skillResolutionStatus: 'resolved',
+          undoneAt: '2026-04-12T09:05:00+09:00',
+          createdAt: '2026-04-12T09:00:00+09:00',
+        },
+        {
+          id: 'daily_prev',
+          questId: 'quest_daily',
+          clientRequestId: 'req_daily_prev',
+          completedAt: '2026-04-05T08:00:00+09:00',
+          userXpAwarded: 3,
+          skillXpAwarded: 3,
+          resolvedSkillId: 'skill_habit',
+          skillResolutionStatus: 'resolved',
+          createdAt: '2026-04-05T08:00:00+09:00',
+        },
+        {
+          id: 'focus_prev',
+          questId: 'quest_focus',
+          clientRequestId: 'req_focus_prev',
+          completedAt: '2026-04-02T09:00:00+09:00',
+          userXpAwarded: 8,
+          skillXpAwarded: 8,
+          resolvedSkillId: 'skill_focus',
+          skillResolutionStatus: 'resolved',
+          createdAt: '2026-04-02T09:00:00+09:00',
+        },
+      ],
+      assistantMessages: [],
+      personalSkillDictionary: [],
+    })
+
+    const summary = getPreviousWeekReflectionSummary(
+      state,
+      new Date('2026-04-14T12:00:00+09:00'),
+    )
+
+    expect(summary.weekKey).toBe('2026-W15')
+    expect(summary.startDate).toBe('2026-04-06')
+    expect(summary.endDate).toBe('2026-04-12')
+    expect(summary.weekLabel).toBe('2026-04-06 〜 2026-04-12')
+    expect(summary.hasData).toBe(true)
+    expect(summary.totalCompletionCount).toBe(5)
+    expect(summary.totalUserXp).toBe(25)
+    expect(summary.activeDayCount).toBe(5)
+    expect(summary.topSkill?.skillName).toBe('Focus')
+    expect(summary.dailySummaries.map((entry) => `${entry.dayKey}:${entry.completionCount}/${entry.userXp}`)).toEqual([
+      '2026-04-06:1/3',
+      '2026-04-07:1/8',
+      '2026-04-08:1/3',
+      '2026-04-09:0/0',
+      '2026-04-10:1/3',
+      '2026-04-11:1/8',
+      '2026-04-12:0/0',
+    ])
+    expect(summary.dailyQuestSummaries).toEqual([
+      {
+        questId: 'quest_daily',
+        title: 'Morning stretch',
+        currentDays: 3,
+        previousDays: 1,
+      },
+    ])
+    expect(summary.topQuestSummaries).toEqual([
+      {
+        questId: 'quest_daily',
+        title: 'Morning stretch',
+        currentCount: 3,
+        previousCount: 1,
+        lastCompletedAt: '2026-04-10T08:00:00+09:00',
+      },
+      {
+        questId: 'quest_focus',
+        title: 'Deep work',
+        currentCount: 2,
+        previousCount: 1,
+        lastCompletedAt: '2026-04-11T09:00:00+09:00',
+      },
+    ])
+    expect(summary.topSkillSummaries).toEqual([
+      {
+        skillId: 'skill_focus',
+        skillName: 'Focus',
+        currentXp: 16,
+      },
+      {
+        skillId: 'skill_habit',
+        skillName: 'Habit',
+        currentXp: 9,
+      },
+    ])
+  })
+
+  it('keeps previous-week reflection ranges aligned at year boundaries', () => {
+    const state = hydratePersistedState({
+      meta: {
+        schemaVersion: 1,
+        seededSampleData: true,
+      },
+      quests: [
+        {
+          id: 'quest_year_boundary',
+          title: 'Year boundary quest',
+          description: '',
+          questType: 'repeatable',
+          xpReward: 5,
+          category: 'Study',
+          skillMappingMode: 'ai_auto',
+          cooldownMinutes: 0,
+          dailyCompletionCap: 10,
+          status: 'active',
+          privacyMode: 'normal',
+          pinned: false,
+          createdAt: '2026-12-20T09:00:00+09:00',
+          updatedAt: '2026-12-20T09:00:00+09:00',
+        },
+      ],
+      completions: [
+        {
+          id: 'completion_year_boundary',
+          questId: 'quest_year_boundary',
+          clientRequestId: 'req_year_boundary',
+          completedAt: '2026-12-29T09:00:00+09:00',
+          userXpAwarded: 5,
+          skillResolutionStatus: 'resolved',
+          createdAt: '2026-12-29T09:00:00+09:00',
+        },
+      ],
+      skills: [],
+      assistantMessages: [],
+      personalSkillDictionary: [],
+    })
+
+    const summary = getPreviousWeekReflectionSummary(
+      state,
+      new Date('2027-01-10T12:00:00+09:00'),
+    )
+
+    expect(summary.weekKey).toBe('2026-W53')
+    expect(summary.startDate).toBe('2026-12-28')
+    expect(summary.endDate).toBe('2027-01-03')
+    expect(summary.weekLabel).toBe('2026-12-28 〜 2027-01-03')
+    expect(summary.totalCompletionCount).toBe(1)
   })
 })

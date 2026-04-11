@@ -453,4 +453,192 @@ describe('app store', () => {
     }))
     expect(putUserSpy).toHaveBeenCalled()
   })
+
+  it('creates and stores the previous-week reflection on first view', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-14T12:00:00+09:00'))
+
+    resetStore()
+    useAppStore.setState((state) => ({
+      ...state,
+      quests: [
+        {
+          id: 'quest_reflection',
+          title: 'Read 30 minutes',
+          description: '',
+          questType: 'repeatable',
+          xpReward: 5,
+          category: 'Study',
+          skillMappingMode: 'fixed',
+          fixedSkillId: 'skill_reflection',
+          cooldownMinutes: 0,
+          dailyCompletionCap: 10,
+          status: 'active',
+          privacyMode: 'normal',
+          pinned: false,
+          createdAt: '2026-04-01T09:00:00+09:00',
+          updatedAt: '2026-04-01T09:00:00+09:00',
+        },
+      ],
+      skills: [
+        {
+          id: 'skill_reflection',
+          name: 'Reading',
+          normalizedName: 'reading',
+          category: 'Study',
+          level: 1,
+          totalXp: 0,
+          source: 'manual',
+          status: 'active',
+          createdAt: '2026-04-01T09:00:00+09:00',
+          updatedAt: '2026-04-01T09:00:00+09:00',
+        },
+      ],
+      completions: [
+        {
+          id: 'completion_reflection',
+          questId: 'quest_reflection',
+          clientRequestId: 'req_reflection',
+          completedAt: '2026-04-07T08:00:00+09:00',
+          userXpAwarded: 5,
+          skillXpAwarded: 5,
+          resolvedSkillId: 'skill_reflection',
+          skillResolutionStatus: 'resolved',
+          createdAt: '2026-04-07T08:00:00+09:00',
+        },
+      ],
+      assistantMessages: [],
+      aiConfig: {
+        ...state.aiConfig,
+        providers: {
+          ...state.aiConfig.providers,
+          openai: {
+            ...state.aiConfig.providers.openai,
+            apiKey: 'sk-test',
+          },
+        },
+      },
+    }))
+
+    vi.spyOn(aiLib, 'generateWeeklyReflection').mockResolvedValue({
+      provider: 'openai',
+      comment: 'Nice consistency.',
+      recommendations: ['Keep the same reading slot.'],
+    })
+
+    const result = await useAppStore.getState().ensureWeeklyReflection(
+      new Date('2026-04-14T12:00:00+09:00'),
+    )
+
+    expect(result.hasData).toBe(true)
+    expect(useAppStore.getState().meta.latestWeeklyReflection).toEqual(
+      expect.objectContaining({
+        weekKey: '2026-W15',
+        comment: 'Nice consistency.',
+        recommendations: ['Keep the same reading slot.'],
+        provider: 'openai',
+      }),
+    )
+    expect(useAppStore.getState().meta.lastWeeklyReflectionWeek).toBe('2026-W15')
+    expect(
+      useAppStore.getState().assistantMessages.find(
+        (entry) => entry.triggerType === 'weekly_reflection' && entry.periodKey === '2026-W15',
+      ),
+    ).toEqual(
+      expect.objectContaining({
+        text: 'Nice consistency.',
+      }),
+    )
+
+    vi.useRealTimers()
+  })
+
+  it('reuses the cached reflection for the same week without regenerating it', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-14T12:00:00+09:00'))
+
+    resetStore()
+    useAppStore.setState((state) => ({
+      ...state,
+      quests: [
+        {
+          id: 'quest_cached',
+          title: 'Walk outside',
+          description: '',
+          questType: 'repeatable',
+          xpReward: 4,
+          category: 'Health',
+          skillMappingMode: 'ai_auto',
+          cooldownMinutes: 0,
+          dailyCompletionCap: 10,
+          status: 'active',
+          privacyMode: 'normal',
+          pinned: false,
+          createdAt: '2026-04-01T09:00:00+09:00',
+          updatedAt: '2026-04-01T09:00:00+09:00',
+        },
+      ],
+      completions: [
+        {
+          id: 'completion_cached',
+          questId: 'quest_cached',
+          clientRequestId: 'req_cached',
+          completedAt: '2026-04-08T08:00:00+09:00',
+          userXpAwarded: 4,
+          skillResolutionStatus: 'resolved',
+          createdAt: '2026-04-08T08:00:00+09:00',
+        },
+      ],
+      assistantMessages: [
+        {
+          id: 'msg_cached_weekly',
+          triggerType: 'weekly_reflection',
+          mood: 'calm',
+          text: 'Cached reflection',
+          periodKey: '2026-W15',
+          createdAt: '2026-04-14T12:00:00+09:00',
+        },
+      ],
+      meta: {
+        ...state.meta,
+        latestWeeklyReflection: {
+          weekKey: '2026-W15',
+          comment: 'Cached reflection',
+          recommendations: ['Protect your morning walk.'],
+          generatedAt: '2026-04-14T12:00:00+09:00',
+          provider: 'template',
+        },
+      },
+    }))
+
+    const reflectionSpy = vi.spyOn(aiLib, 'generateWeeklyReflection')
+
+    const result = await useAppStore.getState().ensureWeeklyReflection(
+      new Date('2026-04-14T12:00:00+09:00'),
+    )
+
+    expect(result.hasData).toBe(true)
+    expect(reflectionSpy).not.toHaveBeenCalled()
+    expect(useAppStore.getState().meta.lastWeeklyReflectionWeek).toBe('2026-W15')
+
+    vi.useRealTimers()
+  })
+
+  it('returns an empty weekly reflection when the previous week has no completions', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-14T12:00:00+09:00'))
+
+    resetStore()
+    const reflectionSpy = vi.spyOn(aiLib, 'generateWeeklyReflection')
+
+    const result = await useAppStore.getState().ensureWeeklyReflection(
+      new Date('2026-04-14T12:00:00+09:00'),
+    )
+
+    expect(result.hasData).toBe(false)
+    expect(reflectionSpy).not.toHaveBeenCalled()
+    expect(useAppStore.getState().meta.latestWeeklyReflection).toBeUndefined()
+
+    vi.useRealTimers()
+  })
 })

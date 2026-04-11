@@ -6,6 +6,7 @@ import {
   createSkillRecord,
   ensureSystemQuests,
   getProviderConfig,
+  getPreviousWeekReflectionSummary,
   getQuestAvailability,
   hasUsableAi,
   hydratePersistedState,
@@ -31,6 +32,7 @@ import type {
 import type { FitbitSummary, NutritionDayResult } from '@/lib/api-client'
 import { getDayKey, getWeekKey, isUndoable, nowIso } from '@/lib/date'
 import {
+  generateWeeklyReflection,
   generateLilyMessageWithProvider,
   generateTtsAudio,
   resolveSkillWithProvider,
@@ -77,6 +79,7 @@ interface AppStore extends PersistedAppState {
   setAiConfig: (provider: 'openai' | 'gemini', patch: Partial<AiConfig['providers']['openai']>) => void
   setActiveProvider: (provider: AiConfig['activeProvider']) => void
   testConnection: (provider: 'openai' | 'gemini') => Promise<void>
+  ensureWeeklyReflection: (referenceDate?: Date) => Promise<{ weekKey: string; hasData: boolean }>
   playAssistantMessage: (messageId: string) => Promise<string | undefined>
   exportData: () => void
   importData: (jsonText: string, mode: ImportMode) => { ok: boolean; reason?: string }
@@ -1248,6 +1251,77 @@ export const useAppStore = create<AppStore>((set, get) => ({
           },
         },
       })
+    }
+  },
+
+  ensureWeeklyReflection: async (referenceDate = new Date()) => {
+    const state = get()
+    const summary = getPreviousWeekReflectionSummary(state, referenceDate)
+
+    if (!summary.hasData) {
+      return {
+        weekKey: summary.weekKey,
+        hasData: false,
+      }
+    }
+
+    const cachedReflection =
+      state.meta.latestWeeklyReflection?.weekKey === summary.weekKey
+        ? state.meta.latestWeeklyReflection
+        : undefined
+    const generatedReflection =
+      cachedReflection ??
+      ({
+        weekKey: summary.weekKey,
+        generatedAt: nowIso(),
+        ...(await generateWeeklyReflection({
+          aiConfig: state.aiConfig,
+          settings: state.settings,
+          summary,
+        })),
+      } as const)
+
+    const existingMessage = state.assistantMessages.find(
+      (entry) => entry.triggerType === 'weekly_reflection' && entry.periodKey === summary.weekKey,
+    )
+    const weeklyMessage: AssistantMessage = {
+      id: existingMessage?.id ?? createId('msg'),
+      triggerType: 'weekly_reflection',
+      mood: 'calm',
+      text: generatedReflection.comment,
+      periodKey: summary.weekKey,
+      createdAt: existingMessage?.createdAt ?? generatedReflection.generatedAt,
+    }
+
+    const nextState = reconcileState({
+      ...state,
+      assistantMessages: [
+        weeklyMessage,
+        ...state.assistantMessages.filter(
+          (entry) =>
+            entry.id !== weeklyMessage.id &&
+            !(entry.triggerType === 'weekly_reflection' && entry.periodKey === summary.weekKey),
+        ),
+      ]
+        .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+        .slice(0, 80),
+      meta: {
+        ...state.meta,
+        latestWeeklyReflection: generatedReflection,
+        lastWeeklyReflectionWeek: summary.weekKey,
+      },
+    })
+
+    persistState(nextState)
+    set(nextState)
+    void api.putMeta(nextState.meta).catch(() => undefined)
+    if (!existingMessage) {
+      void api.postMessage(weeklyMessage).catch(() => undefined)
+    }
+
+    return {
+      weekKey: summary.weekKey,
+      hasData: true,
     }
   },
 

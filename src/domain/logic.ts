@@ -1,4 +1,4 @@
-import { differenceInCalendarDays, differenceInMinutes, isBefore, parseISO, startOfDay, subDays } from 'date-fns'
+import { addDays, differenceInCalendarDays, differenceInMinutes, isBefore, parseISO, startOfDay, subDays, subWeeks } from 'date-fns'
 import {
   DEFAULT_REPEATABLE_COOLDOWN,
   DEFAULT_REPEATABLE_DAILY_CAP,
@@ -39,6 +39,7 @@ import {
   formatTime,
   getDateRangeLast7Days,
   getDayKey,
+  getPreviousWeekDateRange,
   getWeekKey,
   isReminderDue,
   isSameCalendarDay,
@@ -230,7 +231,59 @@ export interface QuestCompletionRankingEntry {
   lastCompletedAt: string
 }
 
+export interface WeeklyReflectionDaySummary {
+  dayKey: string
+  label: string
+  completionCount: number
+  userXp: number
+}
+
+export interface WeeklyReflectionDailyQuestSummary {
+  questId: string
+  title: string
+  currentDays: number
+  previousDays: number
+}
+
+export interface WeeklyReflectionQuestSummary {
+  questId: string
+  title: string
+  currentCount: number
+  previousCount: number
+  lastCompletedAt: string
+}
+
+export interface WeeklyReflectionSkillSummary {
+  skillId: string
+  skillName: string
+  currentXp: number
+}
+
+export interface WeeklyReflectionSummary {
+  weekKey: string
+  previousWeekKey: string
+  weekLabel: string
+  startDate: string
+  endDate: string
+  totalCompletionCount: number
+  totalUserXp: number
+  activeDayCount: number
+  topSkill?: WeeklyReflectionSkillSummary
+  dailySummaries: WeeklyReflectionDaySummary[]
+  dailyQuestSummaries: WeeklyReflectionDailyQuestSummary[]
+  topQuestSummaries: WeeklyReflectionQuestSummary[]
+  topSkillSummaries: WeeklyReflectionSkillSummary[]
+  hasData: boolean
+}
+
+export interface WeeklyReflectionStatus {
+  weekKey: string
+  available: boolean
+  unread: boolean
+}
+
 const DELETED_QUEST_TITLE = '削除されたクエスト'
+const WEEKDAY_LABELS = ['月', '火', '水', '木', '金', '土', '日'] as const
 
 export function normalizeSkillName(name: string) {
   return name.trim().toLowerCase().replace(/\s+/g, '')
@@ -665,6 +718,145 @@ export function getQuestCompletionRanking(
             lastCompletedAt: entry.lastCompletedAt,
           },
     )
+}
+
+function isWeeklyReflectionQuest(quest: Quest | undefined) {
+  return quest?.source !== 'browsing'
+}
+
+function countCompletionDays(completions: QuestCompletion[], questId: string) {
+  return new Set(
+    completions
+      .filter((completion) => completion.questId === questId)
+      .map((completion) => getDayKey(completion.completedAt)),
+  ).size
+}
+
+export function getPreviousWeekReflectionSummary(
+  state: Pick<PersistedAppState, 'quests' | 'completions' | 'skills'>,
+  referenceDate = new Date(),
+): WeeklyReflectionSummary {
+  const targetDate = subWeeks(referenceDate, 1)
+  const { start, end } = getPreviousWeekDateRange(referenceDate)
+  const weekKey = getWeekKey(targetDate)
+  const previousWeekKey = getWeekKey(subWeeks(targetDate, 1))
+  const startDate = formatDate(start, 'yyyy-MM-dd')
+  const endDate = formatDate(end, 'yyyy-MM-dd')
+  const weekLabel = `${startDate} 〜 ${endDate}`
+  const questMap = new Map(state.quests.map((quest) => [quest.id, quest]))
+  const includedCompletions = getActiveCompletions(state.completions).filter((completion) =>
+    isWeeklyReflectionQuest(questMap.get(completion.questId)),
+  )
+  const currentWeekCompletions = includedCompletions.filter(
+    (completion) => getWeekKey(completion.completedAt) === weekKey,
+  )
+  const previousWeekCompletions = includedCompletions.filter(
+    (completion) => getWeekKey(completion.completedAt) === previousWeekKey,
+  )
+  const dailySummaries = Array.from({ length: 7 }, (_, index) => {
+    const day = addDays(start, index)
+    const dayKey = formatDate(day, 'yyyy-MM-dd')
+    const dayCompletions = currentWeekCompletions.filter(
+      (completion) => getDayKey(completion.completedAt) === dayKey,
+    )
+
+    return {
+      dayKey,
+      label: WEEKDAY_LABELS[index] ?? '',
+      completionCount: dayCompletions.length,
+      userXp: dayCompletions.reduce((sum, completion) => sum + completion.userXpAwarded, 0),
+    }
+  })
+  const topQuestSummaries = getQuestCompletionRanking(
+    state.quests.filter((quest) => quest.source !== 'browsing'),
+    includedCompletions,
+    'week',
+    targetDate,
+  )
+    .slice(0, 5)
+    .map((entry) => ({
+      questId: entry.questId,
+      title: entry.title,
+      currentCount: entry.currentCount,
+      previousCount: entry.previousWeekCount ?? 0,
+      lastCompletedAt: entry.lastCompletedAt,
+    }))
+
+  const dailyQuestSummaries = state.quests
+    .filter((quest) => quest.status !== 'archived' && isDailyQuest(quest) && quest.source !== 'browsing')
+    .map((quest) => ({
+      questId: quest.id,
+      title: quest.title,
+      currentDays: countCompletionDays(currentWeekCompletions, quest.id),
+      previousDays: countCompletionDays(previousWeekCompletions, quest.id),
+    }))
+    .filter((entry) => entry.currentDays > 0 || entry.previousDays > 0)
+    .sort((left, right) => {
+      if (right.currentDays !== left.currentDays) {
+        return right.currentDays - left.currentDays
+      }
+      if (right.previousDays !== left.previousDays) {
+        return right.previousDays - left.previousDays
+      }
+      return left.title.localeCompare(right.title, 'ja')
+    })
+
+  const skillXpById = new Map<string, number>()
+  for (const completion of currentWeekCompletions) {
+    if (!completion.skillXpAwarded) {
+      continue
+    }
+
+    const finalSkillId =
+      resolveMergedSkillId(completion.resolvedSkillId, state.skills) ?? 'unclassified'
+    skillXpById.set(finalSkillId, (skillXpById.get(finalSkillId) ?? 0) + completion.skillXpAwarded)
+  }
+
+  const topSkillSummaries = Array.from(skillXpById.entries())
+    .map(([skillId, currentXp]) => {
+      const skill = state.skills.find((entry) => entry.id === skillId)
+      return {
+        skillId,
+        skillName: skill?.name ?? '未分類',
+        currentXp,
+      }
+    })
+    .sort((left, right) => {
+      if (right.currentXp !== left.currentXp) {
+        return right.currentXp - left.currentXp
+      }
+      return left.skillName.localeCompare(right.skillName, 'ja')
+    })
+    .slice(0, 5)
+
+  return {
+    weekKey,
+    previousWeekKey,
+    weekLabel,
+    startDate,
+    endDate,
+    totalCompletionCount: currentWeekCompletions.length,
+    totalUserXp: currentWeekCompletions.reduce((sum, completion) => sum + completion.userXpAwarded, 0),
+    activeDayCount: dailySummaries.filter((entry) => entry.completionCount > 0).length,
+    topSkill: topSkillSummaries[0],
+    dailySummaries,
+    dailyQuestSummaries,
+    topQuestSummaries,
+    topSkillSummaries,
+    hasData: currentWeekCompletions.length > 0,
+  }
+}
+
+export function getWeeklyReflectionStatus(
+  state: Pick<PersistedAppState, 'meta' | 'quests' | 'completions' | 'skills'>,
+  referenceDate = new Date(),
+): WeeklyReflectionStatus {
+  const summary = getPreviousWeekReflectionSummary(state, referenceDate)
+  return {
+    weekKey: summary.weekKey,
+    available: summary.hasData,
+    unread: summary.hasData && state.meta.lastWeeklyReflectionWeek !== summary.weekKey,
+  }
 }
 
 export function getQuestIdsWithActiveCompletions(completions: QuestCompletion[]) {
@@ -1139,7 +1331,7 @@ export function maybeCreatePeriodicMessages(state: PersistedAppState) {
     nextMeta.lastDailySummaryDate = todayKey
   }
 
-  if (state.completions.length > 0 && state.meta.lastWeeklyReflectionWeek !== weekKey) {
+  if (false && state.completions.length > 0 && state.meta.lastWeeklyReflectionWeek !== weekKey) {
     messages.unshift(
       createAssistantMessage(
         'weekly_reflection',
