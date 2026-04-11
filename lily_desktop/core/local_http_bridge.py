@@ -15,7 +15,7 @@ JST = timezone(timedelta(hours=9))
 HTTP_BRIDGE_HOST = "127.0.0.1"
 HTTP_BRIDGE_ENDPOINT = "/v1/events"
 _SUPPORTED_EVENT_TYPES = frozenset(
-    {"user_message", "quest_completed", "chrome_audible_tabs", "youtube_transcript"}
+    {"user_message", "quest_completed", "chrome_audible_tabs"}
 )
 logger = logging.getLogger(__name__)
 
@@ -96,15 +96,6 @@ def _require_tab_id(value: object, field_name: str) -> int:
     return value
 
 
-def _require_number(value: object, field_name: str) -> float:
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise BridgeValidationError(
-            "invalid_payload",
-            f"{field_name} must be a number.",
-        )
-    return float(value)
-
-
 def _parse_audible_tabs_payload(payload_raw: dict[str, Any]) -> dict[str, Any]:
     audible_tabs = payload_raw.get("audibleTabs")
     if not isinstance(audible_tabs, list):
@@ -130,61 +121,6 @@ def _parse_audible_tabs_payload(payload_raw: dict[str, Any]) -> dict[str, Any]:
             }
         )
     return {"audibleTabs": normalized_tabs}
-
-
-def _parse_youtube_transcript_payload(payload_raw: dict[str, Any]) -> dict[str, Any]:
-    transcript_source = _require_non_empty_string(
-        payload_raw.get("transcriptSource"),
-        "payload.transcriptSource",
-    )
-    if transcript_source not in {"manual", "auto"}:
-        raise BridgeValidationError(
-            "invalid_payload",
-            "payload.transcriptSource must be manual or auto.",
-        )
-
-    segments_raw = payload_raw.get("segments")
-    if not isinstance(segments_raw, list) or len(segments_raw) == 0:
-        raise BridgeValidationError(
-            "invalid_payload",
-            "payload.segments must be a non-empty array.",
-        )
-
-    normalized_segments: list[dict[str, Any]] = []
-    for index, item in enumerate(segments_raw):
-        if not isinstance(item, dict):
-            raise BridgeValidationError(
-                "invalid_payload",
-                f"payload.segments[{index}] must be an object.",
-            )
-        normalized_segments.append(
-            {
-                "startSeconds": _require_number(
-                    item.get("startSeconds"),
-                    f"payload.segments[{index}].startSeconds",
-                ),
-                "text": _require_non_empty_string(
-                    item.get("text"),
-                    f"payload.segments[{index}].text",
-                ),
-            }
-        )
-
-    return {
-        "videoId": _require_non_empty_string(payload_raw.get("videoId"), "payload.videoId"),
-        "videoUrl": _require_non_empty_string(payload_raw.get("videoUrl"), "payload.videoUrl"),
-        "videoTitle": _require_non_empty_string(
-            payload_raw.get("videoTitle"), "payload.videoTitle"
-        ),
-        "channelName": _require_non_empty_string(
-            payload_raw.get("channelName"), "payload.channelName"
-        ),
-        "languageCode": _require_non_empty_string(
-            payload_raw.get("languageCode"), "payload.languageCode"
-        ),
-        "transcriptSource": transcript_source,
-        "segments": normalized_segments,
-    }
 
 
 def _parse_occurred_at(value: object, *, received_at: datetime) -> datetime:
@@ -284,11 +220,8 @@ def validate_http_bridge_event(
             "note": _optional_string(payload_raw.get("note"), "payload.note"),
         }
         internal_user_message = _build_quest_completed_message(payload)
-    elif event_type == "chrome_audible_tabs":
-        payload = _parse_audible_tabs_payload(payload_raw)
-        internal_user_message = ""
     else:
-        payload = _parse_youtube_transcript_payload(payload_raw)
+        payload = _parse_audible_tabs_payload(payload_raw)
         internal_user_message = ""
 
     return AcceptedHttpBridgeEvent(
@@ -395,11 +328,6 @@ class _LocalHttpBridgeRequestHandler(BaseHTTPRequestHandler):
                 accepted.received_at,
                 accepted.payload["audibleTabs"],
             )
-        elif accepted.event_type == "youtube_transcript":
-            self.server.bridge.dispatch_youtube_transcript(
-                accepted.occurred_at,
-                accepted.payload,
-            )
         else:
             self.server.bridge.dispatch_user_message(accepted.internal_user_message)
         self._write_json(
@@ -482,7 +410,6 @@ class LocalHttpBridge:
         event_loop,
         emit_user_message: Callable[[str], None],
         update_chrome_audible_tabs: Callable[[datetime, list[dict[str, Any]]], None] | None = None,
-        save_youtube_transcript: Callable[[datetime, dict[str, Any]], None] | None = None,
         host: str = HTTP_BRIDGE_HOST,
         logger_instance: logging.Logger | None = None,
     ):
@@ -491,7 +418,6 @@ class LocalHttpBridge:
         self._event_loop = event_loop
         self._emit_user_message = emit_user_message
         self._update_chrome_audible_tabs = update_chrome_audible_tabs
-        self._save_youtube_transcript = save_youtube_transcript
         self._server: _LocalHttpBridgeServer | None = None
         self._thread: threading.Thread | None = None
         self.logger = logger_instance or logger
@@ -549,19 +475,6 @@ class LocalHttpBridge:
             audible_tabs,
         )
 
-    def dispatch_youtube_transcript(
-        self,
-        occurred_at: datetime,
-        payload: dict[str, Any],
-    ) -> None:
-        if self._save_youtube_transcript is None:
-            return
-        self._event_loop.call_soon_threadsafe(
-            self._save_youtube_transcript,
-            occurred_at,
-            payload,
-        )
-
     def log_result(
         self,
         *,
@@ -591,7 +504,6 @@ def start_local_http_bridge(
     event_loop,
     emit_user_message: Callable[[str], None],
     update_chrome_audible_tabs: Callable[[datetime, list[dict[str, Any]]], None] | None = None,
-    save_youtube_transcript: Callable[[datetime, dict[str, Any]], None] | None = None,
     logger_instance: logging.Logger | None = None,
 ) -> LocalHttpBridge | None:
     active_logger = logger_instance or logger
@@ -604,7 +516,6 @@ def start_local_http_bridge(
         event_loop=event_loop,
         emit_user_message=emit_user_message,
         update_chrome_audible_tabs=update_chrome_audible_tabs,
-        save_youtube_transcript=save_youtube_transcript,
         logger_instance=active_logger,
     )
     try:

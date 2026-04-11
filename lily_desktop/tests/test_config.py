@@ -7,7 +7,6 @@ from core.config import (
     DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES,
     DEFAULT_MEMORY_DIRECTORY,
     DEFAULT_USER_BALLOON_DISPLAY_SECONDS,
-    DEFAULT_YOUTUBE_TRANSCRIPT_OUTPUT_DIRECTORY,
     load_config,
 )
 
@@ -395,32 +394,3 @@ def test_memory_directory_resolves_relative_path_from_config_directory(tmp_path)
     config = load_config(config_path)
 
     assert config.talk_seeds.memory_directory == str((tmp_path / "generated_text").resolve())
-
-
-def test_youtube_transcript_output_directory_defaults_when_missing(tmp_path):
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text("", encoding="utf-8")
-
-    config = load_config(config_path)
-
-    assert (
-        config.youtube_transcript.output_directory
-        == DEFAULT_YOUTUBE_TRANSCRIPT_OUTPUT_DIRECTORY
-    )
-
-
-def test_youtube_transcript_output_directory_resolves_relative_path_from_config_directory(
-    tmp_path,
-):
-    config_path = tmp_path / "config.yaml"
-    config_path.write_text(
-        "youtube_transcript:\n"
-        "  output_directory: transcripts\n",
-        encoding="utf-8",
-    )
-
-    config = load_config(config_path)
-
-    assert config.youtube_transcript.output_directory == str(
-        (tmp_path / "transcripts").resolve()
-    )

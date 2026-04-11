@@ -90,38 +90,6 @@ def test_validate_chrome_audible_tabs_event_accepts_full_snapshot():
     assert accepted.internal_user_message == ""
 
 
-def test_validate_youtube_transcript_event_accepts_payload():
-    accepted = validate_http_bridge_event(
-        {
-            "eventType": "youtube_transcript",
-            "source": "chrome_extension_youtube",
-            "occurredAt": "2026-04-11T21:05:06+09:00",
-            "payload": {
-                "videoId": "abc123",
-                "videoUrl": "https://www.youtube.com/watch?v=abc123",
-                "videoTitle": "TypeScript Deep Dive",
-                "channelName": "Lily Channel",
-                "languageCode": "ja",
-                "transcriptSource": "manual",
-                "segments": [
-                    {"startSeconds": 0, "text": "hello world"},
-                    {"startSeconds": 12.5, "text": "second line"},
-                ],
-            },
-        },
-        received_at=datetime(2026, 4, 11, 21, 15, tzinfo=JST),
-    )
-
-    assert accepted.event_type == "youtube_transcript"
-    assert accepted.occurred_at == datetime(2026, 4, 11, 21, 5, 6, tzinfo=JST)
-    assert accepted.payload["videoId"] == "abc123"
-    assert accepted.payload["segments"] == [
-        {"startSeconds": 0.0, "text": "hello world"},
-        {"startSeconds": 12.5, "text": "second line"},
-    ]
-    assert accepted.internal_user_message == ""
-
-
 @pytest.mark.parametrize(
     "payload",
     [
@@ -139,43 +107,6 @@ def test_validate_chrome_audible_tabs_event_rejects_invalid_payload(payload):
                 "payload": payload,
             },
             received_at=datetime(2026, 4, 4, 21, 15, tzinfo=JST),
-        )
-
-    assert exc_info.value.code == "invalid_payload"
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {
-            "videoId": "abc123",
-            "videoUrl": "https://www.youtube.com/watch?v=abc123",
-            "videoTitle": "TypeScript Deep Dive",
-            "channelName": "Lily Channel",
-            "languageCode": "ja",
-            "transcriptSource": "manual",
-            "segments": "invalid",
-        },
-        {
-            "videoId": "abc123",
-            "videoUrl": "https://www.youtube.com/watch?v=abc123",
-            "videoTitle": "TypeScript Deep Dive",
-            "channelName": "Lily Channel",
-            "languageCode": "ja",
-            "transcriptSource": "manual",
-            "segments": [{"startSeconds": "0", "text": "hello"}],
-        },
-    ],
-)
-def test_validate_youtube_transcript_event_rejects_invalid_payload(payload):
-    with pytest.raises(BridgeValidationError) as exc_info:
-        validate_http_bridge_event(
-            {
-                "eventType": "youtube_transcript",
-                "source": "chrome_extension_youtube",
-                "payload": payload,
-            },
-            received_at=datetime(2026, 4, 11, 21, 15, tzinfo=JST),
         )
 
     assert exc_info.value.code == "invalid_payload"
@@ -325,61 +256,6 @@ def test_local_http_bridge_dispatches_chrome_audible_tabs_without_user_message()
         {"tabId": 1, "domain": "youtube.com"},
         {"tabId": 2, "domain": "netflix.com"},
     ]
-
-
-def test_local_http_bridge_dispatches_youtube_transcript_without_user_message():
-    received_messages: list[str] = []
-    saved_transcripts: list[tuple[datetime, dict[str, object]]] = []
-    bridge = LocalHttpBridge(
-        port=0,
-        event_loop=_ImmediateLoop(),
-        emit_user_message=received_messages.append,
-        save_youtube_transcript=lambda occurred_at, payload: saved_transcripts.append(
-            (occurred_at, payload)
-        ),
-    )
-    bridge.start()
-
-    try:
-        conn = http.client.HTTPConnection(bridge.host, bridge.port, timeout=5)
-        conn.request(
-            "POST",
-            "/v1/events",
-            body=json.dumps(
-                {
-                    "eventType": "youtube_transcript",
-                    "source": "chrome_extension_youtube",
-                    "occurredAt": "2026-04-11T21:05:06+09:00",
-                    "payload": {
-                        "videoId": "abc123",
-                        "videoUrl": "https://www.youtube.com/watch?v=abc123",
-                        "videoTitle": "TypeScript Deep Dive",
-                        "channelName": "Lily Channel",
-                        "languageCode": "ja",
-                        "transcriptSource": "manual",
-                        "segments": [
-                            {"startSeconds": 0, "text": "hello world"},
-                        ],
-                    },
-                },
-                ensure_ascii=False,
-            ).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
-        )
-        response = conn.getresponse()
-        payload = json.loads(response.read().decode("utf-8"))
-        conn.close()
-    finally:
-        bridge.stop()
-
-    assert response.status == 202
-    assert payload["ok"] is True
-    assert payload["eventType"] == "youtube_transcript"
-    assert received_messages == []
-    assert len(saved_transcripts) == 1
-    occurred_at, transcript_payload = saved_transcripts[0]
-    assert occurred_at == datetime(2026, 4, 11, 21, 5, 6, tzinfo=JST)
-    assert transcript_payload["videoId"] == "abc123"
 
 
 def test_local_http_bridge_returns_not_found_for_unknown_path():

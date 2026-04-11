@@ -16,9 +16,6 @@ DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES = 15
 DEFAULT_HTTP_BRIDGE_PORT = 18765
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_MEMORY_DIRECTORY = r"D:\codes\mixi2-api\generated_text"
-DEFAULT_YOUTUBE_TRANSCRIPT_OUTPUT_DIRECTORY = str(
-    (_PROJECT_ROOT / "output" / "youtube_transcripts").resolve()
-)
 DEFAULT_AUTO_TALK_SKIP_AUDIBLE_DOMAINS = [
     "youtube.com",
     "netflix.com",
@@ -137,25 +134,6 @@ def normalize_memory_directory(
     if not memory_dir.is_absolute():
         memory_dir = (base_dir / memory_dir).resolve()
     return str(memory_dir)
-
-
-def normalize_output_directory(
-    value: object,
-    *,
-    base_dir: Path,
-    default: str,
-) -> str:
-    if value is None:
-        return default
-    if not isinstance(value, str):
-        return default
-    raw = value.strip()
-    if not raw:
-        return default
-    output_dir = Path(raw)
-    if not output_dir.is_absolute():
-        output_dir = (base_dir / output_dir).resolve()
-    return str(output_dir)
 
 
 @dataclass
@@ -303,11 +281,6 @@ class HttpBridgeConfig:
 
 
 @dataclass
-class YouTubeTranscriptConfig:
-    output_directory: str = DEFAULT_YOUTUBE_TRANSCRIPT_OUTPUT_DIRECTORY
-
-
-@dataclass
 class AppConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     desktop: DesktopConfig = field(default_factory=DesktopConfig)
@@ -323,9 +296,6 @@ class AppConfig:
     healthplanet: HealthPlanetConfig = field(default_factory=HealthPlanetConfig)
     fitbit: FitbitConfig = field(default_factory=FitbitConfig)
     http_bridge: HttpBridgeConfig = field(default_factory=HttpBridgeConfig)
-    youtube_transcript: YouTubeTranscriptConfig = field(
-        default_factory=YouTubeTranscriptConfig
-    )
 
 
 def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
@@ -419,18 +389,6 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         talk_seeds_raw.get("memory_directory", DEFAULT_MEMORY_DIRECTORY),
         base_dir=path.parent,
     )
-    youtube_transcript_raw = raw.get("youtube_transcript", {}) or {}
-    if not isinstance(youtube_transcript_raw, dict):
-        youtube_transcript_raw = {}
-    else:
-        youtube_transcript_raw = dict(youtube_transcript_raw)
-    youtube_transcript_raw["output_directory"] = normalize_output_directory(
-        youtube_transcript_raw.get(
-            "output_directory", DEFAULT_YOUTUBE_TRANSCRIPT_OUTPUT_DIRECTORY
-        ),
-        base_dir=path.parent,
-        default=DEFAULT_YOUTUBE_TRANSCRIPT_OUTPUT_DIRECTORY,
-    )
 
     config = AppConfig(
         openai=OpenAIConfig(**openai_raw),
@@ -447,7 +405,6 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         healthplanet=HealthPlanetConfig(**healthplanet_raw),
         fitbit=FitbitConfig(**raw.get("fitbit", {})),
         http_bridge=HttpBridgeConfig(**http_bridge_raw),
-        youtube_transcript=YouTubeTranscriptConfig(**youtube_transcript_raw),
     )
 
     # .env から秘密情報を上書き（.env の値を優先）
