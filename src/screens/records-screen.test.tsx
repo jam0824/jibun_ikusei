@@ -327,7 +327,7 @@ describe('weekly reflection navigation', () => {
 
     renderHomeWithRecords()
 
-    fireEvent.click(screen.getByRole('button', { name: '先週のふりかえりを見る' }))
+    fireEvent.click(screen.getByRole('button', { name: '先週のふりかえりを確認' }))
 
     expect(screen.getByTestId('location')).toHaveTextContent('/weekly-reflection')
   })
@@ -346,7 +346,7 @@ describe('weekly reflection navigation', () => {
 
     renderRecords('/records?filter=week')
 
-    fireEvent.click(screen.getByRole('button', { name: '先週のふりかえりを見る' }))
+    fireEvent.click(screen.getByRole('button', { name: '先週のふりかえりを確認' }))
 
     expect(screen.getByTestId('location')).toHaveTextContent('/weekly-reflection')
   })
