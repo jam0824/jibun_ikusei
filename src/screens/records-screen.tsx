@@ -540,8 +540,13 @@ export function RecordsScreen() {
                       先週の流れを軽く見直して、来週の整え方を決めよう。
                     </div>
                   </div>
-                  <Button size="sm" onClick={() => navigate('/weekly-reflection')}>
-                    先週のふりかえりを見る
+                  <Button
+                    size="sm"
+                    className="whitespace-nowrap"
+                    aria-label="先週のふりかえりを確認"
+                    onClick={() => navigate('/weekly-reflection')}
+                  >
+                    確認
                   </Button>
                 </CardContent>
               </Card>
