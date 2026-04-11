@@ -790,6 +790,36 @@ def _evented_trigger_books_now(self: AutoConversation) -> None:
     asyncio.ensure_future(self._run_conversation(forced_source="books"))
 
 
+def _evented_trigger_quest_weekly_now(self: AutoConversation) -> None:
+    if self._event_hub is not None:
+        self._event_hub.publish(
+            ChatAutoTalkDue(
+                source="auto_conversation.manual_quest_weekly",
+                forced_source="quest_weekly",
+            )
+        )
+        return
+    if self._is_talking:
+        logger.info("雑談中のため週次クエスト雑談をスキップ")
+        return
+    asyncio.ensure_future(self._run_conversation(forced_source="quest_weekly"))
+
+
+def _evented_trigger_quest_today_now(self: AutoConversation) -> None:
+    if self._event_hub is not None:
+        self._event_hub.publish(
+            ChatAutoTalkDue(
+                source="auto_conversation.manual_quest_today",
+                forced_source="quest_today",
+            )
+        )
+        return
+    if self._is_talking:
+        logger.info("雑談中のため今日のクエスト雑談をスキップ")
+        return
+    asyncio.ensure_future(self._run_conversation(forced_source="quest_today"))
+
+
 def _evented_trigger_follow_up(
     self: AutoConversation,
     user_text: str,
@@ -838,6 +868,8 @@ async def _run_follow_up_job(
 
 AutoConversation.trigger_now = _evented_trigger_now
 AutoConversation.trigger_books_now = _evented_trigger_books_now
+AutoConversation.trigger_quest_weekly_now = _evented_trigger_quest_weekly_now
+AutoConversation.trigger_quest_today_now = _evented_trigger_quest_today_now
 AutoConversation.trigger_follow_up = _evented_trigger_follow_up
 AutoConversation._on_timer = _evented_on_timer
 AutoConversation.run_auto_talk_job = _run_auto_talk_job

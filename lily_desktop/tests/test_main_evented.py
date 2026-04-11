@@ -66,6 +66,36 @@ def test_books_talk_request_publishes_forced_books_event():
     assert event.forced_source == "books"
 
 
+def test_quest_weekly_talk_request_publishes_forced_quest_weekly_event():
+    hub = _CaptureHub()
+    app = SimpleNamespace(
+        event_hub=hub,
+        auto_conversation=SimpleNamespace(trigger_quest_weekly_now=Mock()),
+    )
+
+    main_mod.App._on_quest_weekly_talk_requested(app)
+
+    assert len(hub.events) == 1
+    event = hub.events[0]
+    assert isinstance(event, ChatAutoTalkDue)
+    assert event.forced_source == "quest_weekly"
+
+
+def test_quest_today_talk_request_publishes_forced_quest_today_event():
+    hub = _CaptureHub()
+    app = SimpleNamespace(
+        event_hub=hub,
+        auto_conversation=SimpleNamespace(trigger_quest_today_now=Mock()),
+    )
+
+    main_mod.App._on_quest_today_talk_requested(app)
+
+    assert len(hub.events) == 1
+    event = hub.events[0]
+    assert isinstance(event, ChatAutoTalkDue)
+    assert event.forced_source == "quest_today"
+
+
 @pytest.mark.asyncio
 async def test_async_init_publishes_app_started_without_direct_startup_sync():
     hub = _CaptureHub()

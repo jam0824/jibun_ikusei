@@ -1,4 +1,4 @@
-"""雑談の種マネージャー — 7系統の話題を収集・優先度判定・クールダウン管理"""
+"""雑談の種マネージャー — 9系統の話題を収集・優先度判定・クールダウン管理"""
 
 from __future__ import annotations
 
@@ -138,7 +138,7 @@ class TalkSeedManager:
         return None
 
     async def collect_seeds(self) -> list[TalkSeed]:
-        """7系統から雑談の種を並行収集する"""
+        """9系統から雑談の種を並行収集する"""
         seeds: list[TalkSeed] = []
 
         # 並行で取得
@@ -149,6 +149,8 @@ class TalkSeedManager:
         camera_task = asyncio.create_task(self._collect_camera())
         health_task = asyncio.create_task(self._collect_health())
         books_task = asyncio.create_task(self._collect_books())
+        quest_weekly_task = asyncio.create_task(self._collect_quest_weekly())
+        quest_today_task = asyncio.create_task(self._collect_quest_today())
 
         desktop_seeds = await desktop_task
         wiki_seeds = await wiki_task
@@ -157,6 +159,8 @@ class TalkSeedManager:
         camera_seeds = await camera_task
         health_seeds = await health_task
         books_seeds = await books_task
+        quest_weekly_seeds = await quest_weekly_task
+        quest_today_seeds = await quest_today_task
 
         seeds.extend(desktop_seeds)
         seeds.extend(wiki_seeds)
@@ -165,11 +169,14 @@ class TalkSeedManager:
         seeds.extend(camera_seeds)
         seeds.extend(health_seeds)
         seeds.extend(books_seeds)
+        seeds.extend(quest_weekly_seeds)
+        seeds.extend(quest_today_seeds)
 
         logger.info(
-            "雑談の種: desktop=%d wiki=%d wiki_interest=%d annict=%d camera=%d health=%d books=%d 合計=%d",
+            "雑談の種: desktop=%d wiki=%d wiki_interest=%d annict=%d camera=%d health=%d books=%d quest_weekly=%d quest_today=%d 合計=%d",
             len(desktop_seeds), len(wiki_seeds), len(wiki_interest_seeds),
-            len(annict_seeds), len(camera_seeds), len(health_seeds), len(books_seeds), len(seeds),
+            len(annict_seeds), len(camera_seeds), len(health_seeds), len(books_seeds),
+            len(quest_weekly_seeds), len(quest_today_seeds), len(seeds),
         )
         return seeds
 
@@ -177,7 +184,7 @@ class TalkSeedManager:
         """話題のバランスを考慮して種を選ぶ。
 
         デスクトップ / カメラ / 注目記事・今日は何の日 / 興味ある分野 /
-        アニメ(Annict) / 健康豆知識 / 本 の7カテゴリを均等に配分。
+        アニメ(Annict) / 健康豆知識 / 本 / 週次クエスト状況 / 今日のクエスト状況の9カテゴリを均等に配分。
         該当カテゴリの種がない場合は、残りのカテゴリで再配分する。
         クールダウン中の種は除外。
         """
@@ -200,6 +207,8 @@ class TalkSeedManager:
         annict_seeds = [s for s in available if s.source == "annict"]
         health_seeds = [s for s in available if s.source == "health"]
         books_seeds = [s for s in available if s.source == "books"]
+        quest_weekly_seeds = [s for s in available if s.source == "quest_weekly"]
+        quest_today_seeds = [s for s in available if s.source == "quest_today"]
 
         # 利用可能なカテゴリで均等重み付き抽選
         candidates: list[tuple[float, list[TalkSeed]]] = []
@@ -217,6 +226,10 @@ class TalkSeedManager:
             candidates.append((1.0, health_seeds))
         if books_seeds:
             candidates.append((1.0, books_seeds))
+        if quest_weekly_seeds:
+            candidates.append((1.0, quest_weekly_seeds))
+        if quest_today_seeds:
+            candidates.append((1.0, quest_today_seeds))
 
         if not candidates:
             return None
@@ -275,6 +288,8 @@ class TalkSeedManager:
         add("annict", bool(self._annict_access_token), self._collect_annict)
         add("health", self._api_client is not None, self._collect_health)
         add("books", self._rakuten_client is not None, self._collect_books)
+        add("quest_weekly", self._api_client is not None, self._collect_quest_weekly)
+        add("quest_today", self._api_client is not None, self._collect_quest_today)
 
         return collectors
 
@@ -544,6 +559,168 @@ class TalkSeedManager:
             logger.exception("健康データの収集に失敗")
             return []
 
+    async def _collect_quest_weekly(self) -> list[TalkSeed]:
+        """クエストの直近7日状況から週次振り返りの種を生成"""
+        to_date = datetime.now(JST).date()
+        from_date = to_date - timedelta(days=6)
+        return await self._collect_quest_status(
+            source="quest_weekly",
+            from_date=from_date,
+            to_date=to_date,
+            base_tags=["クエスト", "直近7日", "進捗"],
+            success_prefix="直近7日で",
+            empty_prefix="直近7日はクリア記録なし。",
+            lily_perspective="この1週間の流れをやさしく振り返り、続けたい流れや小さな前進を話題にする",
+            haruka_perspective="達成や流れにリアクションしつつ明るく乗る",
+            error_log="週次クエスト状況の収集に失敗",
+        )
+
+    async def _collect_quest_today(self) -> list[TalkSeed]:
+        """クエストの今日状況から日次振り返りの種を生成"""
+        today = datetime.now(JST).date()
+        return await self._collect_quest_status(
+            source="quest_today",
+            from_date=today,
+            to_date=today,
+            base_tags=["クエスト", "今日", "進捗"],
+            success_prefix="今日は",
+            empty_prefix="今日はクリア記録なし。",
+            lily_perspective="今日の流れをやさしく振り返り、小さな前進や次に続けたい勢いを話題にする",
+            haruka_perspective="今日の達成やペースにリアクションしつつ明るく乗る",
+            error_log="今日のクエスト状況の収集に失敗",
+        )
+
+    async def _collect_quest_status(
+        self,
+        *,
+        source: str,
+        from_date,
+        to_date,
+        base_tags: list[str],
+        success_prefix: str,
+        empty_prefix: str,
+        lily_perspective: str,
+        haruka_perspective: str,
+        error_log: str,
+    ) -> list[TalkSeed]:
+        if self._api_client is None:
+            return []
+
+        try:
+            quests, completions = await asyncio.gather(
+                self._api_client.get_quests(),
+                self._api_client.get_completions(),
+            )
+            now = datetime.now(JST)
+            active_quest_count = sum(1 for quest in quests if quest.get("status") == "active")
+            quest_title_by_id = {
+                quest.get("id", ""): quest.get("title", "不明なクエスト")
+                for quest in quests
+                if quest.get("id")
+            }
+
+            recent_completions: list[dict[str, object]] = []
+            for completion in completions:
+                if completion.get("undoneAt"):
+                    continue
+
+                completed_at = _parse_iso_datetime(completion.get("completedAt"))
+                if completed_at is None:
+                    continue
+
+                completed_at_jst = completed_at.astimezone(JST)
+                if not (from_date <= completed_at_jst.date() <= to_date):
+                    continue
+
+                quest_id = completion.get("questId", "")
+                recent_completions.append({
+                    "questId": quest_id,
+                    "questTitle": quest_title_by_id.get(quest_id, "不明なクエスト"),
+                    "completedAt": completed_at_jst,
+                    "userXpAwarded": _coerce_int(completion.get("userXpAwarded")),
+                })
+
+            now_str = now.strftime("%Y-%m-%d %H:%M:%S")
+
+            if not recent_completions:
+                if active_quest_count <= 0:
+                    return []
+
+                return [TalkSeed(
+                    summary=f"{empty_prefix}いま進行中のクエストは{active_quest_count}件。",
+                    tags=base_tags,
+                    freshness="fresh",
+                    source=source,
+                    lily_perspective=lily_perspective,
+                    haruka_perspective=haruka_perspective,
+                    created_at=now_str,
+                    _source_key=f"{source}:{to_date.isoformat()}:0:active_only",
+                )]
+
+            completion_count = len(recent_completions)
+            total_xp = sum(int(entry["userXpAwarded"]) for entry in recent_completions)
+            unique_quest_count = len({str(entry["questId"]) for entry in recent_completions})
+
+            per_quest: dict[str, dict[str, object]] = {}
+            latest_entry = max(
+                recent_completions,
+                key=lambda entry: entry["completedAt"],
+            )
+            for entry in recent_completions:
+                quest_id = str(entry["questId"])
+                current = per_quest.get(quest_id)
+                if current is None:
+                    per_quest[quest_id] = {
+                        "questTitle": str(entry["questTitle"]),
+                        "count": 1,
+                        "latestCompletedAt": entry["completedAt"],
+                    }
+                    continue
+
+                current["count"] = int(current["count"]) + 1
+                if entry["completedAt"] > current["latestCompletedAt"]:
+                    current["latestCompletedAt"] = entry["completedAt"]
+
+            top_entry = max(
+                per_quest.values(),
+                key=lambda entry: (int(entry["count"]), entry["latestCompletedAt"]),
+            )
+            top_title = str(top_entry["questTitle"])
+            top_count = int(top_entry["count"])
+            tags = [*base_tags, top_title]
+
+            if top_count > 1:
+                summary = (
+                    f"{success_prefix}{completion_count}件クリア、合計{total_xp}XP、"
+                    f"{unique_quest_count}種類のクエストが進行。"
+                    f"よく進めたのは「{top_title}」{top_count}回。"
+                    f"現在アクティブなクエストは{active_quest_count}件。"
+                )
+                source_key_tail = top_title
+            else:
+                latest_title = str(latest_entry["questTitle"])
+                summary = (
+                    f"{success_prefix}{completion_count}件クリア、合計{total_xp}XP、"
+                    f"{unique_quest_count}種類のクエストが進行。"
+                    f"最新の達成は「{latest_title}」。"
+                    f"現在アクティブなクエストは{active_quest_count}件。"
+                )
+                source_key_tail = latest_title
+
+            return [TalkSeed(
+                summary=summary,
+                tags=tags,
+                freshness="fresh",
+                source=source,
+                lily_perspective=lily_perspective,
+                haruka_perspective=haruka_perspective,
+                created_at=now_str,
+                _source_key=f"{source}:{to_date.isoformat()}:{completion_count}:{source_key_tail}",
+            )]
+        except Exception:
+            logger.exception(error_log)
+            return []
+
     async def _collect_books(self) -> list[TalkSeed]:
         """楽天Books の売れ筋から本カテゴリの種を生成する"""
         if self._rakuten_client is None:
@@ -651,3 +828,34 @@ def _build_book_summary(candidate: BookTalkCandidate) -> str:
     if len(description) > 120:
         description = description[:117].rstrip() + "..."
     return f"楽天Books売れ筋の本『{candidate.title}』。{description}"
+
+
+def _parse_iso_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str):
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    else:
+        return None
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _coerce_int(value: object) -> int:
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value))
+        except ValueError:
+            return 0
+    return 0

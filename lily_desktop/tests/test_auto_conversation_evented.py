@@ -125,6 +125,30 @@ def test_trigger_books_now_publishes_forced_books_event_when_event_hub_exists(pa
     assert event.forced_source == "books"
 
 
+def test_trigger_quest_weekly_now_publishes_forced_quest_weekly_event_when_event_hub_exists(patched_auto_conversation):
+    hub = _CaptureHub()
+    conv = AutoConversation(_make_config(), SimpleNamespace(), event_hub=hub)
+
+    conv.trigger_quest_weekly_now()
+
+    assert len(hub.events) == 1
+    event = hub.events[0]
+    assert isinstance(event, ChatAutoTalkDue)
+    assert event.forced_source == "quest_weekly"
+
+
+def test_trigger_quest_today_now_publishes_forced_quest_today_event_when_event_hub_exists(patched_auto_conversation):
+    hub = _CaptureHub()
+    conv = AutoConversation(_make_config(), SimpleNamespace(), event_hub=hub)
+
+    conv.trigger_quest_today_now()
+
+    assert len(hub.events) == 1
+    event = hub.events[0]
+    assert isinstance(event, ChatAutoTalkDue)
+    assert event.forced_source == "quest_today"
+
+
 @pytest.mark.asyncio
 async def test_interrupt_keeps_existing_behavior_and_cancels_prefetch_task(patched_auto_conversation):
     conv = AutoConversation(_make_config(), SimpleNamespace(), event_hub=_CaptureHub())
