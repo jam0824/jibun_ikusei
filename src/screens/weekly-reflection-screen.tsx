@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Play } from 'lucide-react'
+import { Play, ScrollText } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { Screen } from '@/components/layout'
@@ -15,6 +15,20 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
         <div className="mt-1 text-lg font-black text-slate-900">{value}</div>
       </CardContent>
     </Card>
+  )
+}
+
+function RecordsActionButton({ onClick }: { onClick: () => void }) {
+  return (
+    <Button
+      size="icon"
+      variant="outline"
+      className="rounded-2xl"
+      aria-label="記録"
+      onClick={onClick}
+    >
+      <ScrollText className="h-5 w-5" />
+    </Button>
   )
 }
 
@@ -83,9 +97,7 @@ export function WeeklyReflectionScreen() {
         title="週次ふりかえり"
         subtitle="先週の流れをまとめています。"
         action={
-          <Button size="sm" variant="outline" onClick={() => navigate('/records?filter=week')}>
-            記録へ
-          </Button>
+          <RecordsActionButton onClick={() => navigate('/records?filter=week')} />
         }
       >
         <Card>
@@ -103,9 +115,7 @@ export function WeeklyReflectionScreen() {
         title="週次ふりかえり"
         subtitle="先週の流れをまとめます。"
         action={
-          <Button size="sm" variant="outline" onClick={() => navigate('/records?filter=week')}>
-            記録へ
-          </Button>
+          <RecordsActionButton onClick={() => navigate('/records?filter=week')} />
         }
       >
         <Card>
@@ -122,9 +132,7 @@ export function WeeklyReflectionScreen() {
       title="週次ふりかえり"
       subtitle="先週の良かった流れを見つけて、来週を少しだけ整えます。"
       action={
-        <Button size="sm" variant="outline" onClick={() => navigate('/records?filter=week')}>
-          記録へ
-        </Button>
+        <RecordsActionButton onClick={() => navigate('/records?filter=week')} />
       }
     >
       <Card>
