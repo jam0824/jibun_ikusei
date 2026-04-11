@@ -137,7 +137,7 @@ export function WeeklyReflectionScreen() {
     >
       <Card>
         <CardContent className="p-5">
-          <div className="text-xl font-black text-slate-900">{`${summary.weekLabel} のふりかえり`}</div>
+          <div className="text-xl font-black text-slate-900">{summary.weekLabel}</div>
           <div className="mt-2 text-sm text-slate-500">先週のクエスト記録だけをまとめています。</div>
         </CardContent>
       </Card>
@@ -146,7 +146,7 @@ export function WeeklyReflectionScreen() {
         <SummaryMetric label="クリア数" value={`${summary.totalCompletionCount}件`} />
         <SummaryMetric label="獲得 User XP" value={`+${summary.totalUserXp}`} />
         <SummaryMetric label="行動した日数" value={`${summary.activeDayCount}日`} />
-        <SummaryMetric label="今週いちばん伸びたスキル" value={summary.topSkill?.skillName ?? 'なし'} />
+        <SummaryMetric label="先週いちばん伸びたスキル" value={summary.topSkill?.skillName ?? 'なし'} />
       </section>
 
       <section className="mt-5">
@@ -177,7 +177,7 @@ export function WeeklyReflectionScreen() {
                 summary.dailyQuestSummaries.map((entry) => (
                   <div key={entry.questId} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-3">
                     <div className="text-sm font-semibold text-slate-900">{entry.title}</div>
-                    <div className="text-xs text-slate-500">{`今週 ${entry.currentDays}日 / 先週 ${entry.previousDays}日`}</div>
+                    <div className="text-xs text-slate-500">{`先週 ${entry.currentDays}日 / 先々週 ${entry.previousDays}日`}</div>
                   </div>
                 ))
               )}
@@ -189,12 +189,12 @@ export function WeeklyReflectionScreen() {
       <section className="mt-5">
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm font-semibold text-slate-900">今週の主役クエスト</div>
+            <div className="text-sm font-semibold text-slate-900">先週の主役クエスト</div>
             <div className="mt-3 space-y-3">
               {summary.topQuestSummaries.map((entry) => (
                 <div key={entry.questId} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-3">
                   <div className="text-sm font-semibold text-slate-900">{entry.title}</div>
-                  <div className="text-xs text-slate-500">{`今週 ${entry.currentCount}回 / 先週 ${entry.previousCount}回`}</div>
+                  <div className="text-xs text-slate-500">{`先週 ${entry.currentCount}回 / 先々週 ${entry.previousCount}回`}</div>
                 </div>
               ))}
             </div>
@@ -205,7 +205,7 @@ export function WeeklyReflectionScreen() {
       <section className="mt-5">
         <Card>
           <CardContent className="p-4">
-            <div className="text-sm font-semibold text-slate-900">今週伸びたスキル</div>
+            <div className="text-sm font-semibold text-slate-900">先週伸びたスキル</div>
             <div className="mt-3 space-y-3">
               {summary.topSkillSummaries.map((entry) => (
                 <div key={entry.skillId} className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-3 py-3">

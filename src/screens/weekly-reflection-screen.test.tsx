@@ -155,10 +155,15 @@ describe('weekly reflection screen', () => {
       await vi.runAllTimersAsync()
     })
 
-    expect(screen.getByText('2026-04-06 〜 2026-04-12 のふりかえり')).toBeInTheDocument()
+    expect(screen.getByText('2026-04-06 〜 2026-04-12')).toBeInTheDocument()
     expect(screen.getByText('Good rhythm this week.')).toBeInTheDocument()
     expect(screen.getByText('Keep the same morning cue.')).toBeInTheDocument()
     expect(screen.getByText('Add one lighter recovery task.')).toBeInTheDocument()
+    expect(screen.getByText('先週いちばん伸びたスキル')).toBeInTheDocument()
+    expect(screen.getByText('先週の主役クエスト')).toBeInTheDocument()
+    expect(screen.getByText('先週伸びたスキル')).toBeInTheDocument()
+    expect(screen.getByText('先週 2日 / 先々週 0日')).toBeInTheDocument()
+    expect(screen.getByText('先週 2回 / 先々週 0回')).toBeInTheDocument()
     expect(screen.getAllByText('Morning stretch').length).toBeGreaterThan(0)
 
     fireEvent.click(screen.getByRole('button', { name: 'Lilyコメントを再生' }))
