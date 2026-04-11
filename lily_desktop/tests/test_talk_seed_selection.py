@@ -86,7 +86,13 @@ class TestSelectBestSeed:
         assert result is not None
         assert result.source == "quest_today"
 
-    def test_全カテゴリある場合に9種から選ばれる(self, seed_mgr):
+    def test_memoryのみの場合はmemoryを返す(self, seed_mgr):
+        seeds = [_make_seed("memory")]
+        result = seed_mgr.select_best_seed(seeds)
+        assert result is not None
+        assert result.source == "memory"
+
+    def test_全カテゴリある場合に10種から選ばれる(self, seed_mgr):
         seeds = [
             _make_seed("desktop"),
             _make_seed("camera"),
@@ -97,6 +103,7 @@ class TestSelectBestSeed:
             _make_seed("books"),
             _make_seed("quest_weekly"),
             _make_seed("quest_today"),
+            _make_seed("memory"),
         ]
         # 200回試行して各sourceが少なくとも1回は選ばれることを確認
         sources_selected = set()
@@ -113,9 +120,10 @@ class TestSelectBestSeed:
         assert "books" in sources_selected
         assert "quest_weekly" in sources_selected
         assert "quest_today" in sources_selected
+        assert "memory" in sources_selected
 
     def test_配分がおおよそ正しい(self, seed_mgr):
-        """9系統均等配分（各約11.1%）を統計的に検証"""
+        """10系統均等配分（各約10%）を統計的に検証"""
         seeds = [
             _make_seed("desktop"),
             _make_seed("camera"),
@@ -126,6 +134,7 @@ class TestSelectBestSeed:
             _make_seed("books"),
             _make_seed("quest_weekly"),
             _make_seed("quest_today"),
+            _make_seed("memory"),
         ]
         counts = {
             "desktop": 0,
@@ -137,13 +146,14 @@ class TestSelectBestSeed:
             "books": 0,
             "quest_weekly": 0,
             "quest_today": 0,
+            "memory": 0,
         }
         n = 2000
         for _ in range(n):
             result = seed_mgr.select_best_seed(seeds)
             counts[result.source] += 1
 
-        # 各カテゴリの割合が許容範囲内か（期待値11.1%に対して広めの許容幅）
+        # 各カテゴリの割合が許容範囲内か（期待値10%に対して広めの許容幅）
         for source, count in counts.items():
             assert 0.05 < count / n < 0.24, f"{source}: {count/n:.2f}"
 
@@ -232,18 +242,21 @@ class TestBuildSourceCollectors:
 
         assert "quest_weekly" not in [source for source, _ in collectors]
         assert "quest_today" not in [source for source, _ in collectors]
+        assert "memory" not in [source for source, _ in collectors]
 
-    def test_api_clientがある場合はquest系カテゴリを追加する(self):
+    def test_api_clientとmemory_directoryがある場合はquest系とmemoryカテゴリを追加する(self):
         seed_mgr = TalkSeedManager(
             openai_api_key="test",
             screen_analysis_model="test",
             api_client=AsyncMock(),
+            memory_directory="D:\\codes\\mixi2-api\\generated_text",
         )
 
         collectors = seed_mgr._build_source_collectors()
 
         assert "quest_weekly" in [source for source, _ in collectors]
         assert "quest_today" in [source for source, _ in collectors]
+        assert "memory" in [source for source, _ in collectors]
 
     @pytest.mark.asyncio
     async def test_強制カテゴリでは指定したカテゴリだけ収集する(self, monkeypatch):
@@ -270,6 +283,28 @@ class TestBuildSourceCollectors:
         wiki.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_memory強制カテゴリではmemoryだけ収集する(self, monkeypatch, tmp_path):
+        memory_dir = tmp_path / "generated_text"
+        memory_dir.mkdir()
+        seed_mgr = TalkSeedManager(
+            openai_api_key="test",
+            screen_analysis_model="test",
+            memory_directory=str(memory_dir),
+        )
+        memory_seed = _make_seed("memory", "思い出の話")
+        desktop = AsyncMock(return_value=[_make_seed("desktop", "作業中")])
+        memory = AsyncMock(return_value=[memory_seed])
+
+        monkeypatch.setattr(seed_mgr, "_collect_desktop", desktop)
+        monkeypatch.setattr(seed_mgr, "_collect_memory", memory)
+
+        result = await seed_mgr.collect_seed(forced_source="memory")
+
+        assert result == memory_seed
+        memory.assert_awaited_once()
+        desktop.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_クールダウン中のカテゴリは次のカテゴリへフォールバックする(self, seed_mgr, monkeypatch):
         desktop_seed = _make_seed("desktop", "作業中")
         wiki_seed = _make_seed("wikimedia", "豆知識")
@@ -287,3 +322,68 @@ class TestBuildSourceCollectors:
         assert result == wiki_seed
         desktop.assert_awaited_once()
         wiki.assert_awaited_once()
+
+
+class TestCollectMemory:
+    @pytest.mark.asyncio
+    async def test_memoryファイルからseedを生成する(self, tmp_path):
+        memory_dir = tmp_path / "generated_text"
+        memory_dir.mkdir()
+        memory_file = memory_dir / "memory_20260306_203218.txt"
+        memory_file.write_text("懐かしい思い出の本文", encoding="utf-8")
+
+        seed_mgr = TalkSeedManager(
+            openai_api_key="test",
+            screen_analysis_model="test",
+            memory_directory=str(memory_dir),
+        )
+
+        seeds = await seed_mgr._collect_memory()
+
+        assert len(seeds) == 1
+        assert seeds[0].source == "memory"
+        assert seeds[0].summary == "懐かしい思い出の本文"
+        assert seeds[0]._source_key == "memory:memory_20260306_203218.txt"
+
+    @pytest.mark.asyncio
+    async def test_memoryディレクトリがない場合は空配列(self, tmp_path):
+        seed_mgr = TalkSeedManager(
+            openai_api_key="test",
+            screen_analysis_model="test",
+            memory_directory=str(tmp_path / "missing"),
+        )
+
+        seeds = await seed_mgr._collect_memory()
+
+        assert seeds == []
+
+    @pytest.mark.asyncio
+    async def test_memoryディレクトリが空の場合は空配列(self, tmp_path):
+        memory_dir = tmp_path / "generated_text"
+        memory_dir.mkdir()
+        seed_mgr = TalkSeedManager(
+            openai_api_key="test",
+            screen_analysis_model="test",
+            memory_directory=str(memory_dir),
+        )
+
+        seeds = await seed_mgr._collect_memory()
+
+        assert seeds == []
+
+    @pytest.mark.asyncio
+    async def test_memoryファイルが空または不正UTF8のみなら空配列(self, tmp_path):
+        memory_dir = tmp_path / "generated_text"
+        memory_dir.mkdir()
+        (memory_dir / "memory_empty.txt").write_text("   \n", encoding="utf-8")
+        (memory_dir / "memory_invalid.txt").write_bytes(b"\xff\xfe\xfd")
+
+        seed_mgr = TalkSeedManager(
+            openai_api_key="test",
+            screen_analysis_model="test",
+            memory_directory=str(memory_dir),
+        )
+
+        seeds = await seed_mgr._collect_memory()
+
+        assert seeds == []

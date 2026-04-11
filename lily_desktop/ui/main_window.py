@@ -257,6 +257,12 @@ class MainWindow(QWidget):
         )
         debug_menu.addAction(books_talk_action)
 
+        memory_talk_action = QAction("思い出雑談を開始", self)
+        memory_talk_action.triggered.connect(
+            lambda: bus.memory_talk_requested.emit()
+        )
+        debug_menu.addAction(memory_talk_action)
+
         quest_weekly_talk_action = QAction("週次クエスト雑談を開始", self)
         quest_weekly_talk_action.triggered.connect(
             lambda: bus.quest_weekly_talk_requested.emit()

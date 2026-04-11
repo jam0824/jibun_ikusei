@@ -66,6 +66,7 @@ talk_seeds:
     - 哲学
     - オカルト
     - 神話
+  memory_directory: 'D:\codes\mixi2-api\generated_text'
 tts:
   enabled: true
   voicevox_url: http://localhost:50021

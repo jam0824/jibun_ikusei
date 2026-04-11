@@ -204,6 +204,20 @@ async def test_chat_auto_talk_passes_forced_books_source_to_app_handler():
 
 
 @pytest.mark.asyncio
+async def test_chat_auto_talk_passes_forced_memory_source_to_app_handler():
+    app = _FakeApp()
+    hub = DomainEventHub()
+    manager = JobManager()
+    register_background_event_handlers(app, hub, manager)
+
+    hub.publish(ChatAutoTalkDue(source="debug", forced_source="memory"))
+    await asyncio.wait_for(app.chat_auto_talk_started.wait(), timeout=1)
+
+    assert len(app.chat_auto_talk_events) == 1
+    assert app.chat_auto_talk_events[0].forced_source == "memory"
+
+
+@pytest.mark.asyncio
 async def test_chat_follow_up_uses_single_flight_drop():
     app = _FakeApp()
     hub = DomainEventHub()

@@ -1,4 +1,4 @@
-"""雑談の種マネージャー — 9系統の話題を収集・優先度判定・クールダウン管理"""
+"""雑談の種マネージャー — 10系統の話題を収集・優先度判定・クールダウン管理"""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import random
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ai.annict_client import AnnictWork, fetch_seasonal_works
@@ -35,7 +36,7 @@ class TalkSeed:
     summary: str = ""
     tags: list[str] = field(default_factory=list)
     freshness: str = "fresh"   # fresh | stale
-    source: str = ""           # desktop | wikimedia | annict | books
+    source: str = ""           # desktop | wikimedia | annict | books | memory
     lily_perspective: str = "" # リリィ側の切り口
     haruka_perspective: str = ""  # 相方側の切り口
     created_at: str = ""
@@ -59,6 +60,7 @@ class TalkSeedManager:
         camera_analysis_model: str = "gpt-5.4",
         camera_device_index: int = 0,
         interest_topics: list[str] | None = None,
+        memory_directory: str = "",
         rakuten_application_id: str = "",
         rakuten_access_key: str = "",
         rakuten_origin: str = "",
@@ -76,6 +78,7 @@ class TalkSeedManager:
         self._camera_analysis_model = camera_analysis_model
         self._camera_device_index = camera_device_index
         self._interest_topics: list[str] = interest_topics or []
+        self._memory_directory = Path(memory_directory) if memory_directory else None
         self._rakuten_client = (
             RakutenBooksClient(
                 application_id=rakuten_application_id,
@@ -138,7 +141,7 @@ class TalkSeedManager:
         return None
 
     async def collect_seeds(self) -> list[TalkSeed]:
-        """9系統から雑談の種を並行収集する"""
+        """10系統から雑談の種を並行収集する"""
         seeds: list[TalkSeed] = []
 
         # 並行で取得
@@ -149,6 +152,7 @@ class TalkSeedManager:
         camera_task = asyncio.create_task(self._collect_camera())
         health_task = asyncio.create_task(self._collect_health())
         books_task = asyncio.create_task(self._collect_books())
+        memory_task = asyncio.create_task(self._collect_memory())
         quest_weekly_task = asyncio.create_task(self._collect_quest_weekly())
         quest_today_task = asyncio.create_task(self._collect_quest_today())
 
@@ -159,6 +163,7 @@ class TalkSeedManager:
         camera_seeds = await camera_task
         health_seeds = await health_task
         books_seeds = await books_task
+        memory_seeds = await memory_task
         quest_weekly_seeds = await quest_weekly_task
         quest_today_seeds = await quest_today_task
 
@@ -169,13 +174,15 @@ class TalkSeedManager:
         seeds.extend(camera_seeds)
         seeds.extend(health_seeds)
         seeds.extend(books_seeds)
+        seeds.extend(memory_seeds)
         seeds.extend(quest_weekly_seeds)
         seeds.extend(quest_today_seeds)
 
         logger.info(
-            "雑談の種: desktop=%d wiki=%d wiki_interest=%d annict=%d camera=%d health=%d books=%d quest_weekly=%d quest_today=%d 合計=%d",
+            "雑談の種: desktop=%d wiki=%d wiki_interest=%d annict=%d camera=%d health=%d books=%d memory=%d quest_weekly=%d quest_today=%d 合計=%d",
             len(desktop_seeds), len(wiki_seeds), len(wiki_interest_seeds),
             len(annict_seeds), len(camera_seeds), len(health_seeds), len(books_seeds),
+            len(memory_seeds),
             len(quest_weekly_seeds), len(quest_today_seeds), len(seeds),
         )
         return seeds
@@ -184,7 +191,7 @@ class TalkSeedManager:
         """話題のバランスを考慮して種を選ぶ。
 
         デスクトップ / カメラ / 注目記事・今日は何の日 / 興味ある分野 /
-        アニメ(Annict) / 健康豆知識 / 本 / 週次クエスト状況 / 今日のクエスト状況の9カテゴリを均等に配分。
+        アニメ(Annict) / 健康豆知識 / 本 / 思い出 / 週次クエスト状況 / 今日のクエスト状況の10カテゴリを均等に配分。
         該当カテゴリの種がない場合は、残りのカテゴリで再配分する。
         クールダウン中の種は除外。
         """
@@ -207,6 +214,7 @@ class TalkSeedManager:
         annict_seeds = [s for s in available if s.source == "annict"]
         health_seeds = [s for s in available if s.source == "health"]
         books_seeds = [s for s in available if s.source == "books"]
+        memory_seeds = [s for s in available if s.source == "memory"]
         quest_weekly_seeds = [s for s in available if s.source == "quest_weekly"]
         quest_today_seeds = [s for s in available if s.source == "quest_today"]
 
@@ -226,6 +234,8 @@ class TalkSeedManager:
             candidates.append((1.0, health_seeds))
         if books_seeds:
             candidates.append((1.0, books_seeds))
+        if memory_seeds:
+            candidates.append((1.0, memory_seeds))
         if quest_weekly_seeds:
             candidates.append((1.0, quest_weekly_seeds))
         if quest_today_seeds:
@@ -288,6 +298,7 @@ class TalkSeedManager:
         add("annict", bool(self._annict_access_token), self._collect_annict)
         add("health", self._api_client is not None, self._collect_health)
         add("books", self._rakuten_client is not None, self._collect_books)
+        add("memory", self._memory_directory is not None, self._collect_memory)
         add("quest_weekly", self._api_client is not None, self._collect_quest_weekly)
         add("quest_today", self._api_client is not None, self._collect_quest_today)
 
@@ -753,6 +764,44 @@ class TalkSeedManager:
         except Exception:
             logger.exception("本カテゴリの収集に失敗")
             return []
+
+    async def _collect_memory(self) -> list[TalkSeed]:
+        """思い出テキストから memory カテゴリの種を生成する"""
+        if self._memory_directory is None:
+            return []
+        if not self._memory_directory.exists() or not self._memory_directory.is_dir():
+            return []
+
+        now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+        seeds: list[TalkSeed] = []
+
+        for memory_path in sorted(self._memory_directory.glob("memory_*.txt")):
+            try:
+                text = memory_path.read_text(encoding="utf-8").strip()
+            except UnicodeDecodeError:
+                logger.warning("思い出ファイルのUTF-8読込に失敗: %s", memory_path)
+                continue
+            except OSError:
+                logger.warning("思い出ファイルの読込に失敗: %s", memory_path, exc_info=True)
+                continue
+
+            if not text:
+                continue
+
+            seeds.append(
+                TalkSeed(
+                    summary=text,
+                    tags=["思い出", "リリィの記憶"],
+                    freshness="fresh",
+                    source="memory",
+                    lily_perspective="自分の思い出として、懐かしさやその時の気持ちをにじませながら自然に語る",
+                    haruka_perspective="リリィの思い出話にリアクションしつつ、楽しそうに合いの手を入れる",
+                    created_at=now_str,
+                    _source_key=f"memory:{memory_path.name}",
+                )
+            )
+
+        return seeds
 
 
 def _camera_lily_perspective(analysis: CameraAnalysis) -> str:

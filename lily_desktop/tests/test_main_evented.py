@@ -96,6 +96,21 @@ def test_quest_today_talk_request_publishes_forced_quest_today_event():
     assert event.forced_source == "quest_today"
 
 
+def test_memory_talk_request_publishes_forced_memory_event():
+    hub = _CaptureHub()
+    app = SimpleNamespace(
+        event_hub=hub,
+        auto_conversation=SimpleNamespace(trigger_memory_now=Mock()),
+    )
+
+    main_mod.App._on_memory_talk_requested(app)
+
+    assert len(hub.events) == 1
+    event = hub.events[0]
+    assert isinstance(event, ChatAutoTalkDue)
+    assert event.forced_source == "memory"
+
+
 @pytest.mark.asyncio
 async def test_async_init_publishes_app_started_without_direct_startup_sync():
     hub = _CaptureHub()
@@ -384,7 +399,7 @@ async def test_pending_periodic_auto_talk_is_skipped_when_matching_audible_tab_e
 
 
 @pytest.mark.asyncio
-async def test_manual_and_books_auto_talk_run_immediately_while_idle():
+async def test_manual_books_and_memory_auto_talk_run_immediately_while_idle():
     app = _make_conversation_app()
     app.chrome_audible_tabs_tracker = _FakeChromeAudibleTabsTracker("youtube.com")
 
@@ -410,4 +425,19 @@ async def test_manual_and_books_auto_talk_run_immediately_while_idle():
     app.auto_conversation.auto_talk_release.set()
     await books_task
 
-    assert app.auto_conversation.auto_talk_calls == [None, "books"]
+    app.auto_conversation.auto_talk_started = asyncio.Event()
+    app.auto_conversation.auto_talk_release = asyncio.Event()
+
+    memory_task = asyncio.create_task(
+        app.handle_chat_auto_talk_due(
+            ChatAutoTalkDue(
+                source="auto_conversation.manual_memory",
+                forced_source="memory",
+            )
+        )
+    )
+    await asyncio.wait_for(app.auto_conversation.auto_talk_started.wait(), timeout=1)
+    app.auto_conversation.auto_talk_release.set()
+    await memory_task
+
+    assert app.auto_conversation.auto_talk_calls == [None, "books", "memory"]
