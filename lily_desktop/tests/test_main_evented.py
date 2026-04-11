@@ -166,6 +166,20 @@ class _FakeAutoConversation:
         await self.auto_talk_release.wait()
 
 
+class _FakeChromeAudibleTabsTracker:
+    def __init__(self, matching_domain: str | None = None) -> None:
+        self.matching_domain = matching_domain
+
+    def find_fresh_matching_domain(
+        self,
+        domains: list[str],
+        *,
+        now: datetime | None = None,
+    ) -> str | None:
+        del domains, now
+        return self.matching_domain
+
+
 def _make_conversation_app():
     app = object.__new__(main_mod.App)
     app.chat_engine = _FakeChatEngine()
@@ -174,6 +188,16 @@ def _make_conversation_app():
     app.active_user_conversation = False
     app.pending_periodic_auto_talk = None
     app.pending_periodic_expires_at = None
+    app.config = SimpleNamespace(
+        chat=SimpleNamespace(
+            auto_talk_skip_audible_domains=[
+                "youtube.com",
+                "netflix.com",
+                "primevideo.com",
+            ]
+        )
+    )
+    app.chrome_audible_tabs_tracker = _FakeChromeAudibleTabsTracker()
     return app
 
 
@@ -259,6 +283,24 @@ async def test_periodic_auto_talk_waits_until_follow_up_finishes():
 
 
 @pytest.mark.asyncio
+async def test_periodic_auto_talk_skips_when_matching_audible_tab_exists():
+    app = _make_conversation_app()
+    app.chrome_audible_tabs_tracker = _FakeChromeAudibleTabsTracker("youtube.com")
+
+    await app.handle_chat_auto_talk_due(
+        ChatAutoTalkDue(
+            source="auto_conversation.timer",
+            occurred_at=datetime.now(JST),
+        )
+    )
+
+    await asyncio.sleep(0.05)
+
+    assert app.auto_conversation.auto_talk_started.is_set() is False
+    assert app.auto_conversation.auto_talk_calls == []
+
+
+@pytest.mark.asyncio
 async def test_periodic_auto_talk_keeps_only_latest_pending_request():
     app = _make_conversation_app()
     user_task = asyncio.create_task(app._handle_user_message_with_follow_up("hello"))
@@ -316,8 +358,35 @@ async def test_expired_periodic_auto_talk_is_dropped_after_conversation():
 
 
 @pytest.mark.asyncio
+async def test_pending_periodic_auto_talk_is_skipped_when_matching_audible_tab_exists_on_drain():
+    app = _make_conversation_app()
+    user_task = asyncio.create_task(app._handle_user_message_with_follow_up("hello"))
+
+    await asyncio.wait_for(app.chat_engine.started.wait(), timeout=1)
+    app.chat_engine.release.set()
+    await asyncio.wait_for(app.auto_conversation.follow_up_started.wait(), timeout=1)
+
+    await app.handle_chat_auto_talk_due(
+        ChatAutoTalkDue(
+            source="auto_conversation.timer",
+            occurred_at=datetime.now(JST),
+        )
+    )
+    app.chrome_audible_tabs_tracker = _FakeChromeAudibleTabsTracker("netflix.com")
+
+    app.auto_conversation.follow_up_release.set()
+    await user_task
+    await asyncio.sleep(0.05)
+
+    assert app.auto_conversation.auto_talk_started.is_set() is False
+    assert app.auto_conversation.auto_talk_calls == []
+    assert app.pending_periodic_auto_talk is None
+
+
+@pytest.mark.asyncio
 async def test_manual_and_books_auto_talk_run_immediately_while_idle():
     app = _make_conversation_app()
+    app.chrome_audible_tabs_tracker = _FakeChromeAudibleTabsTracker("youtube.com")
 
     manual_task = asyncio.create_task(
         app.handle_chat_auto_talk_due(ChatAutoTalkDue(source="auto_conversation.manual"))

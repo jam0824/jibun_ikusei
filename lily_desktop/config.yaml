@@ -11,6 +11,10 @@ chat:
   auto_talk_max_turns: 5
   follow_up_min_extra: 1
   follow_up_max_extra: 3
+  auto_talk_skip_audible_domains:
+    - youtube.com
+    - netflix.com
+    - primevideo.com
 display:
   lily_scale: 0.3
   haruka_scale: 0.65

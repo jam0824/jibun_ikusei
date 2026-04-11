@@ -11,12 +11,15 @@
 - `good_quest`
 - `bad_quest`
 - `warning`
+- `chrome_audible_tabs`
 
 ## 送信タイミング
 
 - Chrome拡張の `evaluateAndEnqueue()` 内で、既存の `syncQueue.enqueue()` 完了後に送信する
 - Quest / Completion の同期が主経路、Bridge 送信は副次経路とする
 - `warning` は `notificationsEnabled` が有効なときだけ、トースト送信と同じタイミングで送信する
+- `chrome_audible_tabs` は service worker 起動時、可聴状態または URL 更新時、タブ close 時、30 秒 heartbeat 時に送信する
+- `chrome_audible_tabs` は「現在可聴な HTTP(S) タブの full snapshot」を送る
 
 ## 送信先
 
@@ -49,6 +52,22 @@
 }
 ```
 
+`chrome_audible_tabs` の例:
+
+```json
+{
+  "eventType": "chrome_audible_tabs",
+  "source": "chrome_extension_audible_tabs",
+  "eventId": "uuid",
+  "payload": {
+    "audibleTabs": [
+      { "tabId": 101, "domain": "youtube.com" },
+      { "tabId": 205, "domain": "netflix.com" }
+    ]
+  }
+}
+```
+
 ## 文面ルール
 
 - 表示名は `suggestedQuestTitle || domain || "閲覧活動"` を使う
@@ -66,6 +85,15 @@
 - `xp`: 付与または減算した XP
 - `title`: AI 生成クエストタイトル。warning では常に `null`
 
+## `chrome_audible_tabs` payload ルール
+
+- `chrome.tabs.query({ audible: true })` で得られた可聴タブだけを対象にする
+- `http:` / `https:` 以外の URL は送らない
+- `domain` は hostname を小文字化し、先頭 `www.` は除去して送る
+- payload は full snapshot とし、現在可聴タブがない場合は `audibleTabs: []` を送る
+- 非空 snapshot の間は 30 秒ごとに heartbeat 送信する
+- 非空から空へ遷移したときは、空 snapshot を 1 回送る
+
 ## 失敗時の扱い
 
 - Bridge 送信は best-effort とする
@@ -77,6 +105,7 @@
 ## テスト観点
 
 - helper 単体で good / bad / warning の本文生成を検証する
+- helper 単体で `chrome_audible_tabs` の body 生成を検証する
 - title 不在時は `domain`、domain も不在時は `閲覧活動` にフォールバックする
 - fetch 失敗時に throw せず `false` を返す
 - timeout 時に `false` を返す
@@ -84,3 +113,6 @@
 - `alarm-handlers` から `warning` でも `notificationsEnabled` 有効時は localhost Bridge 呼び出しが 1 回発生する
 - `notificationsEnabled` が `false` の場合、warning のトーストと Bridge 呼び出しはどちらも発生しない
 - Bridge 送信失敗時も既存の Quest / Completion POST と日次進捗更新が成立する
+- service worker 起動時に可聴タブ snapshot が送信される
+- 可聴状態が消えたときに空 snapshot が送信される
+- 30 秒 heartbeat 時に可聴タブ snapshot が再送される

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   LILY_DESKTOP_BRIDGE_URL,
+  sendChromeAudibleTabsToLilyDesktop,
   sendBrowsingUserMessageToLilyDesktop,
 } from '@ext/lib/lily-desktop-bridge'
 
@@ -168,5 +169,40 @@ describe('lily-desktop-bridge', () => {
     await vi.advanceTimersByTimeAsync(2000)
 
     await expect(promise).resolves.toBe(false)
+  })
+
+  it('sends a chrome_audible_tabs snapshot to Lily Desktop', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 202 }),
+    )
+
+    const ok = await sendChromeAudibleTabsToLilyDesktop([
+      { tabId: 1, domain: 'www.youtube.com' },
+      { tabId: 2, domain: 'netflix.com' },
+    ])
+
+    expect(ok).toBe(true)
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(LILY_DESKTOP_BRIDGE_URL)
+
+    const body = JSON.parse(String(init.body)) as {
+      eventType: string
+      source: string
+      eventId: string
+      payload: { audibleTabs: Array<{ tabId: number; domain: string }> }
+    }
+
+    expect(body).toEqual({
+      eventType: 'chrome_audible_tabs',
+      source: 'chrome_extension_audible_tabs',
+      eventId: '00000000-0000-4000-8000-000000000000',
+      payload: {
+        audibleTabs: [
+          { tabId: 1, domain: 'youtube.com' },
+          { tabId: 2, domain: 'netflix.com' },
+        ],
+      },
+    })
   })
 })

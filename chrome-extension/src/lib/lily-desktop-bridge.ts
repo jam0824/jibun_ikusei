@@ -2,6 +2,10 @@ export const LILY_DESKTOP_BRIDGE_URL = 'http://127.0.0.1:18765/v1/events'
 const LILY_DESKTOP_BRIDGE_TIMEOUT_MS = 2000
 
 type BrowsingBridgeType = 'good' | 'bad' | 'warning'
+type ChromeAudibleTab = {
+  tabId: number
+  domain: string
+}
 
 type SendBrowsingUserMessageParams = {
   browsingType: BrowsingBridgeType
@@ -39,13 +43,12 @@ function buildMessageText({
   return `「${label}」で${xp} XPのペナルティとなりました。`
 }
 
-export async function sendBrowsingUserMessageToLilyDesktop({
-  browsingType,
-  xp,
-  title,
-  domain,
-  category,
-}: SendBrowsingUserMessageParams): Promise<boolean> {
+function normalizeBridgeDomain(domain: string): string {
+  const normalized = domain.trim().toLowerCase()
+  return normalized.startsWith('www.') ? normalized.slice(4) : normalized
+}
+
+async function sendBridgeEvent(body: object): Promise<boolean> {
   const controller = new AbortController()
   const timeoutId = globalThis.setTimeout(() => {
     controller.abort()
@@ -56,21 +59,7 @@ export async function sendBrowsingUserMessageToLilyDesktop({
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       signal: controller.signal,
-      body: JSON.stringify({
-        eventType: 'user_message',
-        source: 'chrome_extension_browsing',
-        eventId: crypto.randomUUID(),
-        payload: {
-          text: buildMessageText({ browsingType, xp, title, domain }),
-        },
-        metadata: {
-          browsingType,
-          domain: domain ?? null,
-          category: category ?? null,
-          xp,
-          title: title ?? null,
-        },
-      }),
+      body: JSON.stringify(body),
     })
 
     return response.ok
@@ -79,4 +68,44 @@ export async function sendBrowsingUserMessageToLilyDesktop({
   } finally {
     globalThis.clearTimeout(timeoutId)
   }
+}
+
+export async function sendBrowsingUserMessageToLilyDesktop({
+  browsingType,
+  xp,
+  title,
+  domain,
+  category,
+}: SendBrowsingUserMessageParams): Promise<boolean> {
+  return sendBridgeEvent({
+    eventType: 'user_message',
+    source: 'chrome_extension_browsing',
+    eventId: crypto.randomUUID(),
+    payload: {
+      text: buildMessageText({ browsingType, xp, title, domain }),
+    },
+    metadata: {
+      browsingType,
+      domain: domain ?? null,
+      category: category ?? null,
+      xp,
+      title: title ?? null,
+    },
+  })
+}
+
+export async function sendChromeAudibleTabsToLilyDesktop(
+  audibleTabs: ChromeAudibleTab[],
+): Promise<boolean> {
+  return sendBridgeEvent({
+    eventType: 'chrome_audible_tabs',
+    source: 'chrome_extension_audible_tabs',
+    eventId: crypto.randomUUID(),
+    payload: {
+      audibleTabs: audibleTabs.map((tab) => ({
+        tabId: tab.tabId,
+        domain: normalizeBridgeDomain(tab.domain),
+      })),
+    },
+  })
 }

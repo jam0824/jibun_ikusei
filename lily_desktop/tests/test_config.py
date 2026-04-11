@@ -301,3 +301,47 @@ def test_desktop_provider_defaults_to_legacy_openai_screen_model(tmp_path):
     assert config.desktop.analysis_provider == "openai"
     assert config.desktop.analysis_base_url == "http://127.0.0.1:11434"
     assert config.desktop.analysis_model == "gpt-5.4-mini"
+
+
+def test_chat_auto_talk_skip_audible_domains_defaults(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.chat.auto_talk_skip_audible_domains == [
+        "youtube.com",
+        "netflix.com",
+        "primevideo.com",
+    ]
+
+
+def test_chat_auto_talk_skip_audible_domains_uses_config_value(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "chat:\n"
+        "  auto_talk_skip_audible_domains:\n"
+        "    - music.youtube.com\n"
+        "    - tv.netflix.com\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.chat.auto_talk_skip_audible_domains == [
+        "music.youtube.com",
+        "tv.netflix.com",
+    ]
+
+
+def test_chat_auto_talk_skip_audible_domains_can_be_disabled_with_empty_list(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "chat:\n"
+        "  auto_talk_skip_audible_domains: []\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.chat.auto_talk_skip_audible_domains == []

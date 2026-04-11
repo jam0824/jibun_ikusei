@@ -165,13 +165,45 @@ curl.exe -s -S -D - -X POST http://127.0.0.1:18765/v1/events -H "Content-Type: a
 クエスト「Reactチュートリアルを見る」をクリアしたよ。XPは+2だよ。カテゴリは「学習」だよ。メモは「初回30分到達」だよ。
 ```
 
+### 6-3. `chrome_audible_tabs`
+Chrome 拡張から、現在可聴状態にある HTTP(S) タブの full snapshot を受け取る。
+
+#### payload
+- 必須
+  - `audibleTabs`: 配列
+- `audibleTabs[]` の必須フィールド
+  - `tabId`: 整数
+  - `domain`: 非空文字列
+
+#### リクエスト例
+```json
+{
+  "eventType": "chrome_audible_tabs",
+  "source": "chrome_extension_audible_tabs",
+  "eventId": "evt-audible-001",
+  "payload": {
+    "audibleTabs": [
+      { "tabId": 101, "domain": "youtube.com" },
+      { "tabId": 205, "domain": "netflix.com" }
+    ]
+  }
+}
+```
+
+#### 内部処理
+- このイベントは `user_message_received` 経路へは流さない
+- 受信時刻（JST）と `audibleTabs` の full snapshot を直近状態として保持する
+- 定期自動雑談の実行直前に、保持中 snapshot の鮮度が 90 秒以内で、かつ `chat.auto_talk_skip_audible_domains` に一致する domain が含まれていれば、その回の雑談をスキップする
+- `audibleTabs` が空配列の場合は「現在可聴タブなし」の snapshot として保持し、以前の可聴状態をクリアする
+
 ## 7. 内部処理
-- 受信後は既存の `user_message_received` 経路へ流す
+- `user_message` / `quest_completed` は受信後に既存の `user_message_received` 経路へ流す
 - これにより以下を既存実装で処理する
   - ユーザー吹き出し表示
   - 会話保存
   - リリィの応答生成
   - 読み上げ
+- `chrome_audible_tabs` は内部発話を生成せず、可聴タブ状態の更新だけを行う
 - `source` と `metadata` はログには残すが、内部発話文には混ぜない
 
 ## 8. レスポンス
@@ -226,6 +258,6 @@ curl.exe -s -S -D - -X POST http://127.0.0.1:18765/v1/events -H "Content-Type: a
 - アプリ終了時は bridge を明示的に停止する
 
 ## 11. 将来拡張方針
-- v1 は `user_message` と `quest_completed` のみを対象とする
+- v1 は `user_message`、`quest_completed`、`chrome_audible_tabs` を対象とする
 - v1 では共有シークレット、重複排除、Quest / Completion の直接永続化は実装しない
 - 将来的にイベント種別を増やす場合も、まずは「構造化イベントを既存の会話入口へ変換する」方針を優先する
