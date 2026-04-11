@@ -13,6 +13,7 @@ import { RecordsScreen } from '@/screens/records-screen'
 import { SettingsScreen } from '@/screens/settings-screen'
 import { SkillsScreen } from '@/screens/skills-screen'
 import { WeeklyReflectionScreen } from '@/screens/weekly-reflection-screen'
+import { ScrollToTopOnRouteChange } from '@/components/scroll-to-top-on-route-change'
 import { useAppStore } from '@/store/app-store'
 import { isLoggedIn } from '@/lib/auth'
 
@@ -70,6 +71,7 @@ function AppRoutes() {
 export default function App() {
   return (
     <HashRouter>
+      <ScrollToTopOnRouteChange />
       <AppRoutes />
     </HashRouter>
   )
