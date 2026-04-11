@@ -18,6 +18,7 @@ from api.api_client import ApiClient
 from api.auth import CognitoAuth
 from core.background_event_runtime import register_background_event_handlers
 from core.camera import find_camera_index
+from core.chrome_audible_tabs import ChromeAudibleTabsTracker
 from core.config import load_config, save_camera_device, save_voice_device, save_healthplanet_token
 from core.desktop_context import format_context_log
 from core.domain_events import (
@@ -92,6 +93,7 @@ class App:
         self.active_user_conversation = False
         self.pending_periodic_auto_talk: ChatAutoTalkDue | None = None
         self.pending_periodic_expires_at: datetime | None = None
+        self.chrome_audible_tabs_tracker = ChromeAudibleTabsTracker()
 
         # Fitbit 同期
         self.fitbit_sync: FitbitSync | None = None
@@ -199,6 +201,14 @@ class App:
                 self.pending_periodic_expires_at.isoformat(),
             )
             return
+        if is_periodic_timer:
+            matched_domain = self._find_matching_skip_audible_domain()
+            if matched_domain:
+                logger.info(
+                    "定期自動雑談をスキップ: Chrome可聴タブ domain=%s",
+                    matched_domain,
+                )
+                return
 
         await self.job_manager.submit(
             "chat.auto_talk",
@@ -224,6 +234,13 @@ class App:
                 now.isoformat(),
             )
             return
+        matched_domain = self._find_matching_skip_audible_domain()
+        if matched_domain:
+            logger.info(
+                "保留中の定期自動雑談をスキップ: Chrome可聴タブ domain=%s",
+                matched_domain,
+            )
+            return
 
         logger.info("保留中の定期自動雑談を実行")
         await self.job_manager.submit(
@@ -231,6 +248,16 @@ class App:
             "single_flight_drop",
             lambda: self.auto_conversation.run_auto_talk_job(event.forced_source),
         )
+
+    def _find_matching_skip_audible_domain(self) -> str | None:
+        chat_cfg = getattr(getattr(self, "config", None), "chat", None)
+        domains = getattr(chat_cfg, "auto_talk_skip_audible_domains", [])
+        if not domains:
+            return None
+        tracker = getattr(self, "chrome_audible_tabs_tracker", None)
+        if tracker is None:
+            return None
+        return tracker.find_fresh_matching_domain(domains, now=datetime.now(JST))
 
     def _on_new_chat(self) -> None:
         asyncio.ensure_future(self._create_new_chat())
@@ -461,6 +488,10 @@ class App:
             self.config.http_bridge,
             event_loop=event_loop,
             emit_user_message=bus.user_message_received.emit,
+            update_chrome_audible_tabs=lambda received_at, audible_tabs: self.chrome_audible_tabs_tracker.update(
+                received_at=received_at,
+                audible_tabs=audible_tabs,
+            ),
             logger_instance=logger,
         )
 

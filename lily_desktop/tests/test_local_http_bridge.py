@@ -65,6 +65,53 @@ def test_validate_quest_completed_event_builds_internal_user_message():
     )
 
 
+def test_validate_chrome_audible_tabs_event_accepts_full_snapshot():
+    accepted = validate_http_bridge_event(
+        {
+            "eventType": "chrome_audible_tabs",
+            "source": "chrome_extension",
+            "payload": {
+                "audibleTabs": [
+                    {"tabId": 1, "domain": "youtube.com"},
+                    {"tabId": 2, "domain": "netflix.com"},
+                ]
+            },
+        },
+        received_at=datetime(2026, 4, 4, 21, 15, tzinfo=JST),
+    )
+
+    assert accepted.event_type == "chrome_audible_tabs"
+    assert accepted.payload == {
+        "audibleTabs": [
+            {"tabId": 1, "domain": "youtube.com"},
+            {"tabId": 2, "domain": "netflix.com"},
+        ]
+    }
+    assert accepted.internal_user_message == ""
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"audibleTabs": "invalid"},
+        {"audibleTabs": [{"tabId": "1", "domain": "youtube.com"}]},
+        {"audibleTabs": [{"tabId": 1, "domain": ""}]},
+    ],
+)
+def test_validate_chrome_audible_tabs_event_rejects_invalid_payload(payload):
+    with pytest.raises(BridgeValidationError) as exc_info:
+        validate_http_bridge_event(
+            {
+                "eventType": "chrome_audible_tabs",
+                "source": "chrome_extension",
+                "payload": payload,
+            },
+            received_at=datetime(2026, 4, 4, 21, 15, tzinfo=JST),
+        )
+
+    assert exc_info.value.code == "invalid_payload"
+
+
 @pytest.mark.parametrize(
     ("occurred_at", "expected_code"),
     [
@@ -122,10 +169,14 @@ def test_validate_http_bridge_event_rejects_non_jst_occurred_at(occurred_at, exp
 )
 def test_local_http_bridge_post_endpoint(body, expected_status, expected_code):
     received_messages: list[str] = []
+    audible_snapshots: list[tuple[datetime, list[dict[str, object]]]] = []
     bridge = LocalHttpBridge(
         port=0,
         event_loop=_ImmediateLoop(),
         emit_user_message=received_messages.append,
+        update_chrome_audible_tabs=lambda received_at, audible_tabs: audible_snapshots.append(
+            (received_at, audible_tabs)
+        ),
     )
     bridge.start()
 
@@ -149,9 +200,62 @@ def test_local_http_bridge_post_endpoint(body, expected_status, expected_code):
         assert payload["status"] == "accepted"
         assert payload["eventType"] == "user_message"
         assert received_messages == ["HTTPからこんにちは"]
+        assert audible_snapshots == []
     else:
         assert payload["ok"] is False
         assert payload["error"]["code"] == expected_code
+
+
+def test_local_http_bridge_dispatches_chrome_audible_tabs_without_user_message():
+    received_messages: list[str] = []
+    audible_snapshots: list[tuple[datetime, list[dict[str, object]]]] = []
+    bridge = LocalHttpBridge(
+        port=0,
+        event_loop=_ImmediateLoop(),
+        emit_user_message=received_messages.append,
+        update_chrome_audible_tabs=lambda received_at, audible_tabs: audible_snapshots.append(
+            (received_at, audible_tabs)
+        ),
+    )
+    bridge.start()
+
+    try:
+        conn = http.client.HTTPConnection(bridge.host, bridge.port, timeout=5)
+        conn.request(
+            "POST",
+            "/v1/events",
+            body=json.dumps(
+                {
+                    "eventType": "chrome_audible_tabs",
+                    "source": "chrome_extension",
+                    "payload": {
+                        "audibleTabs": [
+                            {"tabId": 1, "domain": "youtube.com"},
+                            {"tabId": 2, "domain": "netflix.com"},
+                        ]
+                    },
+                },
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        response = conn.getresponse()
+        payload = json.loads(response.read().decode("utf-8"))
+        conn.close()
+    finally:
+        bridge.stop()
+
+    assert response.status == 202
+    assert payload["ok"] is True
+    assert payload["eventType"] == "chrome_audible_tabs"
+    assert received_messages == []
+    assert len(audible_snapshots) == 1
+    received_at, audible_tabs = audible_snapshots[0]
+    assert received_at.tzinfo == JST
+    assert audible_tabs == [
+        {"tabId": 1, "domain": "youtube.com"},
+        {"tabId": 2, "domain": "netflix.com"},
+    ]
 
 
 def test_local_http_bridge_returns_not_found_for_unknown_path():

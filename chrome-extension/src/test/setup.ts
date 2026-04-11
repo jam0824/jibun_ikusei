@@ -31,6 +31,7 @@ const storageOnChanged = createEventMock<typeof chrome.storage.onChanged.addList
 const runtimeOnMessage = createEventMock<typeof chrome.runtime.onMessage.addListener extends (callback: infer T) => any ? T : never>()
 const tabsOnActivated = createEventMock<typeof chrome.tabs.onActivated.addListener extends (callback: infer T) => any ? T : never>()
 const tabsOnUpdated = createEventMock<typeof chrome.tabs.onUpdated.addListener extends (callback: infer T) => any ? T : never>()
+const tabsOnRemoved = createEventMock<typeof chrome.tabs.onRemoved.addListener extends (callback: infer T) => any ? T : never>()
 const windowsOnFocusChanged = createEventMock<typeof chrome.windows.onFocusChanged.addListener extends (callback: infer T) => any ? T : never>()
 const alarmsOnAlarm = createEventMock<typeof chrome.alarms.onAlarm.addListener extends (callback: infer T) => any ? T : never>()
 const notificationsOnClicked = createEventMock<typeof chrome.notifications.onClicked.addListener extends (callback: infer T) => any ? T : never>()
@@ -234,6 +235,7 @@ const chromeMock = {
     sendMessage: tabsSendMessageMock,
     onActivated: tabsOnActivated.event,
     onUpdated: tabsOnUpdated.event,
+    onRemoved: tabsOnRemoved.event,
   },
   windows: {
     onFocusChanged: windowsOnFocusChanged.event,
@@ -273,6 +275,7 @@ beforeEach(() => {
   runtimeOnMessage.reset()
   tabsOnActivated.reset()
   tabsOnUpdated.reset()
+  tabsOnRemoved.reset()
   windowsOnFocusChanged.reset()
   alarmsOnAlarm.reset()
   notificationsOnClicked.reset()

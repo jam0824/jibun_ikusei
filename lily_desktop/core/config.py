@@ -15,6 +15,11 @@ DEFAULT_USER_BALLOON_DISPLAY_SECONDS = 8.0
 DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES = 15
 DEFAULT_HTTP_BRIDGE_PORT = 18765
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
+DEFAULT_AUTO_TALK_SKIP_AUDIBLE_DOMAINS = [
+    "youtube.com",
+    "netflix.com",
+    "primevideo.com",
+]
 
 
 def _load_dotenv(path: Path | None = None) -> dict[str, str]:
@@ -66,6 +71,22 @@ def normalize_http_bridge_port(value: object) -> int:
     if port <= 0 or port > 65535:
         return DEFAULT_HTTP_BRIDGE_PORT
     return port
+
+
+def normalize_domain_list(value: object, *, default: list[str]) -> list[str]:
+    if value is None:
+        return list(default)
+    if not isinstance(value, list):
+        return list(default)
+    normalized: list[str] = []
+    for item in value:
+        if not isinstance(item, str):
+            continue
+        domain = item.strip().lower()
+        if not domain:
+            continue
+        normalized.append(domain)
+    return normalized
 
 
 def normalize_ai_provider(value: object) -> str:
@@ -131,6 +152,9 @@ class ChatConfig:
     auto_talk_max_turns: int = 5
     follow_up_min_extra: int = 1
     follow_up_max_extra: int = 3
+    auto_talk_skip_audible_domains: list[str] = field(
+        default_factory=lambda: list(DEFAULT_AUTO_TALK_SKIP_AUDIBLE_DOMAINS)
+    )
 
 
 @dataclass
@@ -322,6 +346,15 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         OpenAIConfig().screen_analysis_model,
     )
     desktop_raw["analysis_model"] = str(desktop_model)
+    chat_raw = raw.get("chat", {}) or {}
+    if not isinstance(chat_raw, dict):
+        chat_raw = {}
+    else:
+        chat_raw = dict(chat_raw)
+    chat_raw["auto_talk_skip_audible_domains"] = normalize_domain_list(
+        chat_raw.get("auto_talk_skip_audible_domains"),
+        default=DEFAULT_AUTO_TALK_SKIP_AUDIBLE_DOMAINS,
+    )
 
     config = AppConfig(
         openai=OpenAIConfig(**openai_raw),
@@ -329,7 +362,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         cognito=CognitoConfig(**raw.get("cognito", {})),
         annict=AnnictConfig(**raw.get("annict", {})),
         rakuten=RakutenConfig(**raw.get("rakuten", {})),
-        chat=ChatConfig(**raw.get("chat", {})),
+        chat=ChatConfig(**chat_raw),
         voice=VoiceConfig(**{k: v for k, v in raw.get("voice", {}).items() if k != "google_api_key"}),
         tts=TTSConfig(**{k: v for k, v in raw.get("tts", {}).items() if k != "gemini_api_key"}),
         camera=CameraConfig(**camera_raw),

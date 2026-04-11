@@ -14,7 +14,9 @@ from core.config import HttpBridgeConfig
 JST = timezone(timedelta(hours=9))
 HTTP_BRIDGE_HOST = "127.0.0.1"
 HTTP_BRIDGE_ENDPOINT = "/v1/events"
-_SUPPORTED_EVENT_TYPES = frozenset({"user_message", "quest_completed"})
+_SUPPORTED_EVENT_TYPES = frozenset(
+    {"user_message", "quest_completed", "chrome_audible_tabs"}
+)
 logger = logging.getLogger(__name__)
 
 
@@ -27,7 +29,7 @@ class AcceptedHttpBridgeEvent:
     occurred_at: datetime
     received_at: datetime
     metadata: dict[str, Any]
-    internal_user_message: str
+    internal_user_message: str = ""
 
 
 class BridgeValidationError(Exception):
@@ -83,6 +85,42 @@ def _optional_xp(value: object) -> int | float | None:
             "payload.xp must be a number.",
         )
     return value
+
+
+def _require_tab_id(value: object, field_name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise BridgeValidationError(
+            "invalid_payload",
+            f"{field_name} must be an integer.",
+        )
+    return value
+
+
+def _parse_audible_tabs_payload(payload_raw: dict[str, Any]) -> dict[str, Any]:
+    audible_tabs = payload_raw.get("audibleTabs")
+    if not isinstance(audible_tabs, list):
+        raise BridgeValidationError(
+            "invalid_payload",
+            "payload.audibleTabs must be an array.",
+        )
+
+    normalized_tabs: list[dict[str, Any]] = []
+    for index, item in enumerate(audible_tabs):
+        if not isinstance(item, dict):
+            raise BridgeValidationError(
+                "invalid_payload",
+                f"payload.audibleTabs[{index}] must be an object.",
+            )
+        normalized_tabs.append(
+            {
+                "tabId": _require_tab_id(item.get("tabId"), f"payload.audibleTabs[{index}].tabId"),
+                "domain": _require_non_empty_string(
+                    item.get("domain"),
+                    f"payload.audibleTabs[{index}].domain",
+                ),
+            }
+        )
+    return {"audibleTabs": normalized_tabs}
 
 
 def _parse_occurred_at(value: object, *, received_at: datetime) -> datetime:
@@ -174,7 +212,7 @@ def validate_http_bridge_event(
             "text": _require_non_empty_string(payload_raw.get("text"), "payload.text"),
         }
         internal_user_message = payload["text"]
-    else:
+    elif event_type == "quest_completed":
         payload = {
             "title": _require_non_empty_string(payload_raw.get("title"), "payload.title"),
             "xp": _optional_xp(payload_raw.get("xp")),
@@ -182,6 +220,9 @@ def validate_http_bridge_event(
             "note": _optional_string(payload_raw.get("note"), "payload.note"),
         }
         internal_user_message = _build_quest_completed_message(payload)
+    else:
+        payload = _parse_audible_tabs_payload(payload_raw)
+        internal_user_message = ""
 
     return AcceptedHttpBridgeEvent(
         event_type=event_type,
@@ -282,7 +323,13 @@ class _LocalHttpBridgeRequestHandler(BaseHTTPRequestHandler):
             )
             return
 
-        self.server.bridge.dispatch_user_message(accepted.internal_user_message)
+        if accepted.event_type == "chrome_audible_tabs":
+            self.server.bridge.dispatch_chrome_audible_tabs(
+                accepted.received_at,
+                accepted.payload["audibleTabs"],
+            )
+        else:
+            self.server.bridge.dispatch_user_message(accepted.internal_user_message)
         self._write_json(
             202,
             {
@@ -362,6 +409,7 @@ class LocalHttpBridge:
         port: int,
         event_loop,
         emit_user_message: Callable[[str], None],
+        update_chrome_audible_tabs: Callable[[datetime, list[dict[str, Any]]], None] | None = None,
         host: str = HTTP_BRIDGE_HOST,
         logger_instance: logging.Logger | None = None,
     ):
@@ -369,6 +417,7 @@ class LocalHttpBridge:
         self.port = port
         self._event_loop = event_loop
         self._emit_user_message = emit_user_message
+        self._update_chrome_audible_tabs = update_chrome_audible_tabs
         self._server: _LocalHttpBridgeServer | None = None
         self._thread: threading.Thread | None = None
         self.logger = logger_instance or logger
@@ -413,6 +462,19 @@ class LocalHttpBridge:
     def dispatch_user_message(self, message: str) -> None:
         self._event_loop.call_soon_threadsafe(self._emit_user_message, message)
 
+    def dispatch_chrome_audible_tabs(
+        self,
+        received_at: datetime,
+        audible_tabs: list[dict[str, Any]],
+    ) -> None:
+        if self._update_chrome_audible_tabs is None:
+            return
+        self._event_loop.call_soon_threadsafe(
+            self._update_chrome_audible_tabs,
+            received_at,
+            audible_tabs,
+        )
+
     def log_result(
         self,
         *,
@@ -441,6 +503,7 @@ def start_local_http_bridge(
     *,
     event_loop,
     emit_user_message: Callable[[str], None],
+    update_chrome_audible_tabs: Callable[[datetime, list[dict[str, Any]]], None] | None = None,
     logger_instance: logging.Logger | None = None,
 ) -> LocalHttpBridge | None:
     active_logger = logger_instance or logger
@@ -452,6 +515,7 @@ def start_local_http_bridge(
         port=config.port,
         event_loop=event_loop,
         emit_user_message=emit_user_message,
+        update_chrome_audible_tabs=update_chrome_audible_tabs,
         logger_instance=active_logger,
     )
     try:
