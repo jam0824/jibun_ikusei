@@ -1,3 +1,5 @@
+import type { YouTubeTranscriptPayload } from '@ext/types/youtube-transcript'
+
 export const LILY_DESKTOP_BRIDGE_URL = 'http://127.0.0.1:18765/v1/events'
 const LILY_DESKTOP_BRIDGE_TIMEOUT_MS = 2000
 
@@ -106,6 +108,33 @@ export async function sendChromeAudibleTabsToLilyDesktop(
         tabId: tab.tabId,
         domain: normalizeBridgeDomain(tab.domain),
       })),
+    },
+  })
+}
+
+export async function sendYouTubeTranscriptToLilyDesktop({
+  occurredAt,
+  videoId,
+  videoUrl,
+  videoTitle,
+  channelName,
+  languageCode,
+  transcriptSource,
+  segments,
+}: YouTubeTranscriptPayload): Promise<boolean> {
+  return sendBridgeEvent({
+    eventType: 'youtube_transcript',
+    source: 'chrome_extension_youtube',
+    eventId: crypto.randomUUID(),
+    occurredAt,
+    payload: {
+      videoId,
+      videoUrl,
+      videoTitle,
+      channelName,
+      languageCode,
+      transcriptSource,
+      segments,
     },
   })
 }

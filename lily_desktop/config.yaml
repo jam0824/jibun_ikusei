@@ -85,3 +85,5 @@ fitbit:
 http_bridge:
   enabled: true
   port: 18765
+youtube_transcript:
+  output_directory: ../output/youtube_transcripts

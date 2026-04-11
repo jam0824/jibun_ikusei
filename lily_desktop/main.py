@@ -35,6 +35,11 @@ from core.local_http_bridge import LocalHttpBridge, start_local_http_bridge
 from core.runtime_logging import configure_runtime_logging
 from core.situation_capture import SituationCaptureCoordinator
 from core.situation_logger import SituationLogger, SituationRecord
+from core.youtube_transcript_saver import (
+    YouTubeTranscriptRecord,
+    YouTubeTranscriptSegment,
+    save_youtube_transcript,
+)
 from data.session_manager import SessionManager
 from pose.pose_generator import ensure_pose
 from pose.pose_manager import PoseManager
@@ -493,6 +498,7 @@ class App:
                 received_at=received_at,
                 audible_tabs=audible_tabs,
             ),
+            save_youtube_transcript=self._save_youtube_transcript,
             logger_instance=logger,
         )
 
@@ -502,6 +508,44 @@ class App:
             return
         self.http_bridge.stop()
         self.http_bridge = None
+
+    def _save_youtube_transcript(
+        self,
+        occurred_at: datetime,
+        payload: dict[str, object],
+    ) -> None:
+        try:
+            output_directory = Path(self.config.youtube_transcript.output_directory)
+            record = YouTubeTranscriptRecord(
+                occurred_at=occurred_at,
+                saved_at=datetime.now(JST),
+                video_id=str(payload["videoId"]),
+                video_url=str(payload["videoUrl"]),
+                video_title=str(payload["videoTitle"]),
+                channel_name=str(payload["channelName"]),
+                language_code=str(payload["languageCode"]),
+                transcript_source=str(payload["transcriptSource"]),
+                segments=[
+                    YouTubeTranscriptSegment(
+                        start_seconds=float(segment["startSeconds"]),
+                        text=str(segment["text"]),
+                    )
+                    for segment in payload["segments"]
+                    if isinstance(segment, dict)
+                ],
+            )
+            saved_path = save_youtube_transcript(record, output_directory)
+            logger.info("YouTube transcript saved: %s", saved_path)
+            bus.balloon_show.emit(
+                "リリィ",
+                f"YouTubeのtranscriptを保存したよ！\n{saved_path.name}",
+            )
+        except Exception:
+            logger.exception("Failed to save YouTube transcript")
+            bus.balloon_show.emit(
+                "リリィ",
+                "YouTubeのtranscript保存に失敗しちゃった…",
+            )
 
     def stop_camera_system(self) -> None:
         """カメラシステムを停止する"""

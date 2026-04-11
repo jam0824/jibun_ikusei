@@ -116,3 +116,35 @@
 - service worker 起動時に可聴タブ snapshot が送信される
 - 可聴状態が消えたときに空 snapshot が送信される
 - 30 秒 heartbeat 時に可聴タブ snapshot が再送される
+## 2026-04-11 YouTube transcript 自動保存
+
+- YouTube の `watch` / `shorts` ページでは、content script が動画再生開始を検知したときに transcript 抽出を試みる。
+- transcript 送信は動画ごとに 1 回だけ行い、同じ動画の pause / resume では再送しない。SPA 遷移で別動画になった場合は新しい動画として再度送信する。
+- 字幕トラックは手動字幕を優先し、手動字幕がない場合のみ自動字幕 (`kind=asr`) を使う。
+- 字幕が存在しない動画、取得結果が空の動画、Bridge 送信に失敗したケースは best-effort でスキップする。
+- Bridge へは `youtube_transcript` event を `POST /v1/events` で送る。
+
+```json
+{
+  "eventType": "youtube_transcript",
+  "source": "chrome_extension_youtube",
+  "eventId": "uuid",
+  "occurredAt": "2026-04-11T21:05:06+09:00",
+  "payload": {
+    "videoId": "abc123",
+    "videoUrl": "https://www.youtube.com/watch?v=abc123",
+    "videoTitle": "TypeScript Deep Dive",
+    "channelName": "Lily Channel",
+    "languageCode": "ja",
+    "transcriptSource": "manual",
+    "segments": [
+      { "startSeconds": 0, "text": "hello world" },
+      { "startSeconds": 12.5, "text": "second line" }
+    ]
+  }
+}
+```
+
+- `occurredAt` は動画再生開始時刻を JST RFC3339 (`+09:00`) で送る。
+- `segments[].startSeconds` は秒の number、`segments[].text` は空でない文字列とする。
+- v1 では機械翻訳字幕や外部 STT は使わない。

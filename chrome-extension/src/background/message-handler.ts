@@ -1,9 +1,11 @@
 import { classifyPage } from '@ext/lib/ai-classifier'
 import { buildCacheKey } from '@ext/lib/cache-key'
 import { ClassificationCache } from '@ext/lib/classification-cache'
+import { sendYouTubeTranscriptToLilyDesktop } from '@ext/lib/lily-desktop-bridge'
 import { sendClassificationToastToTab } from '@ext/lib/notifications'
 import { getLocal } from '@ext/lib/storage'
 import type { ClassificationCacheEntry, ClassificationResult, PageInfo } from '@ext/types/browsing'
+import type { YouTubeTranscriptPayload } from '@ext/types/youtube-transcript'
 import { createDefaultSettings, type ExtensionSettings } from '@ext/types/settings'
 import { clearSyncState, resetExtensionData } from './reset-state'
 import { timeAccumulator } from './shared-instances'
@@ -54,6 +56,11 @@ export function setupMessageListener(): void {
     if (message.type === 'OPEN_POPUP') {
       const popupUrl = chrome.runtime.getURL('popup.html')
       chrome.tabs.create({ url: popupUrl }).catch(() => {})
+      return
+    }
+
+    if (message.type === 'YOUTUBE_TRANSCRIPT_READY') {
+      sendYouTubeTranscriptToLilyDesktop(message.payload as YouTubeTranscriptPayload).catch(() => {})
       return
     }
 

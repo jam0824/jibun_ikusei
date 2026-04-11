@@ -1,5 +1,6 @@
 import { extractPageInfo } from './page-info-extractor'
 import { createUrlChangeDetector } from './spa-navigation'
+import { setupYouTubeTranscriptWatcher } from './youtube-transcript'
 
 function sendPageInfo() {
   const pageInfo = extractPageInfo()
@@ -8,11 +9,18 @@ function sendPageInfo() {
   })
 }
 
+const youtubeTranscriptWatcher = setupYouTubeTranscriptWatcher()
+
+function handleLocationChange() {
+  sendPageInfo()
+  youtubeTranscriptWatcher.handleUrlChange(location.href)
+}
+
 // Send page info to background on load
-sendPageInfo()
+handleLocationChange()
 
 // Detect SPA navigation (pushState/replaceState/popstate)
-const detector = createUrlChangeDetector(location.href, sendPageInfo)
+const detector = createUrlChangeDetector(location.href, handleLocationChange)
 const originalPushState = history.pushState.bind(history)
 const originalReplaceState = history.replaceState.bind(history)
 history.pushState = (...args: Parameters<typeof history.pushState>) => {

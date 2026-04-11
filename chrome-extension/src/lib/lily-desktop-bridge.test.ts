@@ -4,6 +4,7 @@ import {
   LILY_DESKTOP_BRIDGE_URL,
   sendChromeAudibleTabsToLilyDesktop,
   sendBrowsingUserMessageToLilyDesktop,
+  sendYouTubeTranscriptToLilyDesktop,
 } from '@ext/lib/lily-desktop-bridge'
 
 describe('lily-desktop-bridge', () => {
@@ -201,6 +202,66 @@ describe('lily-desktop-bridge', () => {
         audibleTabs: [
           { tabId: 1, domain: 'youtube.com' },
           { tabId: 2, domain: 'netflix.com' },
+        ],
+      },
+    })
+  })
+
+  it('sends a youtube_transcript event to Lily Desktop with JST occurredAt', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 202 }),
+    )
+
+    const ok = await sendYouTubeTranscriptToLilyDesktop({
+      occurredAt: '2026-04-11T21:05:06+09:00',
+      videoId: 'abc123',
+      videoUrl: 'https://www.youtube.com/watch?v=abc123',
+      videoTitle: 'TypeScript Deep Dive',
+      channelName: 'Lily Channel',
+      languageCode: 'ja',
+      transcriptSource: 'manual',
+      segments: [
+        { startSeconds: 0, text: 'hello world' },
+        { startSeconds: 12.5, text: 'second line' },
+      ],
+    })
+
+    expect(ok).toBe(true)
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(LILY_DESKTOP_BRIDGE_URL)
+
+    const body = JSON.parse(String(init.body)) as {
+      eventType: string
+      source: string
+      eventId: string
+      occurredAt: string
+      payload: {
+        videoId: string
+        videoUrl: string
+        videoTitle: string
+        channelName: string
+        languageCode: string
+        transcriptSource: string
+        segments: Array<{ startSeconds: number; text: string }>
+      }
+    }
+
+    expect(body).toEqual({
+      eventType: 'youtube_transcript',
+      source: 'chrome_extension_youtube',
+      eventId: '00000000-0000-4000-8000-000000000000',
+      occurredAt: '2026-04-11T21:05:06+09:00',
+      payload: {
+        videoId: 'abc123',
+        videoUrl: 'https://www.youtube.com/watch?v=abc123',
+        videoTitle: 'TypeScript Deep Dive',
+        channelName: 'Lily Channel',
+        languageCode: 'ja',
+        transcriptSource: 'manual',
+        segments: [
+          { startSeconds: 0, text: 'hello world' },
+          { startSeconds: 12.5, text: 'second line' },
         ],
       },
     })
