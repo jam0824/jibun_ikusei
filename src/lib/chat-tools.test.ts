@@ -308,6 +308,14 @@ describe('CHAT_TOOLS', () => {
     expect(tool).toBeDefined()
     expect(tool?.function.parameters.properties).toHaveProperty('isDaily')
   })
+
+  it('documents notation and nuance tolerance on complete_quest tool', () => {
+    const tool = CHAT_TOOLS.find((entry) => entry.function.name === 'complete_quest')
+    expect(tool).toBeDefined()
+    expect(tool?.function.description).toContain('表記ゆれ')
+    expect(tool?.function.description).toContain('ニュアンス')
+    expect(tool?.function.parameters.properties.query.description).toContain('短い言い換えでもよい')
+  })
 })
 
 describe('get_browsing_times', () => {

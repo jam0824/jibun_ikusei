@@ -31,3 +31,15 @@ def test_lily_prompt_prefers_chat_messages_for_specific_day_content_questions():
     assert "type=chat_messages" in prompt
     assert "chat_sessions はセッション一覧" in prompt
     assert "sessionId なしで全セッション横断検索" in prompt
+
+
+def test_lily_prompt_allows_notation_and_nuance_differences_for_quest_completion():
+    prompt = build_lily_system_prompt(
+        user={"level": 5, "totalXp": 123},
+        skills=[],
+        quests=[],
+        recent_completions=[],
+        activity_logs=[],
+    )
+
+    assert "漢字・ひらがな・カタカナの表記ゆれや言い換え、近いニュアンスの差を許容" in prompt

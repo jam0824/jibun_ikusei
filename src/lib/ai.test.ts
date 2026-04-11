@@ -209,6 +209,7 @@ describe('Lily chat prompt', () => {
     expect(prompt).toContain('period=today/week/month')
     expect(prompt).toContain('type=chat_messages')
     expect(prompt).toContain('sessionId なしで全セッション横断検索')
+    expect(prompt).toContain('漢字・ひらがな・カタカナの表記ゆれや言い換え、近いニュアンスの差を許容')
     expect(prompt).toContain('get_messages_and_logs')
     expect(prompt).toContain('Read 30 minutes')
     expect(prompt).not.toContain('葉留佳')

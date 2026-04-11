@@ -849,6 +849,7 @@ export function buildLilyChatSystemPrompt(params: {
     'today / week / month は明示日付がないときだけ使ってください。',
     '特定日の会話内容・本文・要約を聞かれたら、まず get_messages_and_logs の type=chat_messages を date 付きで呼んで本文を取りに行ってください。',
     'chat_sessions はセッション一覧を知りたいときや追加で絞り込みたいときだけ使ってください。本文が必要な質問で chat_sessions の結果だけを返して止まらないでください。',
+    'クエスト完了の発話は、漢字・ひらがな・カタカナの表記ゆれや言い換え、近いニュアンスの差を許容して解釈してください。complete_quest を使うときは、最も近いクエストを表す短い検索クエリに言い換えて構いません。',
     '',
     '【ユーザー情報】',
     `- レベル: ${user.level}`,

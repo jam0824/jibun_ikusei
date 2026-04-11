@@ -70,6 +70,14 @@ def test_create_quest_tool_definition_exposes_is_daily():
     assert "isDaily" in tool["function"]["parameters"]["properties"]
 
 
+def test_complete_quest_tool_definition_mentions_notation_and_nuance_tolerance():
+    tool = next(entry for entry in CHAT_TOOLS if entry["function"]["name"] == "complete_quest")
+
+    assert "表記ゆれ" in tool["function"]["description"]
+    assert "ニュアンス" in tool["function"]["description"]
+    assert "短い言い換えでもよい" in tool["function"]["parameters"]["properties"]["query"]["description"]
+
+
 @pytest.mark.asyncio
 async def test_browsing_times_uses_explicit_date_range():
     api = _make_api()
