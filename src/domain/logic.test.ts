@@ -3,6 +3,7 @@ import {
   buildTemplateSkillResolution,
   getCompletionCelebration,
   getFilteredActiveCompletions,
+  getQuestCompletionRanking,
   getQuestAvailability,
   getQuestIdsWithActiveCompletions,
   getTodayActiveCompletions,
@@ -11,6 +12,44 @@ import {
   mergeImportedState,
 } from '@/domain/logic'
 import { getWeekKey } from '@/lib/date'
+
+function createRankingQuest(id: string, title: string) {
+  const now = '2026-03-01T09:00:00+09:00'
+  return {
+    id,
+    title,
+    description: '',
+    questType: 'repeatable' as const,
+    xpReward: 5,
+    category: '学習',
+    skillMappingMode: 'ask_each_time' as const,
+    cooldownMinutes: 0,
+    dailyCompletionCap: 10,
+    status: 'active' as const,
+    privacyMode: 'normal' as const,
+    pinned: false,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function createRankingCompletion(
+  id: string,
+  questId: string,
+  completedAt: string,
+  undoneAt?: string,
+) {
+  return {
+    id,
+    questId,
+    clientRequestId: `req_${id}`,
+    completedAt,
+    userXpAwarded: 5,
+    skillResolutionStatus: 'resolved' as const,
+    undoneAt,
+    createdAt: completedAt,
+  }
+}
 
 describe('domain logic', () => {
   it('marks repeatable quest as cooling down after completion', () => {
@@ -315,6 +354,112 @@ describe('domain logic', () => {
 
     expect(weekCompletions).toHaveLength(1)
     expect(weekCompletions[0]?.id).toBe('completion_same_iso_week')
+  })
+
+  it('builds week quest rankings with previous-week counts and ignores undone completions', () => {
+    const quests = [
+      createRankingQuest('quest_reading', '朝の読書'),
+      createRankingQuest('quest_run', '夜のランニング'),
+      createRankingQuest('quest_review', '週次レビュー'),
+    ]
+    const completions = [
+      createRankingCompletion('reading_week_1', 'quest_reading', '2026-03-19T08:30:00+09:00'),
+      createRankingCompletion('reading_week_2', 'quest_reading', '2026-03-17T07:30:00+09:00'),
+      createRankingCompletion('reading_prev_1', 'quest_reading', '2026-03-10T08:30:00+09:00'),
+      createRankingCompletion(
+        'reading_undone',
+        'quest_reading',
+        '2026-03-18T09:00:00+09:00',
+        '2026-03-18T09:05:00+09:00',
+      ),
+      createRankingCompletion('run_week_1', 'quest_run', '2026-03-18T20:00:00+09:00'),
+      createRankingCompletion('run_prev_1', 'quest_run', '2026-03-12T20:00:00+09:00'),
+      createRankingCompletion('run_prev_2', 'quest_run', '2026-03-11T20:00:00+09:00'),
+      createRankingCompletion('review_prev_1', 'quest_review', '2026-03-13T21:00:00+09:00'),
+    ]
+
+    const ranking = getQuestCompletionRanking(
+      quests,
+      completions,
+      'week',
+      new Date('2026-03-19T12:00:00+09:00'),
+    )
+
+    expect(ranking).toEqual([
+      {
+        questId: 'quest_reading',
+        title: '朝の読書',
+        currentCount: 2,
+        previousWeekCount: 1,
+        lastCompletedAt: '2026-03-19T08:30:00+09:00',
+      },
+      {
+        questId: 'quest_run',
+        title: '夜のランニング',
+        currentCount: 1,
+        previousWeekCount: 2,
+        lastCompletedAt: '2026-03-18T20:00:00+09:00',
+      },
+    ])
+  })
+
+  it('sorts all-time rankings by count, latest completion, and title', () => {
+    const quests = [
+      createRankingQuest('quest_alpha', 'Alpha'),
+      createRankingQuest('quest_beta', 'Beta'),
+      createRankingQuest('quest_gamma', 'Gamma'),
+      createRankingQuest('quest_delta', 'Delta'),
+    ]
+    const completions = [
+      createRankingCompletion('alpha_1', 'quest_alpha', '2026-03-19T09:00:00+09:00'),
+      createRankingCompletion('alpha_2', 'quest_alpha', '2026-03-18T09:00:00+09:00'),
+      createRankingCompletion('alpha_3', 'quest_alpha', '2026-03-17T09:00:00+09:00'),
+      createRankingCompletion('beta_1', 'quest_beta', '2026-03-19T08:00:00+09:00'),
+      createRankingCompletion('beta_2', 'quest_beta', '2026-03-18T08:00:00+09:00'),
+      createRankingCompletion('gamma_1', 'quest_gamma', '2026-03-19T08:00:00+09:00'),
+      createRankingCompletion('gamma_2', 'quest_gamma', '2026-03-18T08:00:00+09:00'),
+      createRankingCompletion('delta_1', 'quest_delta', '2026-03-16T08:00:00+09:00'),
+      createRankingCompletion('delta_2', 'quest_delta', '2026-03-15T08:00:00+09:00'),
+    ]
+
+    const ranking = getQuestCompletionRanking(
+      quests,
+      completions,
+      'all',
+      new Date('2026-03-19T12:00:00+09:00'),
+    )
+
+    expect(ranking.map((entry) => entry.questId)).toEqual([
+      'quest_alpha',
+      'quest_beta',
+      'quest_gamma',
+      'quest_delta',
+    ])
+  })
+
+  it('limits all-time rankings to the top 10 quests', () => {
+    const quests = Array.from({ length: 11 }, (_, index) =>
+      createRankingQuest(`quest_${index + 1}`, `クエスト${String(index + 1).padStart(2, '0')}`),
+    )
+    const completions = quests.flatMap((quest, index) =>
+      Array.from({ length: 11 - index }, (_, completionIndex) =>
+        createRankingCompletion(
+          `${quest.id}_${completionIndex + 1}`,
+          quest.id,
+          `2026-03-${String(20 - completionIndex).padStart(2, '0')}T08:00:00+09:00`,
+        ),
+      ),
+    )
+
+    const ranking = getQuestCompletionRanking(
+      quests,
+      completions,
+      'all',
+      new Date('2026-03-19T12:00:00+09:00'),
+    )
+
+    expect(ranking).toHaveLength(10)
+    expect(ranking.map((entry) => entry.questId)).not.toContain('quest_11')
   })
 
   it('collects quest ids that still have active completion history', () => {
