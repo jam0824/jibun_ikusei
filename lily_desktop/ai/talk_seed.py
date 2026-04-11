@@ -814,20 +814,20 @@ def _camera_lily_perspective(analysis: CameraAnalysis) -> str:
         "animal": "動物がいるよ！とテンション上げて教える",
         "quiet": "静かだね、と穏やかに声をかける",
     }
-    return perspectives.get(analysis.scene_type, "カメラに映った状況について柔らかく話す")
+    return perspectives.get(analysis.scene_type, "周りの様子について柔らかく話す")
 
 
 def _camera_haruka_perspective(analysis: CameraAnalysis) -> str:
     """カメラ画像に基づく葉留佳の切り口"""
     perspectives = {
         "outdoor": "外の様子にリアクションする",
-        "indoor": "おっ、なんか映ってるじゃん！と乗っかる",
+        "indoor": "おっ、なんか気になるね！と乗っかる",
         "weather": "天気に対してハイテンションにコメントする",
         "people": "誰？誰？とテンション高く絡む",
         "animal": "かわいい！！とめちゃくちゃ盛り上がる",
         "quiet": "静かだねー、とリリィの話に乗っかる",
     }
-    return perspectives.get(analysis.scene_type, "リリィの話にテンション高く乗っかる")
+    return perspectives.get(analysis.scene_type, "周りの様子にテンション高く乗っかる")
 
 
 def _desktop_lily_perspective(analysis: ScreenAnalysis) -> str:
