@@ -257,6 +257,18 @@ class MainWindow(QWidget):
         )
         debug_menu.addAction(books_talk_action)
 
+        quest_weekly_talk_action = QAction("週次クエスト雑談を開始", self)
+        quest_weekly_talk_action.triggered.connect(
+            lambda: bus.quest_weekly_talk_requested.emit()
+        )
+        debug_menu.addAction(quest_weekly_talk_action)
+
+        quest_today_talk_action = QAction("今日のクエスト雑談を開始", self)
+        quest_today_talk_action.triggered.connect(
+            lambda: bus.quest_today_talk_requested.emit()
+        )
+        debug_menu.addAction(quest_today_talk_action)
+
         camera_action = QAction("カメラ状況を取得", self)
         camera_action.triggered.connect(
             lambda: bus.camera_capture_requested.emit()

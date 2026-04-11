@@ -158,6 +158,8 @@ class App:
         bus.desktop_context_requested.connect(self._on_desktop_context_requested)
         bus.auto_talk_requested.connect(self._on_auto_talk_requested)
         bus.books_talk_requested.connect(self._on_books_talk_requested)
+        bus.quest_weekly_talk_requested.connect(self._on_quest_weekly_talk_requested)
+        bus.quest_today_talk_requested.connect(self._on_quest_today_talk_requested)
         bus.camera_capture_requested.connect(self._on_camera_capture_requested)
 
     def _on_user_message(self, text: str) -> None:
@@ -512,6 +514,28 @@ class App:
             )
             return
         self.auto_conversation.trigger_books_now()
+
+    def _on_quest_weekly_talk_requested(self) -> None:
+        if getattr(self, "event_hub", None) is not None:
+            self.event_hub.publish(
+                ChatAutoTalkDue(
+                    source="auto_conversation.manual_quest_weekly",
+                    forced_source="quest_weekly",
+                )
+            )
+            return
+        self.auto_conversation.trigger_quest_weekly_now()
+
+    def _on_quest_today_talk_requested(self) -> None:
+        if getattr(self, "event_hub", None) is not None:
+            self.event_hub.publish(
+                ChatAutoTalkDue(
+                    source="auto_conversation.manual_quest_today",
+                    forced_source="quest_today",
+                )
+            )
+            return
+        self.auto_conversation.trigger_quest_today_now()
 
     def _on_desktop_context_requested(self) -> None:
         asyncio.ensure_future(self._fetch_and_show_desktop_context_coordinated())

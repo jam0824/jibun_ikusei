@@ -1,4 +1,4 @@
-"""雑談の種選択ロジックのテスト — 7系統均等配分の検証"""
+"""雑談の種選択ロジックのテスト — 9系統均等配分の検証"""
 
 from unittest.mock import AsyncMock
 
@@ -74,7 +74,19 @@ class TestSelectBestSeed:
         assert result is not None
         assert result.source == "books"
 
-    def test_全カテゴリある場合に7種から選ばれる(self, seed_mgr):
+    def test_quest_weeklyのみの場合はquest_weeklyを返す(self, seed_mgr):
+        seeds = [_make_seed("quest_weekly")]
+        result = seed_mgr.select_best_seed(seeds)
+        assert result is not None
+        assert result.source == "quest_weekly"
+
+    def test_quest_todayのみの場合はquest_todayを返す(self, seed_mgr):
+        seeds = [_make_seed("quest_today")]
+        result = seed_mgr.select_best_seed(seeds)
+        assert result is not None
+        assert result.source == "quest_today"
+
+    def test_全カテゴリある場合に9種から選ばれる(self, seed_mgr):
         seeds = [
             _make_seed("desktop"),
             _make_seed("camera"),
@@ -83,6 +95,8 @@ class TestSelectBestSeed:
             _make_seed("annict"),
             _make_seed("health"),
             _make_seed("books"),
+            _make_seed("quest_weekly"),
+            _make_seed("quest_today"),
         ]
         # 200回試行して各sourceが少なくとも1回は選ばれることを確認
         sources_selected = set()
@@ -97,9 +111,11 @@ class TestSelectBestSeed:
         assert "annict" in sources_selected
         assert "health" in sources_selected
         assert "books" in sources_selected
+        assert "quest_weekly" in sources_selected
+        assert "quest_today" in sources_selected
 
     def test_配分がおおよそ正しい(self, seed_mgr):
-        """7系統均等配分（各約14.3%）を統計的に検証"""
+        """9系統均等配分（各約11.1%）を統計的に検証"""
         seeds = [
             _make_seed("desktop"),
             _make_seed("camera"),
@@ -108,14 +124,26 @@ class TestSelectBestSeed:
             _make_seed("annict"),
             _make_seed("health"),
             _make_seed("books"),
+            _make_seed("quest_weekly"),
+            _make_seed("quest_today"),
         ]
-        counts = {"desktop": 0, "camera": 0, "wikimedia": 0, "wikimedia_interest": 0, "annict": 0, "health": 0, "books": 0}
+        counts = {
+            "desktop": 0,
+            "camera": 0,
+            "wikimedia": 0,
+            "wikimedia_interest": 0,
+            "annict": 0,
+            "health": 0,
+            "books": 0,
+            "quest_weekly": 0,
+            "quest_today": 0,
+        }
         n = 2000
         for _ in range(n):
             result = seed_mgr.select_best_seed(seeds)
             counts[result.source] += 1
 
-        # 各カテゴリの割合が許容範囲内か（期待値14.3%に対して広めの許容幅）
+        # 各カテゴリの割合が許容範囲内か（期待値11.1%に対して広めの許容幅）
         for source, count in counts.items():
             assert 0.05 < count / n < 0.24, f"{source}: {count/n:.2f}"
 
@@ -191,6 +219,31 @@ class TestCollectSeed:
         assert result == wiki_seed
         desktop.assert_awaited_once()
         wiki.assert_awaited_once()
+
+
+class TestBuildSourceCollectors:
+    def test_api_clientがない場合はquest系カテゴリを追加しない(self):
+        seed_mgr = TalkSeedManager(
+            openai_api_key="test",
+            screen_analysis_model="test",
+        )
+
+        collectors = seed_mgr._build_source_collectors()
+
+        assert "quest_weekly" not in [source for source, _ in collectors]
+        assert "quest_today" not in [source for source, _ in collectors]
+
+    def test_api_clientがある場合はquest系カテゴリを追加する(self):
+        seed_mgr = TalkSeedManager(
+            openai_api_key="test",
+            screen_analysis_model="test",
+            api_client=AsyncMock(),
+        )
+
+        collectors = seed_mgr._build_source_collectors()
+
+        assert "quest_weekly" in [source for source, _ in collectors]
+        assert "quest_today" in [source for source, _ in collectors]
 
     @pytest.mark.asyncio
     async def test_強制カテゴリでは指定したカテゴリだけ収集する(self, monkeypatch):
