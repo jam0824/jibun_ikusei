@@ -6,6 +6,7 @@ import { CompletionResolutionCard } from '@/components/completion-resolution-car
 import {
   getFilteredActiveCompletions,
   getQuestCompletionRanking,
+  getWeeklyReflectionStatus,
   type CompletionHistoryFilter,
 } from '@/domain/logic'
 import { NUTRIENT_META } from '@/domain/nutrition-constants'
@@ -442,6 +443,7 @@ export function RecordsScreen() {
         : activeTab === 'health'
           ? subtitles.health.default
           : subtitles.nutrition.default
+  const weeklyReflectionStatus = getWeeklyReflectionStatus(state)
 
   return (
     <Screen
@@ -524,6 +526,27 @@ export function RecordsScreen() {
               <Badge>{filteredCompletions.length}回</Badge>
             </div>
           </section>
+
+          {activeFilter === 'week' && weeklyReflectionStatus.available ? (
+            <section className="mt-4">
+              <Card className="border-amber-200 bg-amber-50">
+                <CardContent className="flex items-center justify-between gap-3 p-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-semibold text-slate-900">先週のふりかえり</div>
+                      {weeklyReflectionStatus.unread ? <Badge tone="warning">未読</Badge> : null}
+                    </div>
+                    <div className="mt-1 text-sm text-slate-600">
+                      先週の流れを軽く見直して、来週の整え方を決めよう。
+                    </div>
+                  </div>
+                  <Button size="sm" onClick={() => navigate('/weekly-reflection')}>
+                    先週のふりかえりを見る
+                  </Button>
+                </CardContent>
+              </Card>
+            </section>
+          ) : null}
 
           {questRanking.length > 0 ? (
             <section className="mt-4">

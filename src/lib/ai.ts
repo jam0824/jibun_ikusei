@@ -1,5 +1,12 @@
 import { z } from 'zod'
-import { buildTemplateSkillResolution, getProviderConfig, getQuestTypeLabel, hasUsableAi } from '@/domain/logic'
+import {
+  buildTemplateSkillResolution,
+  getProviderConfig,
+  getQuestTypeLabel,
+  hasUsableAi,
+  type WeeklyReflectionSummary,
+} from '@/domain/logic'
+import { OPENAI_MODELS } from '@/domain/constants'
 import type {
   AiConfig,
   LilyMessageResult,
@@ -27,6 +34,11 @@ const lilyMessageSchema = z.object({
   mood: z.enum(['bright', 'calm', 'playful', 'epic']),
   text: z.string().min(1),
   shouldSpeak: z.boolean(),
+})
+
+const weeklyReflectionSchema = z.object({
+  comment: z.string().min(1),
+  recommendations: z.array(z.string().min(1)).min(1).max(3),
 })
 
 const skillResolutionJsonSchema = {
@@ -69,6 +81,21 @@ const lilyMessageJsonSchema = {
   required: ['intent', 'mood', 'text', 'shouldSpeak'],
 }
 
+const weeklyReflectionJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    comment: { type: 'string' },
+    recommendations: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 1,
+      maxItems: 3,
+    },
+  },
+  required: ['comment', 'recommendations'],
+}
+
 const DEFAULT_JSON_SYSTEM_PROMPT =
   'You are the structured-output engine for a self-growth app. Return only valid JSON that strictly matches the provided schema. Do not include markdown or extra commentary.'
 
@@ -77,6 +104,15 @@ const CONNECTION_TEST_SYSTEM_PROMPT =
 
 const LILY_MESSAGE_SYSTEM_PROMPT =
   'You are Lily, a warm and encouraging companion in a self-growth app. Return only valid JSON that strictly matches the provided schema.'
+
+const WEEKLY_REFLECTION_SYSTEM_PROMPT = [
+  'You write a weekly reflection for a Japanese self-growth app called Lily.',
+  'Return only valid JSON that strictly matches the provided schema.',
+  'Write the comment in gentle Japanese.',
+  'Structure it as: celebrate what went well, mention only one improvement point, then encourage next week.',
+  'Keep the tone warm and non-judgmental.',
+  'Recommendations must be 1 to 3 short Japanese suggestions.',
+].join(' ')
 
 const RETRYABLE_STATUS_CODES = new Set([408, 409, 429, 500, 502, 503, 504])
 
@@ -522,6 +558,78 @@ export async function resolveSkillWithProvider(params: {
     return skillResolutionSchema.parse(result)
   } catch {
     return buildFallbackSkillResolution({ quest, note, skills, dictionary })
+  }
+}
+
+function buildWeeklyReflectionFallback(summary: WeeklyReflectionSummary) {
+  const recommendations = [
+    summary.topQuestSummaries[0]
+      ? `「${summary.topQuestSummaries[0].title}」を来週も続けよう`
+      : undefined,
+    summary.dailyQuestSummaries[0]
+      ? `「${summary.dailyQuestSummaries[0].title}」は続けやすい時間を先に決めよう`
+      : undefined,
+    summary.activeDayCount <= 2
+      ? 'まずは小さな1件をこなせる日を2日作ろう'
+      : '疲れやすい日は軽い回復クエストで流れを切らさないようにしよう',
+  ].filter((value): value is string => Boolean(value))
+
+  const strongestSkill = summary.topSkill?.skillName
+  const topQuest = summary.topQuestSummaries[0]?.title
+  const gentleFocus =
+    summary.dailyQuestSummaries.find((entry) => entry.currentDays < entry.previousDays)?.title ??
+    summary.dailyQuestSummaries[0]?.title ??
+    topQuest
+
+  const commentParts = [
+    `今週は${summary.totalCompletionCount}件クリアできて、${summary.activeDayCount}日動けているのがいい流れだよ。`,
+    strongestSkill ? `特に${strongestSkill}が伸びていて、積み上げが見えているね。` : undefined,
+    gentleFocus ? `来週は${gentleFocus}を続けやすい形に整えることだけ意識すれば十分。` : '来週は負荷を増やすより、続けやすい形をひとつ守ろう。',
+  ].filter((value): value is string => Boolean(value))
+
+  return {
+    provider: 'template' as const,
+    comment: commentParts.join(' '),
+    recommendations: recommendations.slice(0, 3),
+  }
+}
+
+export async function generateWeeklyReflection(params: {
+  aiConfig: AiConfig
+  settings: UserSettings
+  summary: WeeklyReflectionSummary
+}) {
+  const { aiConfig, settings, summary } = params
+  const openAiConfig = aiConfig.providers.openai
+
+  if (!settings.aiEnabled || !openAiConfig.apiKey || isOffline()) {
+    return buildWeeklyReflectionFallback(summary)
+  }
+
+  try {
+    const result = await requestOpenAiJson<{
+      comment: string
+      recommendations: string[]
+    }>({
+      apiKey: openAiConfig.apiKey,
+      model: OPENAI_MODELS.text,
+      schemaName: 'weekly_reflection',
+      schema: weeklyReflectionJsonSchema,
+      input: {
+        task: 'weekly_reflection',
+        summary,
+      },
+      systemPrompt: WEEKLY_REFLECTION_SYSTEM_PROMPT,
+    })
+
+    const parsed = weeklyReflectionSchema.parse(result)
+    return {
+      provider: 'openai' as const,
+      comment: parsed.comment,
+      recommendations: parsed.recommendations,
+    }
+  } catch {
+    return buildWeeklyReflectionFallback(summary)
   }
 }
 

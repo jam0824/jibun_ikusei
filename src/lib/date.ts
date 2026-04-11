@@ -1,5 +1,6 @@
 import {
   addMinutes,
+  addDays,
   differenceInMinutes,
   endOfDay,
   format,
@@ -10,8 +11,10 @@ import {
   isSameDay,
   isToday,
   parseISO,
+  startOfISOWeek,
   startOfDay,
   subDays,
+  subWeeks,
 } from 'date-fns'
 import { ja } from 'date-fns/locale'
 
@@ -83,6 +86,16 @@ export function getDayKey(value: string | Date) {
 export function getWeekKey(value: string | Date) {
   const date = parseDate(value)
   return `${getISOWeekYear(date)}-W${String(getISOWeek(date)).padStart(2, '0')}`
+}
+
+export function getWeekDateRange(value: string | Date) {
+  const start = startOfISOWeek(parseDate(value))
+  const end = endOfDay(addDays(start, 6))
+  return { start, end }
+}
+
+export function getPreviousWeekDateRange(referenceDate = new Date()) {
+  return getWeekDateRange(subWeeks(referenceDate, 1))
 }
 
 export function getDateRangeLast7Days() {

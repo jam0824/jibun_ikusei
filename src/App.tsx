@@ -12,6 +12,7 @@ import { QuestListScreen } from '@/screens/quest-list-screen'
 import { RecordsScreen } from '@/screens/records-screen'
 import { SettingsScreen } from '@/screens/settings-screen'
 import { SkillsScreen } from '@/screens/skills-screen'
+import { WeeklyReflectionScreen } from '@/screens/weekly-reflection-screen'
 import { useAppStore } from '@/store/app-store'
 import { isLoggedIn } from '@/lib/auth'
 
@@ -54,6 +55,7 @@ function AppRoutes() {
       <Route path="/quests/new" element={<QuestFormScreen />} />
       <Route path="/skills" element={<SkillsScreen />} />
       <Route path="/records" element={<RecordsScreen />} />
+      <Route path="/weekly-reflection" element={<WeeklyReflectionScreen />} />
       <Route path="/lily" element={<LilyChatScreen />} />
       <Route path="/settings" element={<SettingsScreen />} />
       <Route path="/clear/:completionId" element={<ClearEffectScreen />} />

@@ -14,6 +14,7 @@ import {
   getLevelFromXp,
   getQuestAvailability,
   getTodayActiveCompletions,
+  getWeeklyReflectionStatus,
 } from '@/domain/logic'
 import { QuestCompleteModal } from '@/components/quest-complete-modal'
 import { QuestCard } from '@/components/quest-card'
@@ -30,6 +31,7 @@ export function HomeScreen() {
     completions,
     skills,
     assistantMessages,
+    meta,
     settings,
     completeQuest,
     playAssistantMessage,
@@ -40,6 +42,7 @@ export function HomeScreen() {
       completions: state.completions,
       skills: state.skills,
       assistantMessages: state.assistantMessages,
+      meta: state.meta,
       settings: state.settings,
       completeQuest: state.completeQuest,
       playAssistantMessage: state.playAssistantMessage,
@@ -75,6 +78,10 @@ export function HomeScreen() {
           new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime(),
       )[0],
     [assistantMessages],
+  )
+  const weeklyReflectionStatus = useMemo(
+    () => getWeeklyReflectionStatus({ quests, completions, skills, meta }),
+    [completions, meta, quests, skills],
   )
 
   const activeQuestId = searchParams.get('complete')
@@ -193,6 +200,27 @@ export function HomeScreen() {
           </Card>
         </div>
       </section>
+
+      {weeklyReflectionStatus.available && weeklyReflectionStatus.unread ? (
+        <section className="mt-5">
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="flex items-center justify-between gap-3 p-4">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <div className="text-sm font-semibold text-slate-900">先週のふりかえり</div>
+                  <Badge tone="warning">未読</Badge>
+                </div>
+                <div className="mt-1 text-sm text-slate-600">
+                  良かった流れを見つけて、来週の整え方を軽く決めよう。
+                </div>
+              </div>
+              <Button size="sm" onClick={() => navigate('/weekly-reflection')}>
+                先週のふりかえりを見る
+              </Button>
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
       <section className="mt-5">
         <SectionHeader title="Lily" />

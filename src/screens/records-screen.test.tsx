@@ -146,6 +146,7 @@ function renderRecords(initialEntry = '/records') {
       <LocationDisplay />
       <Routes>
         <Route path="/records" element={<RecordsScreen />} />
+        <Route path="/weekly-reflection" element={<div>weekly reflection route</div>} />
       </Routes>
     </MemoryRouter>,
   )
@@ -158,6 +159,7 @@ function renderHomeWithRecords() {
       <Routes>
         <Route path="/" element={<HomeScreen />} />
         <Route path="/records" element={<RecordsScreen />} />
+        <Route path="/weekly-reflection" element={<div>weekly reflection route</div>} />
       </Routes>
     </MemoryRouter>,
   )
@@ -297,6 +299,56 @@ describe('records screen filters', () => {
 
     expect(screen.queryByText('今週のクリア回数上位10位')).not.toBeInTheDocument()
     expect(screen.queryByText('累計クリア回数上位10位')).not.toBeInTheDocument()
+  })
+})
+
+describe('weekly reflection navigation', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-24T12:00:00+09:00'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('shows an unread weekly reflection card on home and navigates to it', () => {
+    resetStore({
+      quests: [createQuest('quest_reflection', 'Read 30 minutes')],
+      completions: [
+        createCompletion(
+          'completion_reflection',
+          'quest_reflection',
+          '2026-03-17T08:30:00+09:00',
+        ),
+      ],
+    })
+
+    renderHomeWithRecords()
+
+    fireEvent.click(screen.getByRole('button', { name: '先週のふりかえりを見る' }))
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/weekly-reflection')
+  })
+
+  it('shows the weekly reflection link from quest records in week view', () => {
+    resetStore({
+      quests: [createQuest('quest_reflection', 'Read 30 minutes')],
+      completions: [
+        createCompletion(
+          'completion_reflection',
+          'quest_reflection',
+          '2026-03-17T08:30:00+09:00',
+        ),
+      ],
+    })
+
+    renderRecords('/records?filter=week')
+
+    fireEvent.click(screen.getByRole('button', { name: '先週のふりかえりを見る' }))
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/weekly-reflection')
   })
 })
 

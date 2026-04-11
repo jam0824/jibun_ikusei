@@ -2,6 +2,7 @@
 import { hydratePersistedState } from '@/domain/logic'
 import {
   buildLilyChatSystemPrompt,
+  generateWeeklyReflection,
   generateLilyMessageWithProvider,
   generateTtsAudio,
   resolveSkillWithProvider,
@@ -165,6 +166,88 @@ describe('ai adapter', () => {
         text: 'hello audio',
       }),
     ).rejects.toThrow()
+  })
+
+  it('parses OpenAI weekly reflection output and always uses gpt-5.4', async () => {
+    const state = hydratePersistedState()
+    state.aiConfig.activeProvider = 'gemini'
+    state.aiConfig.providers.openai.apiKey = 'sk-test'
+    state.aiConfig.providers.openai.model = 'gpt-4.1-mini'
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: 'completed',
+          output: [
+            {
+              type: 'message',
+              content: [
+                {
+                  type: 'output_text',
+                  text: '{"comment":"great week","recommendations":["keep mornings light","protect one focus block"]}',
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const result = await generateWeeklyReflection({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      summary: {
+        weekKey: '2026-W15',
+        weekLabel: '2026-04-06 〜 2026-04-12',
+        startDate: '2026-04-06',
+        endDate: '2026-04-12',
+        totalCompletionCount: 5,
+        totalUserXp: 25,
+        activeDayCount: 5,
+        dailySummaries: [],
+        dailyQuestSummaries: [],
+        topQuestSummaries: [],
+        topSkillSummaries: [],
+        hasData: true,
+      },
+    })
+
+    expect(result.provider).toBe('openai')
+    expect(result.comment).toBe('great week')
+    expect(result.recommendations).toEqual(['keep mornings light', 'protect one focus block'])
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    expect(body.model).toBe('gpt-5.4')
+  })
+
+  it('falls back to a template weekly reflection when OpenAI is unavailable', async () => {
+    const state = hydratePersistedState()
+    state.settings.aiEnabled = false
+
+    const result = await generateWeeklyReflection({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      summary: {
+        weekKey: '2026-W15',
+        weekLabel: '2026-04-06 〜 2026-04-12',
+        startDate: '2026-04-06',
+        endDate: '2026-04-12',
+        totalCompletionCount: 5,
+        totalUserXp: 25,
+        activeDayCount: 5,
+        dailySummaries: [],
+        dailyQuestSummaries: [],
+        topQuestSummaries: [],
+        topSkillSummaries: [],
+        hasData: true,
+      },
+    })
+
+    expect(result.provider).toBe('template')
+    expect(result.comment.length).toBeGreaterThan(0)
+    expect(result.recommendations.length).toBeGreaterThan(0)
+    expect(result.recommendations.length).toBeLessThanOrEqual(3)
   })
 })
 
