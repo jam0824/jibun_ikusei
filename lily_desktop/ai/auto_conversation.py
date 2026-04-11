@@ -165,6 +165,7 @@ class AutoConversation:
             camera_analysis_base_url=getattr(config.camera, "analysis_base_url", ""),
             camera_analysis_model=config.camera.analysis_model,
             interest_topics=config.talk_seeds.interest_topics,
+            memory_directory=getattr(config.talk_seeds, "memory_directory", ""),
             rakuten_application_id=getattr(rakuten_cfg, "application_id", ""),
             rakuten_access_key=getattr(rakuten_cfg, "access_key", ""),
             rakuten_origin=getattr(rakuten_cfg, "origin", ""),
@@ -365,14 +366,23 @@ class AutoConversation:
             f"- あなたの切り口: {seed.lily_perspective}",
         ]
 
-        if not conv_history and seed.source in ("wikimedia", "wikimedia_interest", "annict", "books"):
+        if not conv_history and seed.source in ("wikimedia", "wikimedia_interest", "annict", "books", "memory"):
             context_parts.append("")
-            context_parts.append(
-                "【最初の一言について】"
-                "これが話題の切り出しです。"
-                "セリフの冒頭で「～の話だけど」「～って知ってる？」のように、"
-                "何の話かが伝わるひと言から始めてください。"
-            )
+            if seed.source == "memory":
+                context_parts.append(
+                    "【最初の一言について】"
+                    "これはリリィ自身の思い出として話してください。"
+                    "セリフの冒頭から、思い出して少し懐かしむように自然に入り、"
+                    "「ファイルには」「文章には」のようなメタ説明はしないこと。"
+                    "本文を長くそのまま引用せず、思い出している人の話し方でやわらかく要約してください。"
+                )
+            else:
+                context_parts.append(
+                    "【最初の一言について】"
+                    "これが話題の切り出しです。"
+                    "セリフの冒頭で「～の話だけど」「～って知ってる？」のように、"
+                    "何の話かが伝わるひと言から始めてください。"
+                )
 
         if conv_history:
             context_parts.append("")
@@ -790,6 +800,21 @@ def _evented_trigger_books_now(self: AutoConversation) -> None:
     asyncio.ensure_future(self._run_conversation(forced_source="books"))
 
 
+def _evented_trigger_memory_now(self: AutoConversation) -> None:
+    if self._event_hub is not None:
+        self._event_hub.publish(
+            ChatAutoTalkDue(
+                source="auto_conversation.manual_memory",
+                forced_source="memory",
+            )
+        )
+        return
+    if self._is_talking:
+        logger.info("雑談中のため思い出雑談をスキップ")
+        return
+    asyncio.ensure_future(self._run_conversation(forced_source="memory"))
+
+
 def _evented_trigger_quest_weekly_now(self: AutoConversation) -> None:
     if self._event_hub is not None:
         self._event_hub.publish(
@@ -868,6 +893,7 @@ async def _run_follow_up_job(
 
 AutoConversation.trigger_now = _evented_trigger_now
 AutoConversation.trigger_books_now = _evented_trigger_books_now
+AutoConversation.trigger_memory_now = _evented_trigger_memory_now
 AutoConversation.trigger_quest_weekly_now = _evented_trigger_quest_weekly_now
 AutoConversation.trigger_quest_today_now = _evented_trigger_quest_today_now
 AutoConversation.trigger_follow_up = _evented_trigger_follow_up

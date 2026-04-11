@@ -5,6 +5,7 @@ import core.config as config_mod
 from core.config import (
     DEFAULT_HTTP_BRIDGE_PORT,
     DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES,
+    DEFAULT_MEMORY_DIRECTORY,
     DEFAULT_USER_BALLOON_DISPLAY_SECONDS,
     load_config,
 )
@@ -345,3 +346,51 @@ def test_chat_auto_talk_skip_audible_domains_can_be_disabled_with_empty_list(tmp
     config = load_config(config_path)
 
     assert config.chat.auto_talk_skip_audible_domains == []
+
+
+def test_memory_directory_defaults_when_missing(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.talk_seeds.memory_directory == DEFAULT_MEMORY_DIRECTORY
+
+
+def test_memory_directory_uses_config_value(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "talk_seeds:\n"
+        "  memory_directory: D:\\custom\\memories\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.talk_seeds.memory_directory == "D:\\custom\\memories"
+
+
+def test_memory_directory_empty_string_disables_memory_category(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "talk_seeds:\n"
+        "  memory_directory: \"\"\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.talk_seeds.memory_directory == ""
+
+
+def test_memory_directory_resolves_relative_path_from_config_directory(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "talk_seeds:\n"
+        "  memory_directory: generated_text\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.talk_seeds.memory_directory == str((tmp_path / "generated_text").resolve())

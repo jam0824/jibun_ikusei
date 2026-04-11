@@ -15,6 +15,7 @@ DEFAULT_USER_BALLOON_DISPLAY_SECONDS = 8.0
 DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES = 15
 DEFAULT_HTTP_BRIDGE_PORT = 18765
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
+DEFAULT_MEMORY_DIRECTORY = r"D:\codes\mixi2-api\generated_text"
 DEFAULT_AUTO_TALK_SKIP_AUDIBLE_DOMAINS = [
     "youtube.com",
     "netflix.com",
@@ -110,6 +111,29 @@ def normalize_ai_base_url(value: object) -> str:
     if parts.scheme and parts.netloc:
         return f"{parts.scheme}://{parts.netloc}"
     return raw.rstrip("/")
+
+
+def normalize_memory_directory(
+    value: object,
+    *,
+    base_dir: Path,
+) -> str:
+    """Normalize the optional memory seed directory.
+
+    Empty string disables the category. Relative paths are resolved from
+    the directory containing config.yaml.
+    """
+    if value is None:
+        return DEFAULT_MEMORY_DIRECTORY
+    if not isinstance(value, str):
+        return DEFAULT_MEMORY_DIRECTORY
+    raw = value.strip()
+    if not raw:
+        return ""
+    memory_dir = Path(raw)
+    if not memory_dir.is_absolute():
+        memory_dir = (base_dir / memory_dir).resolve()
+    return str(memory_dir)
 
 
 @dataclass
@@ -232,6 +256,7 @@ class DisplayConfig:
 @dataclass
 class TalkSeedsConfig:
     interest_topics: list[str] = field(default_factory=list)  # 豆知識で優先する興味ある分野
+    memory_directory: str = DEFAULT_MEMORY_DIRECTORY
 
 
 @dataclass
@@ -355,6 +380,15 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         chat_raw.get("auto_talk_skip_audible_domains"),
         default=DEFAULT_AUTO_TALK_SKIP_AUDIBLE_DOMAINS,
     )
+    talk_seeds_raw = raw.get("talk_seeds", {}) or {}
+    if not isinstance(talk_seeds_raw, dict):
+        talk_seeds_raw = {}
+    else:
+        talk_seeds_raw = dict(talk_seeds_raw)
+    talk_seeds_raw["memory_directory"] = normalize_memory_directory(
+        talk_seeds_raw.get("memory_directory", DEFAULT_MEMORY_DIRECTORY),
+        base_dir=path.parent,
+    )
 
     config = AppConfig(
         openai=OpenAIConfig(**openai_raw),
@@ -367,7 +401,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         tts=TTSConfig(**{k: v for k, v in raw.get("tts", {}).items() if k != "gemini_api_key"}),
         camera=CameraConfig(**camera_raw),
         display=DisplayConfig(**display_raw),
-        talk_seeds=TalkSeedsConfig(**raw.get("talk_seeds", {})),
+        talk_seeds=TalkSeedsConfig(**talk_seeds_raw),
         healthplanet=HealthPlanetConfig(**healthplanet_raw),
         fitbit=FitbitConfig(**raw.get("fitbit", {})),
         http_bridge=HttpBridgeConfig(**http_bridge_raw),
