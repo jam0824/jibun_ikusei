@@ -220,6 +220,17 @@ function compareDates(left?: string, right?: string) {
 }
 
 export type CompletionHistoryFilter = 'today' | 'week' | 'all'
+export type QuestCompletionRankingFilter = Extract<CompletionHistoryFilter, 'week' | 'all'>
+
+export interface QuestCompletionRankingEntry {
+  questId: string
+  title: string
+  currentCount: number
+  previousWeekCount?: number
+  lastCompletedAt: string
+}
+
+const DELETED_QUEST_TITLE = '削除されたクエスト'
 
 export function normalizeSkillName(name: string) {
   return name.trim().toLowerCase().replace(/\s+/g, '')
@@ -573,6 +584,87 @@ export function getWeekActiveCompletions(
   referenceDate = new Date(),
 ) {
   return getFilteredActiveCompletions(completions, 'week', referenceDate)
+}
+
+export function getQuestCompletionRanking(
+  quests: Quest[],
+  completions: QuestCompletion[],
+  filter: QuestCompletionRankingFilter,
+  referenceDate = new Date(),
+): QuestCompletionRankingEntry[] {
+  const activeCompletions = getActiveCompletions(completions)
+  const titleByQuestId = new Map(quests.map((quest) => [quest.id, quest.title]))
+  const currentWeekKey = filter === 'week' ? getWeekKey(referenceDate) : undefined
+  const previousWeekKey = filter === 'week' ? getWeekKey(subDays(referenceDate, 7)) : undefined
+  const rankingMap = new Map<string, Required<QuestCompletionRankingEntry>>()
+
+  for (const completion of activeCompletions) {
+    const completionWeekKey = filter === 'week' ? getWeekKey(completion.completedAt) : undefined
+    if (
+      filter === 'week' &&
+      completionWeekKey !== currentWeekKey &&
+      completionWeekKey !== previousWeekKey
+    ) {
+      continue
+    }
+
+    const existing = rankingMap.get(completion.questId) ?? {
+      questId: completion.questId,
+      title: titleByQuestId.get(completion.questId) ?? DELETED_QUEST_TITLE,
+      currentCount: 0,
+      previousWeekCount: 0,
+      lastCompletedAt: completion.completedAt,
+    }
+
+    if (filter === 'week') {
+      if (completionWeekKey === currentWeekKey) {
+        existing.currentCount += 1
+        if (new Date(completion.completedAt).getTime() > new Date(existing.lastCompletedAt).getTime()) {
+          existing.lastCompletedAt = completion.completedAt
+        }
+      } else {
+        existing.previousWeekCount += 1
+      }
+    } else {
+      existing.currentCount += 1
+      if (new Date(completion.completedAt).getTime() > new Date(existing.lastCompletedAt).getTime()) {
+        existing.lastCompletedAt = completion.completedAt
+      }
+    }
+
+    rankingMap.set(completion.questId, existing)
+  }
+
+  return Array.from(rankingMap.values())
+    .filter((entry) => entry.currentCount > 0)
+    .sort((left, right) => {
+      if (right.currentCount !== left.currentCount) {
+        return right.currentCount - left.currentCount
+      }
+
+      const completionOrder = compareDates(left.lastCompletedAt, right.lastCompletedAt)
+      if (completionOrder !== 0) {
+        return completionOrder
+      }
+
+      const titleOrder = left.title.localeCompare(right.title, 'ja')
+      if (titleOrder !== 0) {
+        return titleOrder
+      }
+
+      return left.questId.localeCompare(right.questId)
+    })
+    .slice(0, 10)
+    .map((entry) =>
+      filter === 'week'
+        ? entry
+        : {
+            questId: entry.questId,
+            title: entry.title,
+            currentCount: entry.currentCount,
+            lastCompletedAt: entry.lastCompletedAt,
+          },
+    )
 }
 
 export function getQuestIdsWithActiveCompletions(completions: QuestCompletion[]) {

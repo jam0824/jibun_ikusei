@@ -210,8 +210,8 @@ describe('records screen filters', () => {
     expect(
       screen.getByRole('button', { name: '今週のクリア回数を表示' }),
     ).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText('朝の読書')).toBeInTheDocument()
-    expect(screen.getByText('夜のランニング')).toBeInTheDocument()
+    expect(screen.getAllByText('朝の読書').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('夜のランニング').length).toBeGreaterThan(0)
     expect(screen.queryByText('週次レビュー')).not.toBeInTheDocument()
   })
 
@@ -224,9 +224,9 @@ describe('records screen filters', () => {
     expect(
       screen.getByRole('button', { name: 'すべてのクリア回数を表示' }),
     ).toHaveAttribute('aria-pressed', 'true')
-    expect(screen.getByText('朝の読書')).toBeInTheDocument()
-    expect(screen.getByText('夜のランニング')).toBeInTheDocument()
-    expect(screen.getByText('週次レビュー')).toBeInTheDocument()
+    expect(screen.getAllByText('朝の読書').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('夜のランニング').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('週次レビュー').length).toBeGreaterThan(0)
   })
 
   it('navigates from home to records with the today filter', async () => {
@@ -240,6 +240,63 @@ describe('records screen filters', () => {
     ).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByText('朝の読書')).toBeInTheDocument()
     expect(screen.queryByText('夜のランニング')).not.toBeInTheDocument()
+  })
+
+  it('shows weekly quest rankings with previous-week comparisons while keeping the detail list', () => {
+    resetStore({
+      quests: [
+        createQuest('quest_reading', '朝の読書'),
+        createQuest('quest_run', '夜のランニング'),
+        createQuest('quest_review', '週次レビュー'),
+      ],
+      completions: [
+        createCompletion('reading_week_1', 'quest_reading', '2026-03-19T08:30:00+09:00'),
+        createCompletion('reading_week_2', 'quest_reading', '2026-03-17T07:30:00+09:00'),
+        createCompletion('reading_prev_1', 'quest_reading', '2026-03-10T08:30:00+09:00'),
+        createCompletion('run_week_1', 'quest_run', '2026-03-18T20:00:00+09:00'),
+        createCompletion('run_prev_1', 'quest_run', '2026-03-12T20:00:00+09:00'),
+        createCompletion('run_prev_2', 'quest_run', '2026-03-11T20:00:00+09:00'),
+        createCompletion('review_prev_1', 'quest_review', '2026-03-13T21:00:00+09:00'),
+      ],
+    })
+
+    renderRecords('/records?filter=week')
+
+    expect(screen.getByText('今週のクリア回数上位10位')).toBeInTheDocument()
+    expect(screen.getByText('今週 2回')).toBeInTheDocument()
+    expect(screen.getByText('先週 1回')).toBeInTheDocument()
+    expect(screen.getByText('今週 1回')).toBeInTheDocument()
+    expect(screen.getByText('先週 2回')).toBeInTheDocument()
+    expect(screen.getAllByText('朝の読書')).toHaveLength(3)
+    expect(screen.queryByText('週次レビュー')).not.toBeInTheDocument()
+  })
+
+  it('shows all-time quest rankings as cumulative counts', () => {
+    resetStore({
+      quests: [
+        createQuest('quest_reading', '朝の読書'),
+        createQuest('quest_run', '夜のランニング'),
+      ],
+      completions: [
+        createCompletion('reading_1', 'quest_reading', '2026-03-19T08:30:00+09:00'),
+        createCompletion('reading_2', 'quest_reading', '2026-03-17T07:30:00+09:00'),
+        createCompletion('reading_3', 'quest_reading', '2026-03-10T08:30:00+09:00'),
+        createCompletion('run_1', 'quest_run', '2026-03-18T20:00:00+09:00'),
+      ],
+    })
+
+    renderRecords('/records?filter=all')
+
+    expect(screen.getByText('累計クリア回数上位10位')).toBeInTheDocument()
+    expect(screen.getByText('累計 3回')).toBeInTheDocument()
+    expect(screen.getByText('累計 1回')).toBeInTheDocument()
+  })
+
+  it('does not show quest rankings for the today filter', () => {
+    renderRecords('/records?filter=today')
+
+    expect(screen.queryByText('今週のクリア回数上位10位')).not.toBeInTheDocument()
+    expect(screen.queryByText('累計クリア回数上位10位')).not.toBeInTheDocument()
   })
 })
 

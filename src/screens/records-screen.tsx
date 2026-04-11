@@ -5,6 +5,7 @@ import { useShallow } from 'zustand/react/shallow'
 import { CompletionResolutionCard } from '@/components/completion-resolution-card'
 import {
   getFilteredActiveCompletions,
+  getQuestCompletionRanking,
   type CompletionHistoryFilter,
 } from '@/domain/logic'
 import { NUTRIENT_META } from '@/domain/nutrition-constants'
@@ -423,6 +424,13 @@ export function RecordsScreen() {
     () => getFilteredActiveCompletions(state.completions, activeFilter),
     [activeFilter, state.completions],
   )
+  const questRanking = useMemo(
+    () =>
+      activeFilter === 'today'
+        ? []
+        : getQuestCompletionRanking(state.quests, state.completions, activeFilter),
+    [activeFilter, state.completions, state.quests],
+  )
 
   const activeOption = recordFilterOptions.find((option) => option.key === activeFilter) ?? recordFilterOptions[0]
 
@@ -516,6 +524,51 @@ export function RecordsScreen() {
               <Badge>{filteredCompletions.length}回</Badge>
             </div>
           </section>
+
+          {questRanking.length > 0 ? (
+            <section className="mt-4">
+              <Card>
+                <CardContent className="p-4">
+                  <div className="text-sm font-semibold text-slate-900">
+                    {activeFilter === 'week' ? '今週のクリア回数上位10位' : '累計クリア回数上位10位'}
+                  </div>
+                  <div className="mt-3 space-y-3">
+                    {questRanking.map((entry, index) => (
+                      <div
+                        key={entry.questId}
+                        className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 px-3 py-3"
+                      >
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-black text-violet-700">
+                            {index + 1}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-semibold text-slate-900">
+                              {entry.title}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="shrink-0 text-right text-xs text-slate-500">
+                          {activeFilter === 'week' ? (
+                            <>
+                              <div className="text-sm font-semibold text-slate-900">
+                                今週 {entry.currentCount}回
+                              </div>
+                              <div>先週 {entry.previousWeekCount ?? 0}回</div>
+                            </>
+                          ) : (
+                            <div className="text-sm font-semibold text-slate-900">
+                              累計 {entry.currentCount}回
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
+          ) : null}
 
           <section className="mt-5 space-y-3 pb-6">
             {filteredCompletions.length === 0 ? (
