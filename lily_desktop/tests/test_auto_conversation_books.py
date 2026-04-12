@@ -77,6 +77,35 @@ async def test_generate_lily_adds_first_line_hint_for_books(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_generate_lily_adds_topic_hint_for_memory(monkeypatch):
+    import ai.auto_conversation as mod
+
+    captured_messages: list[dict[str, str]] = []
+
+    async def fake_send_chat_message(**kwargs):
+        captured_messages.extend(kwargs["messages"])
+        return TextResult(content='{"text":"この前のお祭りの話なんだけど","pose_category":"nostalgic"}')
+
+    monkeypatch.setattr(mod, "QTimer", _FakeQTimer)
+    monkeypatch.setattr(mod, "send_chat_message", fake_send_chat_message)
+
+    conv = AutoConversation(_make_config(), SimpleNamespace())
+    seed = TalkSeed(
+        summary="昔いっしょに行ったお祭りの思い出。",
+        tags=["思い出", "お祭り"],
+        source="memory",
+        lily_perspective="懐かしい思い出としてやわらかく話す",
+        haruka_perspective="思い出話に楽しそうに相づちを打つ",
+    )
+
+    text, pose = await conv._generate_lily(seed, conv_history=[], is_last_turn=False)
+
+    assert text == "この前のお祭りの話なんだけど"
+    assert pose == "nostalgic"
+    assert "思い出話でも、セリフの冒頭で何の思い出かが伝わるひと言から始めてください。" in captured_messages[0]["content"]
+
+
+@pytest.mark.asyncio
 async def test_generate_lily_adds_non_meta_hint_for_camera_seed(monkeypatch):
     import ai.auto_conversation as mod
 

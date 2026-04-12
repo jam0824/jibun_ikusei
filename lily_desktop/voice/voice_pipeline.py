@@ -272,7 +272,7 @@ class VoicePipeline:
                     None,
                     self._save_verified_recording,
                     audio_data,
-                    self._config.speaker_verification_recording_threshold,
+                    verification.score,
                 )
             if not verification.accepted:
                 return
@@ -310,12 +310,13 @@ class VoicePipeline:
             return SpeakerVerificationResult(score=0.0, accepted=verification)
         return SpeakerVerificationResult(score=0.0, accepted=False)
 
-    def _save_verified_recording(self, audio_data: bytes, threshold: float) -> Path:
+    def _save_verified_recording(self, audio_data: bytes, score: float) -> Path:
         self._verified_recordings_dir.mkdir(parents=True, exist_ok=True)
         timestamp = datetime.now(JST).strftime("%Y%m%d_%H%M%S")
+        score_text = f"{score:.2f}"
         out_path = (
             self._verified_recordings_dir
-            / f"speaker_verified_threshold{threshold}_{timestamp}.wav"
+            / f"speaker_verified_score{score_text}_{timestamp}.wav"
         )
         with wave.open(str(out_path), "wb") as wf:
             wf.setnchannels(CHANNELS)
