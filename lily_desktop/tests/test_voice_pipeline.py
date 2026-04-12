@@ -137,19 +137,19 @@ def test_process_audio_saves_verified_recording_when_enabled(monkeypatch):
     pipeline._speaker_profile = type("Profile", (), {"threshold": 0.25})()
 
     saved_audio: list[bytes] = []
-    saved_thresholds: list[float] = []
+    saved_scores: list[float] = []
     recognized_audio: list[bytes] = []
 
     monkeypatch.setattr(
         pipeline,
         "_verify_speaker",
-        lambda audio_data: {"score": 0.31, "accepted": True},
+        lambda audio_data: {"score": 0.43, "accepted": True},
     )
 
-    def fake_save_verified_recording(audio_data: bytes, threshold: float) -> Path:
+    def fake_save_verified_recording(audio_data: bytes, score: float) -> Path:
         saved_audio.append(audio_data)
-        saved_thresholds.append(threshold)
-        return Path(f"verified_{threshold}.wav")
+        saved_scores.append(score)
+        return Path(f"verified_{score}.wav")
 
     async def fake_recognize_and_emit(audio_data: bytes) -> None:
         recognized_audio.append(audio_data)
@@ -165,7 +165,7 @@ def test_process_audio_saves_verified_recording_when_enabled(monkeypatch):
         loop.close()
 
     assert saved_audio == [b"accepted-audio"]
-    assert saved_thresholds == [0.25]
+    assert saved_scores == [0.43]
     assert recognized_audio == [b"accepted-audio"]
 
 
@@ -184,6 +184,7 @@ def test_process_audio_saves_recording_for_learning_even_when_rejected(monkeypat
     pipeline._speaker_profile = type("Profile", (), {"threshold": 0.36})()
 
     saved_audio: list[bytes] = []
+    saved_scores: list[float] = []
     recognized_audio: list[bytes] = []
 
     monkeypatch.setattr(
@@ -192,9 +193,10 @@ def test_process_audio_saves_recording_for_learning_even_when_rejected(monkeypat
         lambda audio_data: {"score": 0.30, "accepted": False},
     )
 
-    def fake_save_verified_recording(audio_data: bytes, threshold: float) -> Path:
+    def fake_save_verified_recording(audio_data: bytes, score: float) -> Path:
         saved_audio.append(audio_data)
-        return Path(f"verified_{threshold}.wav")
+        saved_scores.append(score)
+        return Path(f"verified_{score}.wav")
 
     async def fake_recognize_and_emit(audio_data: bytes) -> None:
         recognized_audio.append(audio_data)
@@ -210,6 +212,7 @@ def test_process_audio_saves_recording_for_learning_even_when_rejected(monkeypat
         loop.close()
 
     assert saved_audio == [b"accepted-audio"]
+    assert saved_scores == [0.30]
     assert recognized_audio == []
 
 
@@ -272,9 +275,9 @@ def test_save_verified_recording_uses_threshold_and_jst_timestamp(tmp_path, monk
 
     monkeypatch.setattr(mod, "datetime", _FixedDateTime)
 
-    saved_path = pipeline._save_verified_recording(b"\x01\x00\x02\x00", 0.25)
+    saved_path = pipeline._save_verified_recording(b"\x01\x00\x02\x00", 0.43)
 
-    assert saved_path.name == "speaker_verified_threshold0.25_20260412_091011.wav"
+    assert saved_path.name == "speaker_verified_score0.43_20260412_091011.wav"
     assert saved_path.exists()
 
 

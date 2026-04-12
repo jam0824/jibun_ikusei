@@ -82,9 +82,9 @@ healthplanet:
   sync_interval_minutes: 15  # 起動時に即時同期し、その後はこの分間隔で再同期
 
 voice:
-  pause_during_tts: true  # false にするとリリィたちの発話中もマイクで割り込みできる
-  speaker_verification_recording_enabled: true  # 話者照合スコアが閾値以上の音声を学習用に保存する
-  speaker_verification_recording_threshold: 0.25  # 学習用録音を保存する最小スコア
+  pause_during_tts: true
+  speaker_verification_recording_enabled: true
+  speaker_verification_recording_threshold: 0.25
 ```
 
 ### 4. 起動する
@@ -210,8 +210,9 @@ voice:
 
 - `speaker_verification_threshold`: コサイン類似度の閾値（0〜1）。低いほど緩い判定。認識されにくい場合は値を下げる。
 - `speaker_verification_recording_enabled`: `true` の間、話者照合スコアが `speaker_verification_recording_threshold` 以上の音声を学習用WAVとして保存する。
-- `speaker_verification_recording_threshold`: 学習用録音を保存する最小スコア。既定値は `0.25`。
-- 保存先は `lily_desktop/logs/speaker_verification/`。ファイル名は `speaker_verified_threshold0.25_YYYYMMDD_HHMMSS.wav` の形式で、閾値と JST の日時を含む。
+- `speaker_verification_recording_threshold`: 学習用録音を保存する最小スコア。既定値は `0.25`。この値は保存条件であり、ファイル名には入りません。
+- 保存先は `lily_desktop/logs/speaker_verification/`。
+- ファイル名は `speaker_verified_score0.43_YYYYMMDD_HHMMSS.wav` の形式で、実際の照合スコアと JST の日時を含みます。
 
 ---
 
