@@ -201,6 +201,8 @@ class VoiceConfig:
     speaker_verification_enabled: bool = False  # 話者照合を使うかどうか
     speaker_profile_path: str = "speaker_profile.pt"  # 話者プロファイルのパス
     speaker_verification_threshold: float = 0.25  # 照合閾値（コサイン類似度）
+    speaker_verification_recording_enabled: bool = True  # 話者照合OKの音声を学習用に保存するかどうか
+    speaker_verification_recording_threshold: float = 0.25  # 学習用録音を保存するスコア閾値
 
 
 @dataclass

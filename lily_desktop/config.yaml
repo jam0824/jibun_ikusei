@@ -50,6 +50,8 @@ voice:
   speaker_verification_enabled: true
   speaker_profile_path: speaker_profile.pt
   speaker_verification_threshold: 0.36
+  speaker_verification_recording_enabled: true
+  speaker_verification_recording_threshold: 0.25
 camera:
   enabled: true
   device_name: USB 2.0 Camera

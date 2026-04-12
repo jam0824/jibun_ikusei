@@ -5,14 +5,25 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import wave
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import NamedTuple
 
 from core.config import VoiceConfig
 from core.event_bus import bus
-from voice.audio_capture import AudioCapture, find_device_index
+from voice.audio_capture import AudioCapture, CHANNELS, SAMPLE_RATE, find_device_index
 from voice.speech_recognizer import SpeechRecognizer
 from voice.vad import VadGate
 
 logger = logging.getLogger(__name__)
+JST = timezone(timedelta(hours=9))
+_VERIFIED_RECORDINGS_DIR = Path(__file__).resolve().parent.parent / "logs" / "speaker_verification"
+
+
+class SpeakerVerificationResult(NamedTuple):
+    score: float
+    accepted: bool
 
 
 class VoicePipeline:
@@ -44,6 +55,7 @@ class VoicePipeline:
         self._thread: threading.Thread | None = None
         self._stop_event = threading.Event()
         self._resume_disabled = False
+        self._verified_recordings_dir = _VERIFIED_RECORDINGS_DIR
 
         # 話者照合プロファイルの読み込み（有効時のみ）
         self._speaker_profile = None
@@ -248,15 +260,26 @@ class VoicePipeline:
         """発話音声を処理する: (話者照合 →) STT → イベント発火"""
         # 話者照合（有効かつプロファイルが読み込まれている場合）
         if self._config.speaker_verification_enabled and self._speaker_profile is not None:
-            accepted = await asyncio.get_event_loop().run_in_executor(
+            verification = await asyncio.get_event_loop().run_in_executor(
                 None, self._verify_speaker, audio_data
             )
-            if not accepted:
+            verification = self._normalize_verification_result(verification)
+            if (
+                self._config.speaker_verification_recording_enabled
+                and verification.score >= self._config.speaker_verification_recording_threshold
+            ):
+                await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    self._save_verified_recording,
+                    audio_data,
+                    self._config.speaker_verification_recording_threshold,
+                )
+            if not verification.accepted:
                 return
 
         await self._recognize_and_emit(audio_data)
 
-    def _verify_speaker(self, audio_data: bytes) -> bool:
+    def _verify_speaker(self, audio_data: bytes) -> SpeakerVerificationResult:
         """話者照合を実行する（ブロッキング、executor から呼ぶ）。"""
         from voice.speaker_verifier import make_embedding_from_bytes, verify_embedding
 
@@ -270,10 +293,37 @@ class VoicePipeline:
                 profile.threshold,
                 "OK" if accepted else "NG (スキップ)",
             )
-            return accepted
+            return SpeakerVerificationResult(score=score, accepted=accepted)
         except Exception:
             logger.exception("話者照合中にエラーが発生しました。照合をスキップします。")
             return True  # エラー時は通過させる
+
+    def _normalize_verification_result(self, verification: object) -> SpeakerVerificationResult:
+        if isinstance(verification, SpeakerVerificationResult):
+            return verification
+        if isinstance(verification, dict):
+            return SpeakerVerificationResult(
+                score=float(verification.get("score", 0.0)),
+                accepted=bool(verification.get("accepted", False)),
+            )
+        if isinstance(verification, bool):
+            return SpeakerVerificationResult(score=0.0, accepted=verification)
+        return SpeakerVerificationResult(score=0.0, accepted=False)
+
+    def _save_verified_recording(self, audio_data: bytes, threshold: float) -> Path:
+        self._verified_recordings_dir.mkdir(parents=True, exist_ok=True)
+        timestamp = datetime.now(JST).strftime("%Y%m%d_%H%M%S")
+        out_path = (
+            self._verified_recordings_dir
+            / f"speaker_verified_threshold{threshold}_{timestamp}.wav"
+        )
+        with wave.open(str(out_path), "wb") as wf:
+            wf.setnchannels(CHANNELS)
+            wf.setsampwidth(2)
+            wf.setframerate(SAMPLE_RATE)
+            wf.writeframes(audio_data)
+        logger.info("話者照合学習用の録音を保存: %s", out_path)
+        return out_path
 
     async def _recognize_and_emit(self, audio_data: bytes) -> None:
         """STT を実行し、ウェイクワードが含まれていればイベントバスに流す"""
