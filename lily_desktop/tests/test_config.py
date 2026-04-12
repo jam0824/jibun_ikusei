@@ -206,6 +206,41 @@ def test_voice_pause_during_tts_uses_config_value(tmp_path):
     assert config.voice.pause_during_tts is False
 
 
+def test_speaker_verification_recording_enabled_defaults_to_true(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.voice.speaker_verification_recording_enabled is True
+
+
+def test_speaker_verification_recording_enabled_uses_config_value(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "voice:\n"
+        "  speaker_verification_recording_enabled: false\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.voice.speaker_verification_recording_enabled is False
+
+
+def test_speaker_verification_recording_threshold_uses_config_value(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "voice:\n"
+        "  speaker_verification_recording_threshold: 0.28\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.voice.speaker_verification_recording_threshold == 0.28
+
+
 def test_rakuten_config_defaults_when_missing(tmp_path, monkeypatch):
     config_path = tmp_path / "config.yaml"
     config_path.write_text("", encoding="utf-8")
