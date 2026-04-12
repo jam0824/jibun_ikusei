@@ -7,6 +7,7 @@ import {
   getQuestCompletionRanking,
   getQuestAvailability,
   getQuestIdsWithActiveCompletions,
+  getStatusView,
   getTodayActiveCompletions,
   getWeekActiveCompletions,
   hydratePersistedState,
@@ -48,6 +49,74 @@ function createRankingCompletion(
     userXpAwarded: 5,
     skillResolutionStatus: 'resolved' as const,
     undoneAt,
+    createdAt: completedAt,
+  }
+}
+
+function createStatusQuest(
+  id: string,
+  title: string,
+  category: string,
+  overrides: Partial<{
+    xpReward: number
+    source: 'manual' | 'browsing'
+    fixedSkillId: string
+  }> = {},
+) {
+  const now = '2026-03-01T09:00:00+09:00'
+  return {
+    id,
+    title,
+    description: `${title}の説明`,
+    questType: 'repeatable' as const,
+    xpReward: overrides.xpReward ?? 5,
+    category,
+    skillMappingMode: 'fixed' as const,
+    fixedSkillId: overrides.fixedSkillId,
+    cooldownMinutes: 0,
+    dailyCompletionCap: 10,
+    status: 'active' as const,
+    privacyMode: 'normal' as const,
+    pinned: false,
+    source: overrides.source,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function createStatusSkill(id: string, name: string, category: string, status: 'active' | 'merged' = 'active') {
+  const now = '2026-03-01T09:00:00+09:00'
+  return {
+    id,
+    name,
+    normalizedName: name.toLowerCase(),
+    category,
+    level: 1,
+    totalXp: 0,
+    source: 'manual' as const,
+    status,
+    createdAt: now,
+    updatedAt: now,
+  }
+}
+
+function createStatusCompletion(
+  id: string,
+  questId: string,
+  resolvedSkillId: string,
+  completedAt: string,
+  skillXpAwarded: number,
+  userXpAwarded = 5,
+) {
+  return {
+    id,
+    questId,
+    clientRequestId: `req_${id}`,
+    completedAt,
+    userXpAwarded,
+    skillXpAwarded,
+    resolvedSkillId,
+    skillResolutionStatus: 'resolved' as const,
     createdAt: completedAt,
   }
 }
@@ -1023,5 +1092,96 @@ describe('domain logic', () => {
     expect(summary.endDate).toBe('2027-01-03')
     expect(summary.weekLabel).toBe('2026-12-28 〜 2027-01-03')
     expect(summary.totalCompletionCount).toBe(1)
+  })
+
+  it('builds status categories, representative skills, and the current type from recent activity', () => {
+    const state = hydratePersistedState({
+      quests: [
+        createStatusQuest('quest_read', '読書する', '学習', { fixedSkillId: 'skill_reading' }),
+        createStatusQuest('quest_research', '調べものをする', '学習', { fixedSkillId: 'skill_research' }),
+        createStatusQuest('quest_write', '企画を書く', '仕事', { fixedSkillId: 'skill_writing' }),
+        createStatusQuest('quest_house', '部屋を整える', '生活', { fixedSkillId: 'skill_housework' }),
+        createStatusQuest('quest_misc', '気分転換する', 'その他', { fixedSkillId: 'skill_misc' }),
+      ],
+      skills: [
+        createStatusSkill('skill_reading', '読書', '学習'),
+        createStatusSkill('skill_research', '調査', '学習'),
+        createStatusSkill('skill_writing', '文書作成', '仕事'),
+        createStatusSkill('skill_housework', '家事', '生活'),
+        createStatusSkill('skill_misc', '雑記', 'その他'),
+      ],
+      completions: [
+        createStatusCompletion('completion_read_recent', 'quest_read', 'skill_reading', '2026-04-10T08:00:00+09:00', 10),
+        createStatusCompletion('completion_read_old', 'quest_read', 'skill_reading', '2026-03-25T08:00:00+09:00', 40),
+        createStatusCompletion('completion_research_recent', 'quest_research', 'skill_research', '2026-04-08T20:00:00+09:00', 20),
+        createStatusCompletion('completion_research_old', 'quest_research', 'skill_research', '2026-03-20T20:00:00+09:00', 30),
+        createStatusCompletion('completion_write_recent', 'quest_write', 'skill_writing', '2026-04-11T09:00:00+09:00', 25),
+        createStatusCompletion('completion_house_recent', 'quest_house', 'skill_housework', '2026-04-12T07:00:00+09:00', 5),
+        createStatusCompletion('completion_misc_recent', 'quest_misc', 'skill_misc', '2026-04-07T21:00:00+09:00', 15),
+      ],
+    })
+
+    const view = getStatusView(state, new Date('2026-04-12T12:00:00+09:00'))
+    const knowledge = view.primaryCategories.find((entry) => entry.label === '知識')
+    const practical = view.primaryCategories.find((entry) => entry.label === '実務')
+
+    expect(knowledge).toMatchObject({
+      totalXp: 100,
+      level: 3,
+      recentXp: 30,
+    })
+    expect(knowledge?.representativeSkill?.name).toBe('調査')
+    expect(practical).toMatchObject({
+      totalXp: 25,
+      level: 1,
+      recentXp: 25,
+    })
+    expect(view.currentType.label).toBe('知識 × 実務型')
+    expect(view.topGrowthCategories.map((entry) => entry.label)).toEqual(['知識', '実務', '生活'])
+    expect(view.otherCategory?.totalXp).toBe(15)
+    expect(view.otherCategory?.skills.map((skill) => skill.name)).toEqual(['雑記'])
+  })
+
+  it('shows a placeholder current type when there is no recent 30-day skill xp', () => {
+    const state = hydratePersistedState({
+      quests: [
+        createStatusQuest('quest_read', '読書する', '学習', { fixedSkillId: 'skill_reading' }),
+      ],
+      skills: [createStatusSkill('skill_reading', '読書', '学習')],
+      completions: [
+        createStatusCompletion('completion_old', 'quest_read', 'skill_reading', '2026-03-01T08:00:00+09:00', 20),
+      ],
+    })
+
+    const view = getStatusView(state, new Date('2026-04-12T12:00:00+09:00'))
+
+    expect(view.currentType.label).toBeUndefined()
+    expect(view.currentType.placeholder).toBe('最近の記録が増えると表示されます')
+  })
+
+  it('counts weekly action days without browsing-derived completions', () => {
+    const state = hydratePersistedState({
+      quests: [
+        createStatusQuest('quest_manual_one', '朝の読書', '学習', { fixedSkillId: 'skill_reading' }),
+        createStatusQuest('quest_manual_two', '企画を書く', '仕事', { fixedSkillId: 'skill_writing' }),
+        createStatusQuest('quest_browsing', '閲覧クエスト', '学習', {
+          fixedSkillId: 'skill_reading',
+          source: 'browsing',
+        }),
+      ],
+      skills: [
+        createStatusSkill('skill_reading', '読書', '学習'),
+        createStatusSkill('skill_writing', '文書作成', '仕事'),
+      ],
+      completions: [
+        createStatusCompletion('completion_manual_one', 'quest_manual_one', 'skill_reading', '2026-04-07T08:00:00+09:00', 5),
+        createStatusCompletion('completion_manual_two', 'quest_manual_two', 'skill_writing', '2026-04-08T09:00:00+09:00', 5),
+        createStatusCompletion('completion_browsing', 'quest_browsing', 'skill_reading', '2026-04-09T10:00:00+09:00', 5),
+      ],
+    })
+
+    const view = getStatusView(state, new Date('2026-04-12T12:00:00+09:00'))
+
+    expect(view.condition.weekActionDays).toBe(2)
   })
 })

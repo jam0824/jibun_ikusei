@@ -13,6 +13,7 @@ import { useShallow } from 'zustand/react/shallow'
 import {
   getLevelFromXp,
   getQuestAvailability,
+  getRecommendedQuests,
   getTodayActiveCompletions,
   getWeeklyReflectionStatus,
 } from '@/domain/logic'
@@ -58,18 +59,7 @@ export function HomeScreen() {
     0,
   )
   const topSkills = skills.filter((skill) => skill.status === 'active').slice(0, 3)
-  const recommendedQuests = [...quests]
-    .filter((quest) => quest.status !== 'archived' && quest.source !== 'browsing')
-    .sort((left, right) => {
-      const leftAvailability = getQuestAvailability(left, completions)
-      const rightAvailability = getQuestAvailability(right, completions)
-      const leftScore =
-        (left.pinned ? 100 : 0) + (leftAvailability.canComplete ? 20 : 0) + left.xpReward
-      const rightScore =
-        (right.pinned ? 100 : 0) + (rightAvailability.canComplete ? 20 : 0) + right.xpReward
-      return rightScore - leftScore
-    })
-    .slice(0, 5)
+  const recommendedQuests = getRecommendedQuests(quests, completions)
 
   const latestMessage = useMemo(
     () =>
@@ -129,42 +119,52 @@ export function HomeScreen() {
         </Button>
       }
     >
-      <Card className="overflow-hidden border-0 bg-slate-900 text-white shadow-xl shadow-slate-200">
-        <CardContent className="p-5">
-          <div className="mb-4 flex items-start justify-between gap-3">
-            <div>
-              <div className="text-[11px] uppercase tracking-[0.22em] text-white/55">
-                User Level
+      <button
+        type="button"
+        aria-label="ステータス画面を開く"
+        className="w-full text-left"
+        onClick={() => navigate('/status')}
+      >
+        <Card className="overflow-hidden border-0 bg-slate-900 text-white shadow-xl shadow-slate-200 transition hover:shadow-2xl hover:shadow-slate-200/70">
+          <CardContent className="p-5">
+            <div className="mb-4 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[11px] uppercase tracking-[0.22em] text-white/55">
+                  User Level
+                </div>
+                <div className="mt-2 text-4xl font-black tracking-tight">Lv.{levelInfo.level}</div>
+                <div className="mt-1 text-sm text-white/70">
+                  次のレベルまであと {levelInfo.nextStepXp}XP
+                </div>
               </div>
-              <div className="mt-2 text-4xl font-black tracking-tight">Lv.{levelInfo.level}</div>
-              <div className="mt-1 text-sm text-white/70">
-                次のレベルまであと {levelInfo.nextStepXp}XP
-              </div>
-            </div>
-            <div className="rounded-2xl bg-white/10 px-3 py-2 text-right">
-              <div className="text-[10px] text-white/55">Total XP</div>
-              <div className="text-xl font-semibold">{user.totalXp}</div>
-            </div>
-          </div>
-          <Progress value={levelInfo.progress} className="h-2 bg-white/10" />
-          <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
-            <div className="rounded-2xl bg-white/10 px-2 py-3">
-              <div className="text-white/60">今日のXP</div>
-              <div className="mt-1 text-lg font-semibold">{todayXp >= 0 ? '+' : ''}{todayXp}</div>
-            </div>
-            <div className="rounded-2xl bg-white/10 px-2 py-3">
-              <div className="text-white/60">クリア回数</div>
-              <div className="mt-1 text-lg font-semibold">{todayCompletions.length}回</div>
-            </div>
-            <div className="rounded-2xl bg-white/10 px-2 py-3">
-              <div className="text-white/60">音声</div>
-              <div className="mt-1 text-lg font-semibold">
-                {settings.lilyAutoPlay === 'off' ? 'OFF' : 'ON'}
+              <div className="rounded-2xl bg-white/10 px-3 py-2 text-right">
+                <div className="text-[10px] text-white/55">Total XP</div>
+                <div className="text-xl font-semibold">{user.totalXp}</div>
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+            <Progress value={levelInfo.progress} className="h-2 bg-white/10" />
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+              <div className="rounded-2xl bg-white/10 px-2 py-3">
+                <div className="text-white/60">今日のXP</div>
+                <div className="mt-1 text-lg font-semibold">{todayXp >= 0 ? '+' : ''}{todayXp}</div>
+              </div>
+              <div className="rounded-2xl bg-white/10 px-2 py-3">
+                <div className="text-white/60">クリア回数</div>
+                <div className="mt-1 text-lg font-semibold">{todayCompletions.length}回</div>
+              </div>
+              <div className="rounded-2xl bg-white/10 px-2 py-3">
+                <div className="text-white/60">音声</div>
+                <div className="mt-1 text-lg font-semibold">
+                  {settings.lilyAutoPlay === 'off' ? 'OFF' : 'ON'}
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 flex items-center justify-end text-xs font-semibold text-violet-200">
+              ステータスを見る
+            </div>
+          </CardContent>
+        </Card>
+      </button>
 
       <section className="mt-5">
         <SectionHeader title="今日のサマリー" />

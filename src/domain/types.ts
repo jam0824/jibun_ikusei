@@ -211,6 +211,55 @@ export interface DashboardView {
   latestMessage?: AssistantMessage
 }
 
+export interface StatusCategorySummary {
+  category: string
+  label: string
+  level: number
+  totalXp: number
+  recentXp: number
+  recent30dXp: number
+  representativeSkill?: Skill
+}
+
+export interface StatusTypeSummary {
+  label?: string
+  placeholder?: string
+}
+
+export interface StatusGrowthSummary {
+  category: string
+  label: string
+  recentXp: number
+  representativeSkill?: Skill
+}
+
+export interface StatusConditionSummary {
+  todayCompletionCount: number
+  todayUserXp: number
+  weekActionDays: number
+  latestCompletionAt?: string
+}
+
+export interface StatusOtherCategorySummary {
+  totalXp: number
+  skills: Skill[]
+}
+
+export interface StatusView {
+  userLevel: number
+  totalXp: number
+  nextLevelXp: number
+  levelProgress: number
+  streakDays: number
+  latestMessage?: AssistantMessage
+  currentType: StatusTypeSummary
+  primaryCategories: StatusCategorySummary[]
+  topGrowthCategories: StatusGrowthSummary[]
+  otherCategory?: StatusOtherCategorySummary
+  condition: StatusConditionSummary
+  recommendedQuests: Quest[]
+}
+
 export type ChatMessageRole = 'user' | 'assistant'
 
 export interface ChatSession {
