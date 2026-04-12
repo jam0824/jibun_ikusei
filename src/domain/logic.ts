@@ -1,4 +1,4 @@
-import { addDays, differenceInCalendarDays, differenceInMinutes, isBefore, parseISO, startOfDay, subDays, subWeeks } from 'date-fns'
+import { addDays, differenceInCalendarDays, differenceInMinutes, endOfDay, isBefore, parseISO, startOfDay, subDays, subWeeks } from 'date-fns'
 import {
   DEFAULT_REPEATABLE_COOLDOWN,
   DEFAULT_REPEATABLE_DAILY_CAP,
@@ -32,6 +32,9 @@ import type {
   QuestCompletion,
   Skill,
   SkillResolutionResult,
+  StatusCategorySummary,
+  StatusGrowthSummary,
+  StatusView,
   UserSettings,
 } from '@/domain/types'
 import {
@@ -40,6 +43,7 @@ import {
   getDateRangeLast7Days,
   getDayKey,
   getPreviousWeekDateRange,
+  getWeekDateRange,
   getWeekKey,
   isReminderDue,
   isSameCalendarDay,
@@ -130,6 +134,23 @@ const KEYWORD_RULES = [
     confidence: 0.84,
   },
 ] as const
+
+const STATUS_CATEGORY_CONFIG = [
+  { category: '学習', label: '知識' },
+  { category: '運動', label: '体力' },
+  { category: '仕事', label: '実務' },
+  { category: '生活', label: '生活' },
+  { category: '対人', label: '対話' },
+  { category: '創作', label: '創造' },
+] as const
+
+const STATUS_CATEGORY_ORDER = new Map<string, number>(
+  STATUS_CATEGORY_CONFIG.map((entry, index) => [entry.category, index]),
+)
+
+const STATUS_CATEGORY_LABELS = new Map<string, string>(
+  STATUS_CATEGORY_CONFIG.map((entry) => [entry.category, entry.label]),
+)
 
 const LEGACY_TEXT_REPLACEMENTS: Record<string, string> = {
   '蟄ｦ鄙・': '学習',
@@ -1029,6 +1050,25 @@ function calculateStreakDays(completions: QuestCompletion[]) {
   return streak
 }
 
+export function getRecommendedQuests(
+  quests: Quest[],
+  completions: QuestCompletion[],
+  limit = 5,
+) {
+  return [...quests]
+    .filter((quest) => quest.status !== 'archived' && quest.source !== 'browsing')
+    .sort((left, right) => {
+      const leftAvailability = getQuestAvailability(left, completions)
+      const rightAvailability = getQuestAvailability(right, completions)
+      const leftScore =
+        (left.pinned ? 100 : 0) + (leftAvailability.canComplete ? 20 : 0) + left.xpReward
+      const rightScore =
+        (right.pinned ? 100 : 0) + (rightAvailability.canComplete ? 20 : 0) + right.xpReward
+      return rightScore - leftScore
+    })
+    .slice(0, limit)
+}
+
 export function getDashboardView(state: PersistedAppState): DashboardView {
   const todayCompletions = getActiveCompletions(state.completions).filter((completion) =>
     isSameCalendarDay(completion.completedAt, new Date()),
@@ -1054,16 +1094,7 @@ export function getDashboardView(state: PersistedAppState): DashboardView {
     .sort((left, right) => right.gain - left.gain)
     .slice(0, 3)
 
-  const recommendedQuests = [...state.quests]
-    .filter((quest) => quest.status !== 'archived')
-    .sort((left, right) => {
-      const leftAvailability = getQuestAvailability(left, state.completions)
-      const rightAvailability = getQuestAvailability(right, state.completions)
-      const leftScore = (left.pinned ? 100 : 0) + (leftAvailability.canComplete ? 20 : 0) + left.xpReward
-      const rightScore = (right.pinned ? 100 : 0) + (rightAvailability.canComplete ? 20 : 0) + right.xpReward
-      return rightScore - leftScore
-    })
-    .slice(0, 5)
+  const recommendedQuests = getRecommendedQuests(state.quests, state.completions)
 
   const latestMessage = [...state.assistantMessages].sort((left, right) => compareDates(left.createdAt, right.createdAt))[0]
 
@@ -1083,6 +1114,179 @@ export function getSevenDaySkillGain(state: PersistedAppState, skillId: string) 
     .filter((completion) => completion.resolvedSkillId === skillId && completion.skillXpAwarded)
     .filter((completion) => isWithinRange(completion.completedAt, from, to))
     .reduce((sum, completion) => sum + (completion.skillXpAwarded ?? 0), 0)
+}
+
+function getSkillGainMapForRange(
+  state: PersistedAppState,
+  start: Date,
+  end: Date,
+) {
+  const gainMap = new Map<string, number>()
+
+  for (const completion of getActiveCompletions(state.completions)) {
+    if (!completion.skillXpAwarded || !isWithinRange(completion.completedAt, start, end)) {
+      continue
+    }
+
+    const resolvedSkillId = resolveMergedSkillId(completion.resolvedSkillId, state.skills)
+    if (!resolvedSkillId) {
+      continue
+    }
+
+    gainMap.set(resolvedSkillId, (gainMap.get(resolvedSkillId) ?? 0) + completion.skillXpAwarded)
+  }
+
+  return gainMap
+}
+
+function getRepresentativeSkill(
+  skills: Skill[],
+  recentGainMap: Map<string, number>,
+) {
+  return [...skills].sort((left, right) => {
+    if (left.totalXp !== right.totalXp) {
+      return right.totalXp - left.totalXp
+    }
+
+    const leftRecent = recentGainMap.get(left.id) ?? 0
+    const rightRecent = recentGainMap.get(right.id) ?? 0
+    if (leftRecent !== rightRecent) {
+      return rightRecent - leftRecent
+    }
+
+    return left.name.localeCompare(right.name, 'ja')
+  })[0]
+}
+
+function calculateWeekActionDays(state: PersistedAppState, referenceDate: Date) {
+  const { start, end } = getWeekDateRange(referenceDate)
+  const questMap = new Map(state.quests.map((quest) => [quest.id, quest]))
+  const dayKeys = new Set(
+    getActiveCompletions(state.completions)
+      .filter((completion) => isWithinRange(completion.completedAt, start, end))
+      .filter((completion) => questMap.get(completion.questId)?.source !== 'browsing')
+      .map((completion) => getDayKey(completion.completedAt)),
+  )
+
+  return dayKeys.size
+}
+
+export function getStatusView(
+  state: PersistedAppState,
+  referenceDate = new Date(),
+): StatusView {
+  const activeSkills = state.skills.filter((skill) => skill.status === 'active')
+  const recent7Start = startOfDay(subDays(referenceDate, 6))
+  const recent7End = endOfDay(referenceDate)
+  const recent30Start = startOfDay(subDays(referenceDate, 29))
+  const recent30End = endOfDay(referenceDate)
+  const recent7GainMap = getSkillGainMapForRange(state, recent7Start, recent7End)
+  const recent30GainMap = getSkillGainMapForRange(state, recent30Start, recent30End)
+
+  const primaryCategories: StatusCategorySummary[] = STATUS_CATEGORY_CONFIG.map(({ category, label }) => {
+    const categorySkills = activeSkills.filter((skill) => skill.category === category)
+    const totalXp = categorySkills.reduce((sum, skill) => sum + skill.totalXp, 0)
+    const recentXp = categorySkills.reduce((sum, skill) => sum + (recent7GainMap.get(skill.id) ?? 0), 0)
+    const recent30dXp = categorySkills.reduce((sum, skill) => sum + (recent30GainMap.get(skill.id) ?? 0), 0)
+
+    return {
+      category,
+      label,
+      level: Math.floor(Math.max(0, totalXp) / SKILL_LEVEL_XP) + 1,
+      totalXp,
+      recentXp,
+      recent30dXp,
+      representativeSkill: getRepresentativeSkill(categorySkills, recent7GainMap),
+    }
+  })
+
+  const typeRanking = [...primaryCategories].sort((left, right) => {
+    if (left.recent30dXp !== right.recent30dXp) {
+      return right.recent30dXp - left.recent30dXp
+    }
+    if (left.totalXp !== right.totalXp) {
+      return right.totalXp - left.totalXp
+    }
+    return (STATUS_CATEGORY_ORDER.get(left.category) ?? 0) - (STATUS_CATEGORY_ORDER.get(right.category) ?? 0)
+  })
+
+  const currentType =
+    (typeRanking[0]?.recent30dXp ?? 0) > 0
+      ? {
+          label:
+            (typeRanking[1]?.recent30dXp ?? 0) > 0
+              ? `${typeRanking[0]!.label} × ${typeRanking[1]!.label}型`
+              : `${typeRanking[0]!.label}型`,
+        }
+      : {
+          placeholder: '最近の記録が増えると表示されます',
+        }
+
+  const topGrowthCategories: StatusGrowthSummary[] = primaryCategories
+    .filter((entry) => entry.recentXp > 0)
+    .sort((left, right) => {
+      if (left.recentXp !== right.recentXp) {
+        return right.recentXp - left.recentXp
+      }
+      if (left.totalXp !== right.totalXp) {
+        return right.totalXp - left.totalXp
+      }
+      return (STATUS_CATEGORY_ORDER.get(left.category) ?? 0) - (STATUS_CATEGORY_ORDER.get(right.category) ?? 0)
+    })
+    .slice(0, 3)
+    .map((entry) => ({
+      category: entry.category,
+      label: entry.label,
+      recentXp: entry.recentXp,
+      representativeSkill: entry.representativeSkill,
+    }))
+
+  const otherSkills = activeSkills
+    .filter((skill) => !STATUS_CATEGORY_LABELS.has(skill.category) && skill.totalXp > 0)
+    .sort((left, right) => {
+      if (left.totalXp !== right.totalXp) {
+        return right.totalXp - left.totalXp
+      }
+      return left.name.localeCompare(right.name, 'ja')
+    })
+
+  const latestMessage = [...state.assistantMessages].sort((left, right) =>
+    compareDates(left.createdAt, right.createdAt),
+  )[0]
+  const levelInfo = getLevelFromXp(state.user.totalXp, USER_LEVEL_XP)
+  const activeCompletions = getActiveCompletions(state.completions)
+  const latestCompletionAt = [...activeCompletions].sort((left, right) =>
+    compareDates(left.completedAt, right.completedAt),
+  )[0]?.completedAt
+
+  return {
+    userLevel: levelInfo.level,
+    totalXp: levelInfo.totalXp,
+    nextLevelXp: levelInfo.nextStepXp,
+    levelProgress: levelInfo.progress,
+    streakDays: calculateStreakDays(state.completions),
+    latestMessage,
+    currentType,
+    primaryCategories,
+    topGrowthCategories,
+    otherCategory:
+      otherSkills.length > 0
+        ? {
+            totalXp: otherSkills.reduce((sum, skill) => sum + skill.totalXp, 0),
+            skills: otherSkills,
+          }
+        : undefined,
+    condition: {
+      todayCompletionCount: getTodayActiveCompletions(state.completions, referenceDate).length,
+      todayUserXp: getTodayActiveCompletions(state.completions, referenceDate).reduce(
+        (sum, completion) => sum + completion.userXpAwarded,
+        0,
+      ),
+      weekActionDays: calculateWeekActionDays(state, referenceDate),
+      latestCompletionAt,
+    },
+    recommendedQuests: getRecommendedQuests(state.quests, state.completions, 3),
+  }
 }
 
 export function buildTemplateSkillResolution(

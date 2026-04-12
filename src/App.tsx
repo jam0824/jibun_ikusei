@@ -12,6 +12,7 @@ import { QuestListScreen } from '@/screens/quest-list-screen'
 import { RecordsScreen } from '@/screens/records-screen'
 import { SettingsScreen } from '@/screens/settings-screen'
 import { SkillsScreen } from '@/screens/skills-screen'
+import { StatusScreen } from '@/screens/status-screen'
 import { WeeklyReflectionScreen } from '@/screens/weekly-reflection-screen'
 import { ScrollToTopOnRouteChange } from '@/components/scroll-to-top-on-route-change'
 import { useAppStore } from '@/store/app-store'
@@ -52,6 +53,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<HomeScreen />} />
+      <Route path="/status" element={<StatusScreen />} />
       <Route path="/quests" element={<QuestListScreen />} />
       <Route path="/quests/new" element={<QuestFormScreen />} />
       <Route path="/skills" element={<SkillsScreen />} />
