@@ -3,13 +3,14 @@
 
 使い方:
     uv run python enroll_speaker.py --refs me01.wav me02.wav me03.wav --out speaker_profile.pt
+    uv run python enroll_speaker.py --dir recorded_voices --out speaker_profile.pt
 """
 
 from __future__ import annotations
 
 import argparse
-import struct
 from pathlib import Path
+from typing import Sequence
 
 import torch
 import torchaudio
@@ -38,12 +39,51 @@ def extract_embedding(classifier, wav: torch.Tensor) -> torch.Tensor:
     return emb
 
 
-def main() -> None:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="話者登録: WAV → speaker_profile.pt")
-    parser.add_argument("--refs", nargs="+", required=True, help="参照 WAV ファイル（複数可）")
+    source_group = parser.add_mutually_exclusive_group(required=True)
+    source_group.add_argument("--refs", nargs="+", help="参照 WAV ファイル（複数可）")
+    source_group.add_argument("--dir", help="参照 WAV ファイルを含むフォルダ（直下の *.wav を読み込む）")
     parser.add_argument("--out", default="speaker_profile.pt", help="出力プロファイルパス")
     parser.add_argument("--threshold", type=float, default=0.25, help="照合閾値（デフォルト: 0.25）")
-    args = parser.parse_args()
+    return parser.parse_args(argv)
+
+
+def resolve_reference_paths(
+    refs: Sequence[str] | None,
+    refs_dir: str | None,
+) -> list[Path]:
+    if refs:
+        return [Path(ref_path) for ref_path in refs]
+
+    if refs_dir is None:
+        raise ValueError("参照 WAV ファイルが指定されていません。")
+
+    dir_path = Path(refs_dir)
+    if not dir_path.exists():
+        raise ValueError(f"フォルダが見つかりません: {dir_path}")
+    if not dir_path.is_dir():
+        raise ValueError(f"指定したパスはフォルダではありません: {dir_path}")
+
+    ref_paths = sorted(
+        path
+        for path in dir_path.glob("*.wav")
+        if path.is_file()
+    )
+    if not ref_paths:
+        raise ValueError(f"フォルダ内に参照 WAV ファイルがありません: {dir_path}")
+
+    return ref_paths
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    args = parse_args(argv)
+
+    try:
+        ref_paths = resolve_reference_paths(args.refs, args.dir)
+    except ValueError as exc:
+        print(f"[エラー] {exc}")
+        return
 
     print(f"SpeechBrain モデルを読み込み中: {_MODEL_SOURCE}")
     from speechbrain.inference.classifiers import EncoderClassifier  # type: ignore
@@ -54,8 +94,7 @@ def main() -> None:
     )
 
     embeddings: list[torch.Tensor] = []
-    for ref_path_str in args.refs:
-        ref_path = Path(ref_path_str)
+    for ref_path in ref_paths:
         if not ref_path.exists():
             print(f"  [警告] ファイルが見つかりません: {ref_path}")
             continue
