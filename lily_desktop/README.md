@@ -193,9 +193,15 @@ uv run python record_voice.py --out me01.wav --sec 5   # 録音秒数を指定
 
 ```bash
 uv run python enroll_speaker.py --refs voice_01.wav voice_02.wav voice_03.wav --out speaker_profile.pt
+# または、指定フォルダ直下の WAV をまとめて使う
+uv run python enroll_speaker.py --dir recorded_voices --out speaker_profile.pt
 ```
 
 初回実行時に SpeechBrain モデル（約300MB）が自動ダウンロードされる。
+
+- `--refs` と `--dir` は排他的で、どちらか片方を必ず指定する。
+- `--dir` は指定フォルダ直下の `*.wav` をファイル名昇順で読み込む。サブフォルダ内の WAV は対象外。
+- 指定フォルダが存在しない、フォルダではない、または直下に WAV がない場合はエラーを表示し、プロファイルは保存しない。
 
 ### 3. config.yaml で有効化する
 
