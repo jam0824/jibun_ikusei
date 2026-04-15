@@ -119,7 +119,36 @@ curl.exe -s -S -D - -X POST http://127.0.0.1:18765/v1/events -H "Content-Type: a
 - PowerShell で `Set-Content -Encoding UTF8` を使うと BOM 付きファイルになる環境があり、v1 実装では `invalid_json` になることがある
 - Windows での疎通確認は `-Encoding Ascii` または BOM なし UTF-8 を推奨する
 
-### 6-2. `quest_completed`
+### 6-2. `system_message`
+Chrome 拡張など外部クライアントからのシステム通知を、ユーザー発話ではない会話イベントとして受け取る。
+
+#### payload
+- 必須
+  - `text`: 非空文字列
+
+#### リクエスト例
+```json
+{
+  "eventType": "system_message",
+  "source": "chrome_extension",
+  "eventId": "evt-system-001",
+  "occurredAt": "2026-04-04T21:20:00+09:00",
+  "payload": {
+    "text": "学習クエスト達成です。+2 XP 獲得しました。"
+  },
+  "metadata": {
+    "browsingType": "good",
+    "domain": "react.dev"
+  }
+}
+```
+
+#### 内部変換
+- `payload.text` をそのまま内部のシステム通知本文に使う
+- 吹き出しは `user_message` と同位置に表示するが、system 用の別色にする
+- 会話保存時の role は `system` とする
+
+### 6-3. `quest_completed`
 外部のクエスト完了イベントを、自然文の内部発話へ変換して既存の会話入口へ流す。
 
 #### payload
@@ -165,7 +194,7 @@ curl.exe -s -S -D - -X POST http://127.0.0.1:18765/v1/events -H "Content-Type: a
 クエスト「Reactチュートリアルを見る」をクリアしたよ。XPは+2だよ。カテゴリは「学習」だよ。メモは「初回30分到達」だよ。
 ```
 
-### 6-3. `chrome_audible_tabs`
+### 6-4. `chrome_audible_tabs`
 Chrome 拡張から、現在可聴状態にある HTTP(S) タブの full snapshot を受け取る。
 
 #### payload
@@ -197,12 +226,16 @@ Chrome 拡張から、現在可聴状態にある HTTP(S) タブの full snapsho
 - `audibleTabs` が空配列の場合は「現在可聴タブなし」の snapshot として保持し、以前の可聴状態をクリアする
 
 ## 7. 内部処理
-- `user_message` / `quest_completed` は受信後に既存の `user_message_received` 経路へ流す
+- `user_message` / `system_message` / `quest_completed` は受信後に既存の会話入口へ流す
 - これにより以下を既存実装で処理する
-  - ユーザー吹き出し表示
+  - 吹き出し表示
+  - `user_message` はユーザー色、`system_message` はシステム色で表示
   - 会話保存
+  - `user_message` / `quest_completed` は role=`user`、`system_message` は role=`system` で保存
   - リリィの応答生成
   - 読み上げ
+- 応答生成時、保存済み `system_message` を後続ターンで追加の system prompt として無制限に再投入しない
+- `system_message` に応答するターンだけ、その通知本文を一時的な追加 system message として OpenAI へ送ってよい
 - `chrome_audible_tabs` は内部発話を生成せず、可聴タブ状態の更新だけを行う
 - `source` と `metadata` はログには残すが、内部発話文には混ぜない
 
@@ -258,6 +291,6 @@ Chrome 拡張から、現在可聴状態にある HTTP(S) タブの full snapsho
 - アプリ終了時は bridge を明示的に停止する
 
 ## 11. 将来拡張方針
-- v1 は `user_message`、`quest_completed`、`chrome_audible_tabs` を対象とする
+- v1 は `user_message`、`system_message`、`quest_completed`、`chrome_audible_tabs` を対象とする
 - v1 では共有シークレット、重複排除、Quest / Completion の直接永続化は実装しない
 - 将来的にイベント種別を増やす場合も、まずは「構造化イベントを既存の会話入口へ変換する」方針を優先する

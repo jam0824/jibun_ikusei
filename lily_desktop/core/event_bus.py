@@ -4,6 +4,7 @@ from PySide6.QtCore import QObject, Signal
 class EventBus(QObject):
     # ユーザー入力
     user_message_received = Signal(str)
+    system_message_received = Signal(str)
 
     # AI応答: (話者名, テキスト, ポーズヒント)
     ai_response_ready = Signal(str, str, str)

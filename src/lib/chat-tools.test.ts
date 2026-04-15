@@ -612,6 +612,29 @@ describe('get_messages_and_logs', () => {
     expect(result).toContain('hi there')
   })
 
+  it('labels system chat messages distinctly', async () => {
+    const ctx = createContext()
+    ctx.chatMessages = [
+      {
+        id: 'system-1',
+        sessionId: 'cs2',
+        role: 'system',
+        content: 'bridge notice',
+        createdAt: '2026-03-28T15:10:00.000Z',
+      },
+    ]
+
+    vi.mocked(api.getChatMessages).mockRejectedValueOnce(new Error('fallback'))
+
+    const result = await executeTool(
+      'get_messages_and_logs',
+      { type: 'chat_messages', sessionId: 'cs2' },
+      ctx,
+    )
+
+    expect(result).toContain('[システム] bridge notice')
+  })
+
   it('searches chat messages across sessions when date is provided', async () => {
     const ctx = createContext()
     ctx.chatSessions = [

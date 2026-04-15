@@ -75,9 +75,11 @@ describe('alarm-handlers', () => {
       )
       expect(bridgeCalls).toHaveLength(1)
       const bridgeBody = JSON.parse(String(bridgeCalls[0][1]?.body)) as {
+        eventType: string
         payload: { text: string }
         metadata: Record<string, unknown>
       }
+      expect(bridgeBody.eventType).toBe('system_message')
       expect(bridgeBody.payload.text).toBe(`「${questBody.title}」で+2 XPをゲットしました。`)
       expect(bridgeBody.metadata).toMatchObject({
         browsingType: 'good',
@@ -143,9 +145,11 @@ describe('alarm-handlers', () => {
       )
       expect(bridgeCalls).toHaveLength(1)
       const bridgeBody = JSON.parse(String(bridgeCalls[0][1]?.body)) as {
+        eventType: string
         payload: { text: string }
         metadata: Record<string, unknown>
       }
+      expect(bridgeBody.eventType).toBe('system_message')
       expect(bridgeBody.payload.text).toBe('「game.com」で-5 XPのペナルティとなりました。')
       expect(bridgeBody.metadata).toMatchObject({
         browsingType: 'bad',
@@ -221,7 +225,7 @@ describe('alarm-handlers', () => {
       expect(updated!.lastBadPenaltyAtSeconds).toBe(60 * 60)
     })
 
-    it('warningイベント後にwarningShownDomainsを更新し、bridgeへuser_messageを送る', async () => {
+    it('warningイベント後にwarningShownDomainsを更新し、bridgeへsystem_messageを送る', async () => {
       const progress = createMockDailyProgress({
         badBrowsingSeconds: 50 * 60,
         domainTimes: {
@@ -249,9 +253,11 @@ describe('alarm-handlers', () => {
       )
       expect(bridgeCalls).toHaveLength(1)
       const bridgeBody = JSON.parse(String(bridgeCalls[0][1]?.body)) as {
+        eventType: string
         payload: { text: string }
         metadata: Record<string, unknown>
       }
+      expect(bridgeBody.eventType).toBe('system_message')
       expect(bridgeBody.payload.text).toBe('Lily: game.com をあと10分見続けるとペナルティです。')
       expect(bridgeBody.metadata).toMatchObject({
         browsingType: 'warning',

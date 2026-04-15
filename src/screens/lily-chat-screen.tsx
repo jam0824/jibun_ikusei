@@ -124,6 +124,20 @@ export function LilyChatScreen() {
     await deleteSession(sessionId)
   }
 
+  const renderOutgoingBubble = (id: string, role: 'user' | 'system', content: string) => (
+    <div key={id} className="flex justify-end">
+      <div
+        data-message-role={role}
+        className={cn(
+          'max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tr-md px-4 py-3 text-sm leading-6 text-white shadow-sm',
+          role === 'system' ? 'bg-sky-600' : 'bg-violet-600',
+        )}
+      >
+        {content}
+      </div>
+    </div>
+  )
+
   return (
     <div className="flex min-h-screen flex-col bg-[radial-gradient(circle_at_top,_rgba(167,139,250,0.15),_transparent_35%),linear-gradient(to_bottom,_#f5f3ff,_#f8fafc_38%,_#f1f5f9)]">
       {/* Header */}
@@ -166,12 +180,8 @@ export function LilyChatScreen() {
         ) : (
           <div className="flex-1 space-y-4">
             {currentMessages.map((msg) =>
-              msg.role === 'user' ? (
-                <div key={msg.id} className="flex justify-end">
-                  <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tr-md bg-violet-600 px-4 py-3 text-sm leading-6 text-white shadow-sm">
-                    {msg.content}
-                  </div>
-                </div>
+              msg.role === 'user' || msg.role === 'system' ? (
+                renderOutgoingBubble(msg.id, msg.role, msg.content)
               ) : (
                 (() => {
                   const { isHaruka, displayContent } = parseAssistantMessage(msg.content)

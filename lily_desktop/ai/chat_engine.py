@@ -107,21 +107,36 @@ class ChatEngine:
             "createdAt": datetime.now(JST).isoformat(),
         })
 
-    async def handle_user_message(self, text: str) -> str | None:
-        """ユーザーメッセージを処理し、リリィの応答テキストを返す（掛け合い連携用）"""
-        try:
-            # ユーザーメッセージをDB保存
-            await self._session_mgr.save_message("user", text)
-            self._history.append({"role": "user", "content": text})
-            self._append_current_session_message("user", text)
+    @staticmethod
+    def _normalize_history_messages(messages: list[dict[str, Any]]) -> list[dict[str, str]]:
+        normalized: list[dict[str, str]] = []
+        for message in messages:
+            role = message.get("role")
+            content = message.get("content")
+            if role not in {"user", "assistant"} or not isinstance(content, str):
+                continue
+            normalized.append({"role": role, "content": content})
+        return normalized
 
-            # リリィ応答（JSON形式）
-            raw_response = await self._get_lily_response()
+    async def _handle_incoming_message(
+        self,
+        *,
+        role: str,
+        text: str,
+        runtime_system_message: str | None = None,
+    ) -> str | None:
+        try:
+            self._history = self._normalize_history_messages(self._history)
+            await self._session_mgr.save_message(role, text)
+            if role == "user":
+                self._history.append({"role": "user", "content": text})
+            self._append_current_session_message(role, text)
+
+            raw_response = await self._get_lily_response(runtime_system_message=runtime_system_message)
             lily_text, pose_category = parse_ai_response(raw_response)
 
             bus.ai_response_ready.emit("リリィ", lily_text, pose_category)
 
-            # リリィ応答をDB保存（テキスト部分のみ）
             await self._session_mgr.save_message("assistant", lily_text)
             self._history.append({"role": "assistant", "content": lily_text})
             self._append_current_session_message("assistant", lily_text)
@@ -133,7 +148,18 @@ class ChatEngine:
             bus.balloon_show.emit("システム", f"エラー: {e}")
             return None
 
-    async def _get_lily_response(self) -> str:
+    async def handle_user_message(self, text: str) -> str | None:
+        """ユーザーメッセージを処理し、リリィの応答テキストを返す（掛け合い連携用）"""
+        return await self._handle_incoming_message(role="user", text=text)
+
+    async def handle_system_message(self, text: str) -> str | None:
+        return await self._handle_incoming_message(
+            role="system",
+            text=text,
+            runtime_system_message=f"システム通知: {text}",
+        )
+
+    async def _get_lily_response(self, *, runtime_system_message: str | None = None) -> str:
         """リリィのシステムプロンプトを構築してAI応答を取得"""
         # コンテキスト情報を取得
         user_data, skills, quests, completions, activity_logs = await self._fetch_context()
@@ -159,10 +185,10 @@ class ChatEngine:
             activity_logs=activity_logs,
         )
 
-        messages: list[dict[str, Any]] = [
-            {"role": "system", "content": system_prompt},
-            *self._history,
-        ]
+        messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
+        if runtime_system_message:
+            messages.append({"role": "system", "content": runtime_system_message})
+        messages.extend(self._normalize_history_messages(self._history))
 
         result = await send_chat_message(
             api_key=self._config.openai.api_key,
@@ -242,39 +268,6 @@ class ChatEngine:
         self._context_cache_expires_at = now + timedelta(seconds=CONTEXT_CACHE_TTL_SECONDS)
         return context
 
-        user_data = None
-        skills: list[dict] = []
-        quests: list[dict] = []
-        completions: list[dict] = []
-        activity_logs: list[dict] = []
-
-        try:
-            user_data = await self._api.get_user()
-        except Exception:
-            logger.warning("ユーザー情報取得失敗")
-
-        try:
-            skills = await self._api.get_skills()
-        except Exception:
-            logger.warning("スキル取得失敗")
-
-        try:
-            quests = await self._api.get_quests()
-        except Exception:
-            logger.warning("クエスト取得失敗")
-
-        try:
-            completions = await self._api.get_completions()
-        except Exception:
-            logger.warning("完了記録取得失敗")
-
-        try:
-            activity_logs = await self._api.get_activity_logs(from_date, to_date)
-        except Exception:
-            logger.warning("アクティビティログ取得失敗")
-
-        return user_data, skills, quests, completions, activity_logs
-
     async def load_session_history(self) -> None:
         """現在のセッションの会話履歴を読み込む"""
         session_id = self._session_mgr.current_session_id
@@ -282,10 +275,7 @@ class ChatEngine:
             return
         try:
             messages = await self._api.get_chat_messages(session_id)
-            self._history = [
-                {"role": m["role"], "content": m["content"]}
-                for m in messages
-            ]
+            self._history = self._normalize_history_messages(messages)
             self._current_session_messages = [
                 {
                     "sessionId": m.get("sessionId", session_id),

@@ -49,6 +49,20 @@ function getLatestSession(sessions: ChatSession[]): ChatSession | null {
   return sessions[0] ?? null
 }
 
+function toApiConversationMessage(message: ChatMessage): ChatMessageParam {
+  if (message.role === 'system') {
+    return {
+      role: 'user',
+      content: `[システム通知] ${message.content}`,
+    }
+  }
+
+  return {
+    role: message.role,
+    content: message.content,
+  }
+}
+
 function updateSessionList(
   sessions: ChatSession[],
   sessionId: string,
@@ -274,10 +288,7 @@ export const useChatStore = create<ChatStore>((set, get) => ({
       // Build messages array for API
       const apiMessages: ChatMessageParam[] = [
         { role: 'system', content: systemPrompt },
-        ...updatedMessages.map((m) => ({
-          role: m.role as 'user' | 'assistant',
-          content: m.content,
-        })),
+        ...updatedMessages.map(toApiConversationMessage),
       ]
 
       let result = await sendLilyChatMessage({

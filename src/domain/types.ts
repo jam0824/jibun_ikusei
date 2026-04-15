@@ -260,7 +260,7 @@ export interface StatusView {
   recommendedQuests: Quest[]
 }
 
-export type ChatMessageRole = 'user' | 'assistant'
+export type ChatMessageRole = 'user' | 'assistant' | 'system'
 
 export interface ChatSession {
   id: string

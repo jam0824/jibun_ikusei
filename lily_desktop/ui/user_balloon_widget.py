@@ -15,6 +15,8 @@ _PADDING_X = 16
 _PADDING_Y = 10
 _MAX_WIDTH = 360
 _BORDER_RADIUS = 12
+_USER_BACKGROUND_COLOR = QColor(124, 58, 237, 210)
+_SYSTEM_BACKGROUND_COLOR = QColor(14, 116, 144, 210)
 
 
 class UserBalloonWidget(QWidget):
@@ -31,6 +33,8 @@ class UserBalloonWidget(QWidget):
         self.setStyleSheet("background: transparent;")
 
         self._text = ""
+        self._variant = "user"
+        self._background_color = _USER_BACKGROUND_COLOR
         self._display_seconds = normalize_user_balloon_display_seconds(display_seconds)
         self._font = QFont("Yu Gothic UI", 11)
         self._font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
@@ -41,10 +45,14 @@ class UserBalloonWidget(QWidget):
 
         self.hide()
 
-    def show_message(self, text: str) -> None:
+    def show_message(self, text: str, *, variant: str = "user") -> None:
         """テキストを表示して設定秒数後に自動で隠す。"""
         self._hide_timer.stop()
         self._text = text
+        self._variant = "system" if variant == "system" else "user"
+        self._background_color = (
+            _SYSTEM_BACKGROUND_COLOR if self._variant == "system" else _USER_BACKGROUND_COLOR
+        )
         self._update_size()
         self.show()
         self.update()
@@ -68,7 +76,7 @@ class UserBalloonWidget(QWidget):
         # 背景（角丸の半透明パープル）
         path = QPainterPath()
         path.addRoundedRect(0.0, 0.0, self.width(), self.height(), _BORDER_RADIUS, _BORDER_RADIUS)
-        painter.fillPath(path, QColor(124, 58, 237, 210))  # #7c3aed, 少し透過
+        painter.fillPath(path, self._background_color)
 
         # テキスト
         painter.setFont(self._font)

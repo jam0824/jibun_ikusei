@@ -61,6 +61,22 @@ class LoadedSessionMessages:
     messages: list[dict[str, Any]]
 
 
+def _chat_role_label(role: str) -> str:
+    if role == "user":
+        return "user"
+    if role == "system":
+        return "system"
+    return "assistant"
+
+
+def _chat_role_label_ja(role: str) -> str:
+    if role == "user":
+        return "ユーザー"
+    if role == "system":
+        return "システム"
+    return "リリィ"
+
+
 def to_jst(iso_value: str) -> str:
     """ISO文字列を JST の 'YYYY-MM-DD HH:MM' 形式に変換する。"""
     parsed = _parse_iso_datetime(iso_value)
@@ -586,7 +602,7 @@ class ToolExecutor:
                 "",
             ]
             for message in messages[:30]:
-                label = "user" if message.get("role") == "user" else "assistant"
+                label = _chat_role_label(str(message.get("role", "")))
                 content = str(message.get("content", ""))[:100]
                 lines.append(f"- [{label}] {content} ({to_jst(str(message.get('createdAt', '')))})")
             if len(messages) > 30:
@@ -622,7 +638,7 @@ class ToolExecutor:
         matched_messages.sort(key=lambda item: item[0].get("createdAt", ""), reverse=True)
         lines = [f"Chat messages ({date_filter.label})", f"Total: {len(matched_messages)}", ""]
         for message, session in matched_messages[:30]:
-            label = "user" if message.get("role") == "user" else "assistant"
+            label = _chat_role_label(str(message.get("role", "")))
             content = str(message.get("content", ""))[:100]
             session_title = session.get("title") or session.get("id", "")
             lines.append(f"- [{session_title} / {label}] {content} ({to_jst(str(message.get('createdAt', '')))})")
@@ -1002,7 +1018,7 @@ class ToolExecutor:
                     "",
                 ]
                 for message in messages[:30]:
-                    label = "ユーザー" if message.get("role") == "user" else "リリィ"
+                    label = _chat_role_label_ja(str(message.get("role", "")))
                     content = str(message.get("content", ""))[:100]
                     lines.append(f"- [{label}] {content}（{to_jst(str(message.get('createdAt', '')))}）")
                 if len(messages) > 30:
@@ -1042,7 +1058,7 @@ class ToolExecutor:
 
             lines = [f"【チャットメッセージ（{date_filter.label}）】", f"合計: {len(matched_messages)}件", ""]
             for message, session in matched_messages[:30]:
-                label = "ユーザー" if message.get("role") == "user" else "リリィ"
+                label = _chat_role_label_ja(str(message.get("role", "")))
                 content = str(message.get("content", ""))[:100]
                 session_title = session.get("title") or session.get("id", "")
                 lines.append(f"- [{session_title} / {label}] {content}（{to_jst(str(message.get('createdAt', '')))}）")
