@@ -13,6 +13,7 @@ _ENV_PATH = _PROJECT_ROOT / ".env"
 SYS_DIR = _BASE_DIR / "sys"
 DEFAULT_USER_BALLOON_DISPLAY_SECONDS = 8.0
 DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES = 15
+DEFAULT_LEVEL_WATCH_INTERVAL_MINUTES = 10
 DEFAULT_HTTP_BRIDGE_PORT = 18765
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_MEMORY_DIRECTORY = r"D:\codes\mixi2-api\generated_text"
@@ -60,6 +61,17 @@ def normalize_healthplanet_sync_interval_minutes(value: object) -> int:
         return DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES
     if minutes <= 0:
         return DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES
+    return minutes
+
+
+def normalize_level_watch_interval_minutes(value: object) -> int:
+    """レベル監視間隔を正の分数に正規化する。"""
+    try:
+        minutes = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_LEVEL_WATCH_INTERVAL_MINUTES
+    if minutes <= 0:
+        return DEFAULT_LEVEL_WATCH_INTERVAL_MINUTES
     return minutes
 
 
@@ -149,6 +161,7 @@ class DesktopConfig:
     analysis_provider: str = "openai"
     analysis_base_url: str = DEFAULT_OLLAMA_BASE_URL
     analysis_model: str = "gpt-5.4"
+    level_watch_interval_minutes: int = DEFAULT_LEVEL_WATCH_INTERVAL_MINUTES
 
 
 @dataclass
@@ -373,6 +386,14 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         OpenAIConfig().screen_analysis_model,
     )
     desktop_raw["analysis_model"] = str(desktop_model)
+    desktop_raw["level_watch_interval_minutes"] = (
+        normalize_level_watch_interval_minutes(
+            desktop_raw.get(
+                "level_watch_interval_minutes",
+                DEFAULT_LEVEL_WATCH_INTERVAL_MINUTES,
+            )
+        )
+    )
     chat_raw = raw.get("chat", {}) or {}
     if not isinstance(chat_raw, dict):
         chat_raw = {}

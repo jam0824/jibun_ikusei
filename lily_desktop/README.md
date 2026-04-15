@@ -78,6 +78,9 @@ display:
   haruka_scale: 0.7  # 葉留佳の表示サイズ
   user_balloon_display_seconds: 8.0  # 手入力/音声認識の表示秒数（再起動後に反映）
 
+desktop:
+  level_watch_interval_minutes: 10  # 起動時に1回比較用スナップショットを作り、その後はこの分間隔でレベル監視
+
 healthplanet:
   sync_interval_minutes: 15  # 起動時に即時同期し、その後はこの分間隔で再同期
 
@@ -86,6 +89,8 @@ voice:
   speaker_verification_recording_enabled: true
   speaker_verification_recording_threshold: 0.25
 ```
+
+`desktop.level_watch_interval_minutes` の既定値は 10 分。起動時は user / skills を 1 回取得して比較用スナップショットだけを保存し、通知は出さない。以後はこの間隔ごとに前回との差分を比較し、ユーザーレベルや既知スキルのレベルが上がっていれば 1 件の `system_message` として既存の会話フローへ流す。スナップショットは `lily_desktop/logs/level_watch/last_snapshot.json` に JST タイムスタンプ付きで保存される。
 
 ### 4. 起動する
 
