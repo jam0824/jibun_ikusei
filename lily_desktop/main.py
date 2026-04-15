@@ -19,7 +19,12 @@ from api.auth import CognitoAuth
 from core.background_event_runtime import register_background_event_handlers
 from core.camera import find_camera_index
 from core.chrome_audible_tabs import ChromeAudibleTabsTracker
-from core.config import load_config, save_camera_device, save_voice_device, save_healthplanet_token
+from core.config import (
+    load_config,
+    save_camera_device,
+    save_healthplanet_token,
+    save_voice_device,
+)
 from core.desktop_context import format_context_log
 from core.domain_events import (
     AppStarted,
@@ -28,9 +33,11 @@ from core.domain_events import (
     ChatAutoTalkDue,
     DomainEventHub,
     HealthPlanetSyncRequested,
+    LevelWatchRequested,
 )
 from core.event_bus import bus
 from core.job_manager import JobManager
+from core.level_watch import LevelWatchService
 from core.local_http_bridge import LocalHttpBridge, start_local_http_bridge
 from core.runtime_logging import configure_runtime_logging
 from core.situation_capture import SituationCaptureCoordinator
@@ -94,6 +101,7 @@ class App:
         self.pending_periodic_auto_talk: ChatAutoTalkDue | None = None
         self.pending_periodic_expires_at: datetime | None = None
         self.chrome_audible_tabs_tracker = ChromeAudibleTabsTracker()
+        self.level_watch = LevelWatchService()
 
         # Fitbit 同期
         self.fitbit_sync: FitbitSync | None = None
@@ -113,6 +121,9 @@ class App:
         self._camera_timer.setSingleShot(False)
         self._summary_timer = QTimer()
         self._summary_timer.setSingleShot(False)
+        self._level_watch_timer = QTimer()
+        self._level_watch_timer.setSingleShot(False)
+        self._level_watch_timer.timeout.connect(self._on_level_watch_timer)
         self._healthplanet_timer = QTimer()
         self._healthplanet_timer.setSingleShot(False)
         self._healthplanet_timer.timeout.connect(self._on_healthplanet_timer)
@@ -418,6 +429,20 @@ class App:
     def _on_healthplanet_timer(self) -> None:
         self.start_healthplanet_sync(interactive_auth=False)
 
+    def start_level_watch_timer(self) -> None:
+        interval_ms = self.config.desktop.level_watch_interval_minutes * 60 * 1000
+        self._level_watch_timer.start(interval_ms)
+        logger.info(
+            "レベル監視タイマー開始: %d分間隔",
+            self.config.desktop.level_watch_interval_minutes,
+        )
+
+    def stop_level_watch_timer(self) -> None:
+        self._level_watch_timer.stop()
+
+    def _on_level_watch_timer(self) -> None:
+        asyncio.ensure_future(self.run_level_watch_job())
+
     def _on_healthplanet_oauth_dialog_closed(self) -> None:
         self._healthplanet_oauth_dialog = None
 
@@ -541,6 +566,24 @@ class App:
     def _on_summary_timer(self) -> None:
         """30分間隔のサーバー要約"""
         asyncio.ensure_future(self._generate_and_send_summary())
+
+    async def run_level_watch_job(self) -> None:
+        if not getattr(self.auth, "is_configured", False):
+            logger.info("レベル監視をスキップ: Cognito未設定")
+            return
+
+        try:
+            message = await self.level_watch.check_once(self.api_client)
+        except Exception:
+            logger.exception("レベル監視ジョブに失敗")
+            return
+
+        if not message:
+            return
+
+        self.chat_engine.invalidate_context_cache()
+        logger.info("レベルアップ通知を system_message に送信: %s", message)
+        bus.system_message_received.emit(message)
 
     async def _capture_and_record(self) -> SituationRecord | None:
         """カメラ画像取得 + デスクトップ文脈取得の統合版。"""
@@ -786,6 +829,7 @@ _LEGACY_START_HEALTHPLANET_SYNC = App.start_healthplanet_sync
 _LEGACY_ON_HEALTHPLANET_TIMER = App._on_healthplanet_timer
 _LEGACY_ON_CAMERA_TIMER = App._on_camera_timer
 _LEGACY_ON_SUMMARY_TIMER = App._on_summary_timer
+_LEGACY_ON_LEVEL_WATCH_TIMER = App._on_level_watch_timer
 
 
 async def _evented_handle_healthplanet_sync_request(
@@ -882,6 +926,15 @@ def _evented_on_summary_timer(self: App) -> None:
     _LEGACY_ON_SUMMARY_TIMER(self)
 
 
+def _evented_on_level_watch_timer(self: App) -> None:
+    if getattr(self, "event_hub", None) is not None:
+        self.event_hub.publish(
+            LevelWatchRequested(source="desktop.level_watch.timer")
+        )
+        return
+    _LEGACY_ON_LEVEL_WATCH_TIMER(self)
+
+
 App.handle_healthplanet_sync_request = _evented_handle_healthplanet_sync_request
 App.handle_fitbit_sync_request = _evented_handle_fitbit_sync_request
 App.run_capture_snapshot_job = _evented_run_capture_snapshot_job
@@ -890,6 +943,7 @@ App.start_healthplanet_sync = _evented_start_healthplanet_sync
 App._on_healthplanet_timer = _evented_on_healthplanet_timer
 App._on_camera_timer = _evented_on_camera_timer
 App._on_summary_timer = _evented_on_summary_timer
+App._on_level_watch_timer = _evented_on_level_watch_timer
 
 
 async def async_init(app_instance: App) -> None:
@@ -927,6 +981,7 @@ async def async_init(app_instance: App) -> None:
 
     if app_instance.config.healthplanet.client_id:
         app_instance.start_healthplanet_timer()
+    app_instance.start_level_watch_timer()
 
     if getattr(app_instance, "event_hub", None) is not None:
         app_instance.event_hub.publish(AppStarted(source="async_init"))
@@ -985,6 +1040,7 @@ def main() -> None:
             app_instance.tts_engine.clear_queue()
         app_instance.stop_http_bridge()
         app_instance.stop_camera_system()
+        app_instance.stop_level_watch_timer()
 
     qt_app.aboutToQuit.connect(on_quit)
 

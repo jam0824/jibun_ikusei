@@ -5,6 +5,7 @@ desktop:
   analysis_provider: ollama
   analysis_base_url: http://127.0.0.1:11434
   analysis_model: gemma4:e4b
+  level_watch_interval_minutes: 10
 chat:
   auto_talk_interval_minutes: 15
   auto_talk_min_turns: 3

@@ -5,6 +5,7 @@ import core.config as config_mod
 from core.config import (
     DEFAULT_HTTP_BRIDGE_PORT,
     DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES,
+    DEFAULT_LEVEL_WATCH_INTERVAL_MINUTES,
     DEFAULT_MEMORY_DIRECTORY,
     DEFAULT_USER_BALLOON_DISPLAY_SECONDS,
     load_config,
@@ -337,6 +338,47 @@ def test_desktop_provider_defaults_to_legacy_openai_screen_model(tmp_path):
     assert config.desktop.analysis_provider == "openai"
     assert config.desktop.analysis_base_url == "http://127.0.0.1:11434"
     assert config.desktop.analysis_model == "gpt-5.4-mini"
+
+
+def test_desktop_level_watch_interval_minutes_defaults_to_10(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert (
+        config.desktop.level_watch_interval_minutes
+        == DEFAULT_LEVEL_WATCH_INTERVAL_MINUTES
+    )
+
+
+def test_desktop_level_watch_interval_minutes_uses_config_value(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "desktop:\n"
+        "  level_watch_interval_minutes: 12\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.desktop.level_watch_interval_minutes == 12
+
+
+def test_desktop_level_watch_interval_minutes_invalid_value_falls_back(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "desktop:\n"
+        "  level_watch_interval_minutes: 0\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert (
+        config.desktop.level_watch_interval_minutes
+        == DEFAULT_LEVEL_WATCH_INTERVAL_MINUTES
+    )
 
 
 def test_chat_auto_talk_skip_audible_domains_defaults(tmp_path):

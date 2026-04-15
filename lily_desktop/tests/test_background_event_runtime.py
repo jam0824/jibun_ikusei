@@ -15,6 +15,7 @@ from core.domain_events import (
     DomainEventHub,
     FitbitSyncRequested,
     HealthPlanetSyncRequested,
+    LevelWatchRequested,
 )
 from core.job_manager import JobManager
 
@@ -62,6 +63,9 @@ class _FakeApp:
         self.summary_second_finished = asyncio.Event()
         self.chat_auto_talk_events: list[ChatAutoTalkDue] = []
         self.chat_auto_talk_started = asyncio.Event()
+        self.level_watch_calls = 0
+        self.level_watch_started = asyncio.Event()
+        self.level_watch_release = asyncio.Event()
 
     async def handle_healthplanet_sync_request(self, *, interactive_auth: bool) -> None:
         self.healthplanet_calls.append(interactive_auth)
@@ -98,6 +102,12 @@ class _FakeApp:
         else:
             self.summary_second_finished.set()
 
+    async def run_level_watch_job(self) -> None:
+        self.level_watch_calls += 1
+        self.level_watch_started.set()
+        if self.level_watch_calls == 1:
+            await self.level_watch_release.wait()
+
 
 @pytest.mark.asyncio
 async def test_app_started_publishes_startup_sync_requests():
@@ -109,6 +119,7 @@ async def test_app_started_publishes_startup_sync_requests():
     seen: list[str] = []
     health_event = asyncio.Event()
     fitbit_event = asyncio.Event()
+    level_watch_event = asyncio.Event()
 
     async def on_health(_event: HealthPlanetSyncRequested) -> None:
         seen.append("health")
@@ -118,21 +129,30 @@ async def test_app_started_publishes_startup_sync_requests():
         seen.append("fitbit")
         fitbit_event.set()
 
+    async def on_level_watch(_event: LevelWatchRequested) -> None:
+        seen.append("level_watch")
+        level_watch_event.set()
+
     hub.subscribe(HealthPlanetSyncRequested, on_health)
     hub.subscribe(FitbitSyncRequested, on_fitbit)
+    hub.subscribe(LevelWatchRequested, on_level_watch)
 
     hub.publish(AppStarted(source="startup"))
 
     await asyncio.wait_for(health_event.wait(), timeout=1)
     await asyncio.wait_for(fitbit_event.wait(), timeout=1)
+    await asyncio.wait_for(level_watch_event.wait(), timeout=1)
 
     app.capture_release.set()
     await asyncio.wait_for(app.healthplanet_started.wait(), timeout=1)
     await asyncio.wait_for(app.fitbit_started.wait(), timeout=1)
+    app.level_watch_release.set()
+    await asyncio.wait_for(app.level_watch_started.wait(), timeout=1)
 
-    assert seen == ["health", "fitbit"]
+    assert seen == ["health", "fitbit", "level_watch"]
     assert app.healthplanet_calls == [True]
     assert app.fitbit_calls == 1
+    assert app.level_watch_calls == 1
 
 
 @pytest.mark.asyncio
@@ -282,3 +302,23 @@ async def test_capture_summary_uses_serial_policy():
     app.summary_release.set()
     await asyncio.wait_for(app.summary_second_finished.wait(), timeout=1)
     assert app.summary_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_level_watch_requests_are_coalesced():
+    app = _FakeApp()
+    hub = DomainEventHub()
+    manager = JobManager()
+    register_background_event_handlers(app, hub, manager)
+
+    hub.publish(LevelWatchRequested(source="startup"))
+    await asyncio.wait_for(app.level_watch_started.wait(), timeout=1)
+    hub.publish(LevelWatchRequested(source="timer"))
+
+    app.level_watch_release.set()
+    for _ in range(50):
+        if app.level_watch_calls == 2:
+            break
+        await asyncio.sleep(0.01)
+
+    assert app.level_watch_calls == 2

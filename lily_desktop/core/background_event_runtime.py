@@ -9,6 +9,7 @@ from core.domain_events import (
     DomainEventHub,
     FitbitSyncRequested,
     HealthPlanetSyncRequested,
+    LevelWatchRequested,
 )
 from core.job_manager import JobManager
 
@@ -35,6 +36,12 @@ def register_background_event_handlers(
                     correlation_id=correlation_id,
                 )
             )
+        event_hub.publish(
+            LevelWatchRequested(
+                source="app.started",
+                correlation_id=correlation_id,
+            )
+        )
 
     async def on_healthplanet_requested(event: HealthPlanetSyncRequested) -> None:
         await job_manager.submit(
@@ -50,6 +57,13 @@ def register_background_event_handlers(
             "fitbit.sync",
             "single_flight_coalesce",
             app.handle_fitbit_sync_request,
+        )
+
+    async def on_level_watch_requested(_event: LevelWatchRequested) -> None:
+        await job_manager.submit(
+            "desktop.level_watch",
+            "single_flight_coalesce",
+            app.run_level_watch_job,
         )
 
     async def on_chat_auto_talk_due(event: ChatAutoTalkDue) -> None:
@@ -82,6 +96,7 @@ def register_background_event_handlers(
     event_hub.subscribe(AppStarted, on_app_started)
     event_hub.subscribe(HealthPlanetSyncRequested, on_healthplanet_requested)
     event_hub.subscribe(FitbitSyncRequested, on_fitbit_requested)
+    event_hub.subscribe(LevelWatchRequested, on_level_watch_requested)
     event_hub.subscribe(ChatAutoTalkDue, on_chat_auto_talk_due)
     event_hub.subscribe(ChatFollowUpRequested, on_chat_follow_up)
     event_hub.subscribe(CaptureSnapshotRequested, on_capture_snapshot)

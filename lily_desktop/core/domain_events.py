@@ -50,6 +50,11 @@ class FitbitSyncRequested(DomainEvent):
 
 
 @dataclass(slots=True, kw_only=True)
+class LevelWatchRequested(DomainEvent):
+    pass
+
+
+@dataclass(slots=True, kw_only=True)
 class ChatAutoTalkDue(DomainEvent):
     forced_source: str | None = None
 
