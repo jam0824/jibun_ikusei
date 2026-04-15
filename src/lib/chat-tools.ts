@@ -275,6 +275,12 @@ function buildContextMessagesBySession(messages: ChatMessage[]): Map<string, Cha
   return grouped
 }
 
+function getChatMessageRoleLabel(role: ChatMessage['role']): string {
+  if (role === 'user') return 'ユーザー'
+  if (role === 'system') return 'システム'
+  return 'リリィ'
+}
+
 function isRetryableMessageFetchError(error: unknown): boolean {
   return error instanceof Error && /\b(502|503|504)\b/.test(error.message)
 }
@@ -482,7 +488,7 @@ async function executeChatMessagesLookup(
       '',
     ]
     const items = messages.slice(0, 30).map((message) => {
-      const label = message.role === 'user' ? 'ユーザー' : 'リリィ'
+      const label = getChatMessageRoleLabel(message.role)
       return `- [${label}] ${message.content.slice(0, 100)} (${toJst(message.createdAt)})`
     })
 
@@ -516,7 +522,7 @@ async function executeChatMessagesLookup(
 
   const lines = [`チャットメッセージ (${dateFilter.label})`, `合計: ${messages.length}件`, '']
   const items = messages.slice(0, 30).map(({ message, session }) => {
-    const label = message.role === 'user' ? 'ユーザー' : 'リリィ'
+    const label = getChatMessageRoleLabel(message.role)
     return `- [${session.title} / ${label}] ${message.content.slice(0, 100)} (${toJst(message.createdAt)})`
   })
 
@@ -1363,7 +1369,7 @@ async function executeGetMessagesAndLogs(args: ToolArgs, context: ToolContext): 
         '',
       ]
       const items = messages.slice(0, 30).map((message) => {
-        const label = message.role === 'user' ? 'ユーザー' : 'リリー'
+        const label = getChatMessageRoleLabel(message.role)
         return `- [${label}] ${message.content.slice(0, 100)}（${toJst(message.createdAt)}）`
       })
 
@@ -1404,7 +1410,7 @@ async function executeGetMessagesAndLogs(args: ToolArgs, context: ToolContext): 
 
     const lines = [`【チャットメッセージ（${dateFilter.label}）】`, `合計: ${messages.length}件`, '']
     const items = messages.slice(0, 30).map(({ message, session }) => {
-      const label = message.role === 'user' ? 'ユーザー' : 'リリー'
+      const label = getChatMessageRoleLabel(message.role)
       return `- [${session.title} / ${label}] ${message.content.slice(0, 100)}（${toJst(message.createdAt)}）`
     })
 

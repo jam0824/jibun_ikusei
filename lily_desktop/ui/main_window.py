@@ -91,6 +91,7 @@ class MainWindow(QWidget):
         bus.balloon_show.connect(self._on_balloon_show)
         bus.balloon_hide.connect(self._on_balloon_hide)
         bus.user_message_received.connect(self._on_user_message)
+        bus.system_message_received.connect(self._on_system_message)
 
     def _on_balloon_show(self, speaker: str, text: str) -> None:
         # 話者に応じて吹き出し位置を切り替え
@@ -112,6 +113,10 @@ class MainWindow(QWidget):
     def _on_user_message(self, text: str) -> None:
         # ユーザー発言を吹き出しに表示
         self.user_balloon.show_message(text)
+        self._position_user_balloon()
+
+    def _on_system_message(self, text: str) -> None:
+        self.user_balloon.show_message(text, variant="system")
         self._position_user_balloon()
 
     # --- ウィンドウ位置の保存・復元 ---

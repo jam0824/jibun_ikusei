@@ -15,7 +15,7 @@ JST = timezone(timedelta(hours=9))
 HTTP_BRIDGE_HOST = "127.0.0.1"
 HTTP_BRIDGE_ENDPOINT = "/v1/events"
 _SUPPORTED_EVENT_TYPES = frozenset(
-    {"user_message", "quest_completed", "chrome_audible_tabs"}
+    {"user_message", "system_message", "quest_completed", "chrome_audible_tabs"}
 )
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class AcceptedHttpBridgeEvent:
     event_type: str
+    message_role: str | None
     source: str
     payload: dict[str, Any]
     event_id: str | None
@@ -211,6 +212,13 @@ def validate_http_bridge_event(
         payload = {
             "text": _require_non_empty_string(payload_raw.get("text"), "payload.text"),
         }
+        message_role = "user"
+        internal_user_message = payload["text"]
+    elif event_type == "system_message":
+        payload = {
+            "text": _require_non_empty_string(payload_raw.get("text"), "payload.text"),
+        }
+        message_role = "system"
         internal_user_message = payload["text"]
     elif event_type == "quest_completed":
         payload = {
@@ -219,13 +227,16 @@ def validate_http_bridge_event(
             "category": _optional_string(payload_raw.get("category"), "payload.category"),
             "note": _optional_string(payload_raw.get("note"), "payload.note"),
         }
+        message_role = "user"
         internal_user_message = _build_quest_completed_message(payload)
     else:
         payload = _parse_audible_tabs_payload(payload_raw)
+        message_role = None
         internal_user_message = ""
 
     return AcceptedHttpBridgeEvent(
         event_type=event_type,
+        message_role=message_role,
         source=source,
         payload=payload,
         event_id=event_id,
@@ -328,6 +339,8 @@ class _LocalHttpBridgeRequestHandler(BaseHTTPRequestHandler):
                 accepted.received_at,
                 accepted.payload["audibleTabs"],
             )
+        elif accepted.message_role == "system":
+            self.server.bridge.dispatch_system_message(accepted.internal_user_message)
         else:
             self.server.bridge.dispatch_user_message(accepted.internal_user_message)
         self._write_json(
@@ -409,6 +422,7 @@ class LocalHttpBridge:
         port: int,
         event_loop,
         emit_user_message: Callable[[str], None],
+        emit_system_message: Callable[[str], None],
         update_chrome_audible_tabs: Callable[[datetime, list[dict[str, Any]]], None] | None = None,
         host: str = HTTP_BRIDGE_HOST,
         logger_instance: logging.Logger | None = None,
@@ -417,6 +431,7 @@ class LocalHttpBridge:
         self.port = port
         self._event_loop = event_loop
         self._emit_user_message = emit_user_message
+        self._emit_system_message = emit_system_message
         self._update_chrome_audible_tabs = update_chrome_audible_tabs
         self._server: _LocalHttpBridgeServer | None = None
         self._thread: threading.Thread | None = None
@@ -462,6 +477,9 @@ class LocalHttpBridge:
     def dispatch_user_message(self, message: str) -> None:
         self._event_loop.call_soon_threadsafe(self._emit_user_message, message)
 
+    def dispatch_system_message(self, message: str) -> None:
+        self._event_loop.call_soon_threadsafe(self._emit_system_message, message)
+
     def dispatch_chrome_audible_tabs(
         self,
         received_at: datetime,
@@ -503,6 +521,7 @@ def start_local_http_bridge(
     *,
     event_loop,
     emit_user_message: Callable[[str], None],
+    emit_system_message: Callable[[str], None],
     update_chrome_audible_tabs: Callable[[datetime, list[dict[str, Any]]], None] | None = None,
     logger_instance: logging.Logger | None = None,
 ) -> LocalHttpBridge | None:
@@ -515,6 +534,7 @@ def start_local_http_bridge(
         port=config.port,
         event_loop=event_loop,
         emit_user_message=emit_user_message,
+        emit_system_message=emit_system_message,
         update_chrome_audible_tabs=update_chrome_audible_tabs,
         logger_instance=active_logger,
     )

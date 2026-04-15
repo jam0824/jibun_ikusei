@@ -6,7 +6,7 @@ import {
   sortSyncEntries,
 } from '@ext/lib/browsing-sync'
 import { isLoggedIn } from '@ext/lib/auth'
-import { sendBrowsingUserMessageToLilyDesktop } from '@ext/lib/lily-desktop-bridge'
+import { sendBrowsingSystemMessageToLilyDesktop } from '@ext/lib/lily-desktop-bridge'
 import { getLocal, removeLocal, setLocal } from '@ext/lib/storage'
 import { sendToastToActiveTab } from '@ext/lib/notifications'
 import type {
@@ -104,7 +104,7 @@ async function evaluateAndEnqueue(): Promise<void> {
     if (event.type === 'warning') {
       if (notificationsEnabled) {
         const warningEntry = resolveWarningDomainEntry(progress, event.domain)
-        await sendBrowsingUserMessageToLilyDesktop({
+        await sendBrowsingSystemMessageToLilyDesktop({
           browsingType: 'warning',
           xp: event.xp,
           domain: event.domain,
@@ -176,7 +176,7 @@ async function evaluateAndEnqueue(): Promise<void> {
         },
       },
     })
-    await sendBrowsingUserMessageToLilyDesktop({
+    await sendBrowsingSystemMessageToLilyDesktop({
       browsingType: event.type === 'good_quest' ? 'good' : 'bad',
       xp: event.xp,
       title: messageTitle,

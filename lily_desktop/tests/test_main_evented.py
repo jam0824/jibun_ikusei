@@ -149,9 +149,16 @@ class _FakeChatEngine:
         self.started = asyncio.Event()
         self.release = asyncio.Event()
         self.calls: list[str] = []
+        self.system_calls: list[str] = []
 
     async def handle_user_message(self, text: str) -> str | None:
         self.calls.append(text)
+        self.started.set()
+        await self.release.wait()
+        return "lily-response"
+
+    async def handle_system_message(self, text: str) -> str | None:
+        self.system_calls.append(text)
         self.started.set()
         await self.release.wait()
         return "lily-response"
@@ -441,3 +448,19 @@ async def test_manual_books_and_memory_auto_talk_run_immediately_while_idle():
     await memory_task
 
     assert app.auto_conversation.auto_talk_calls == [None, "books", "memory"]
+
+
+@pytest.mark.asyncio
+async def test_system_message_runs_same_follow_up_flow():
+    app = _make_conversation_app()
+
+    system_task = asyncio.create_task(app._handle_system_message_with_follow_up("bridge notice"))
+
+    await asyncio.wait_for(app.chat_engine.started.wait(), timeout=1)
+    app.chat_engine.release.set()
+    await asyncio.wait_for(app.auto_conversation.follow_up_started.wait(), timeout=1)
+    app.auto_conversation.follow_up_release.set()
+    await system_task
+
+    assert app.chat_engine.system_calls == ["bridge notice"]
+    assert app.auto_conversation.follow_up_calls == [("bridge notice", "lily-response")]

@@ -39,7 +39,26 @@ def test_validate_user_message_event_uses_received_at_when_occurred_at_missing()
     assert accepted.event_type == "user_message"
     assert accepted.source == "chrome_extension"
     assert accepted.occurred_at == received_at
+    assert accepted.message_role == "user"
     assert accepted.internal_user_message == "こんにちは"
+
+
+def test_validate_system_message_event_marks_system_role():
+    received_at = datetime(2026, 4, 4, 21, 15, tzinfo=JST)
+
+    accepted = validate_http_bridge_event(
+        {
+            "eventType": "system_message",
+            "source": "chrome_extension",
+            "payload": {"text": "学習クエスト達成です。+2 XP 獲得しました。"},
+        },
+        received_at=received_at,
+    )
+
+    assert accepted.event_type == "system_message"
+    assert accepted.message_role == "system"
+    assert accepted.occurred_at == received_at
+    assert accepted.internal_user_message == "学習クエスト達成です。+2 XP 獲得しました。"
 
 
 def test_validate_quest_completed_event_builds_internal_user_message():
@@ -63,6 +82,7 @@ def test_validate_quest_completed_event_builds_internal_user_message():
         "カテゴリは「学習」だよ。"
         "メモは「初回30分到達」だよ。"
     )
+    assert accepted.message_role == "user"
 
 
 def test_validate_chrome_audible_tabs_event_accepts_full_snapshot():
@@ -87,6 +107,7 @@ def test_validate_chrome_audible_tabs_event_accepts_full_snapshot():
             {"tabId": 2, "domain": "netflix.com"},
         ]
     }
+    assert accepted.message_role is None
     assert accepted.internal_user_message == ""
 
 
@@ -169,11 +190,13 @@ def test_validate_http_bridge_event_rejects_non_jst_occurred_at(occurred_at, exp
 )
 def test_local_http_bridge_post_endpoint(body, expected_status, expected_code):
     received_messages: list[str] = []
+    received_system_messages: list[str] = []
     audible_snapshots: list[tuple[datetime, list[dict[str, object]]]] = []
     bridge = LocalHttpBridge(
         port=0,
         event_loop=_ImmediateLoop(),
         emit_user_message=received_messages.append,
+        emit_system_message=received_system_messages.append,
         update_chrome_audible_tabs=lambda received_at, audible_tabs: audible_snapshots.append(
             (received_at, audible_tabs)
         ),
@@ -200,19 +223,63 @@ def test_local_http_bridge_post_endpoint(body, expected_status, expected_code):
         assert payload["status"] == "accepted"
         assert payload["eventType"] == "user_message"
         assert received_messages == ["HTTPからこんにちは"]
+        assert received_system_messages == []
         assert audible_snapshots == []
     else:
         assert payload["ok"] is False
         assert payload["error"]["code"] == expected_code
 
 
+def test_local_http_bridge_dispatches_system_message_without_user_message():
+    received_messages: list[str] = []
+    received_system_messages: list[str] = []
+    bridge = LocalHttpBridge(
+        port=0,
+        event_loop=_ImmediateLoop(),
+        emit_user_message=received_messages.append,
+        emit_system_message=received_system_messages.append,
+    )
+    bridge.start()
+
+    try:
+        conn = http.client.HTTPConnection(bridge.host, bridge.port, timeout=5)
+        conn.request(
+            "POST",
+            "/v1/events",
+            body=json.dumps(
+                {
+                    "eventType": "system_message",
+                    "source": "chrome_extension",
+                    "payload": {
+                        "text": "集中が続いていますね。さらに +2 XP です。",
+                    },
+                },
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        response = conn.getresponse()
+        payload = json.loads(response.read().decode("utf-8"))
+        conn.close()
+    finally:
+        bridge.stop()
+
+    assert response.status == 202
+    assert payload["ok"] is True
+    assert payload["eventType"] == "system_message"
+    assert received_messages == []
+    assert received_system_messages == ["集中が続いていますね。さらに +2 XP です。"]
+
+
 def test_local_http_bridge_dispatches_chrome_audible_tabs_without_user_message():
     received_messages: list[str] = []
+    received_system_messages: list[str] = []
     audible_snapshots: list[tuple[datetime, list[dict[str, object]]]] = []
     bridge = LocalHttpBridge(
         port=0,
         event_loop=_ImmediateLoop(),
         emit_user_message=received_messages.append,
+        emit_system_message=received_system_messages.append,
         update_chrome_audible_tabs=lambda received_at, audible_tabs: audible_snapshots.append(
             (received_at, audible_tabs)
         ),
@@ -249,6 +316,7 @@ def test_local_http_bridge_dispatches_chrome_audible_tabs_without_user_message()
     assert payload["ok"] is True
     assert payload["eventType"] == "chrome_audible_tabs"
     assert received_messages == []
+    assert received_system_messages == []
     assert len(audible_snapshots) == 1
     received_at, audible_tabs = audible_snapshots[0]
     assert received_at.tzinfo == JST
@@ -263,6 +331,7 @@ def test_local_http_bridge_returns_not_found_for_unknown_path():
         port=0,
         event_loop=_ImmediateLoop(),
         emit_user_message=lambda _message: None,
+        emit_system_message=lambda _message: None,
     )
     bridge.start()
 
@@ -289,6 +358,7 @@ def test_local_http_bridge_returns_method_not_allowed_for_get():
         port=0,
         event_loop=_ImmediateLoop(),
         emit_user_message=lambda _message: None,
+        emit_system_message=lambda _message: None,
     )
     bridge.start()
 
@@ -316,6 +386,7 @@ def test_start_local_http_bridge_returns_none_when_port_is_unavailable(monkeypat
             HttpBridgeConfig(enabled=True, port=18765),
             event_loop=_ImmediateLoop(),
             emit_user_message=lambda _message: None,
+            emit_system_message=lambda _message: None,
         )
 
     assert bridge is None

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage, ChatSession } from '@/domain/types'
 import * as apiClient from '@/lib/api-client'
+import * as ai from '@/lib/ai'
 import { useChatStore } from '@/store/chat-store'
 import { useAppStore } from '@/store/app-store'
 
@@ -247,6 +248,31 @@ describe('chat store', () => {
     expect(messages[0].content).toBe('hello')
     expect(messages[1].role).toBe('assistant')
     expect(messages[1].content).toBe('assistant reply')
+  })
+
+  it('does not treat persisted system messages as extra system prompts when sending', async () => {
+    await useChatStore.getState().createSession()
+    useChatStore.setState({
+      currentMessages: [
+        makeMessage({
+          id: 'cmsg_system',
+          sessionId: 'chat_test',
+          role: 'system',
+          content: '学習クエスト達成です。+2 XP 獲得しました。',
+        }),
+      ],
+      currentSessionId: 'chat_test',
+    })
+
+    await useChatStore.getState().sendMessage('ありがとう')
+
+    expect(vi.mocked(ai.sendLilyChatMessage)).toHaveBeenCalledTimes(1)
+    const request = vi.mocked(ai.sendLilyChatMessage).mock.calls[0][0]
+    expect(request.messages.filter((message) => message.role === 'system')).toHaveLength(1)
+    expect(request.messages).toContainEqual({
+      role: 'user',
+      content: '[システム通知] 学習クエスト達成です。+2 XP 獲得しました。',
+    })
   })
 
   it('moves an older session to the top after sending a new message', async () => {

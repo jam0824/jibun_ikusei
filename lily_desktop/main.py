@@ -136,6 +136,7 @@ class App:
         """イベントバスとUIの配線"""
         # ユーザーメッセージ → AI会話（window側の吹き出し表示も残す）
         bus.user_message_received.connect(self._on_user_message)
+        bus.system_message_received.connect(self._on_system_message)
 
         # 新しい会話
         bus.new_chat_requested.connect(self._on_new_chat)
@@ -166,19 +167,42 @@ class App:
         bus.camera_capture_requested.connect(self._on_camera_capture_requested)
 
     def _on_user_message(self, text: str) -> None:
+        self._on_incoming_message(text, is_system=False)
+
+    def _on_system_message(self, text: str) -> None:
+        self._on_incoming_message(text, is_system=True)
+
+    def _on_incoming_message(self, text: str, *, is_system: bool) -> None:
         # 掛け合い中ならユーザー割り込みで中断
         if self.auto_conversation.is_talking:
             self.auto_conversation.interrupt()
         # TTS再生中ならキューをクリア
         if self.tts_engine is not None:
             self.tts_engine.clear_queue()
-        asyncio.ensure_future(self._handle_user_message_with_follow_up(text))
+        handler = (
+            self._handle_system_message_with_follow_up
+            if is_system
+            else self._handle_user_message_with_follow_up
+        )
+        asyncio.ensure_future(handler(text))
 
     async def _handle_user_message_with_follow_up(self, text: str) -> None:
         """リリィの応答後にはるかを交えた掛け合いを起動する"""
         self.active_user_conversation = True
         try:
             lily_text = await self.chat_engine.handle_user_message(text)
+            if lily_text:
+                follow_up_tasks = self.auto_conversation.trigger_follow_up(text, lily_text)
+                if follow_up_tasks:
+                    await asyncio.gather(*follow_up_tasks)
+        finally:
+            self.active_user_conversation = False
+            await self._drain_pending_periodic_auto_talk_if_needed()
+
+    async def _handle_system_message_with_follow_up(self, text: str) -> None:
+        self.active_user_conversation = True
+        try:
+            lily_text = await self.chat_engine.handle_system_message(text)
             if lily_text:
                 follow_up_tasks = self.auto_conversation.trigger_follow_up(text, lily_text)
                 if follow_up_tasks:
@@ -489,6 +513,7 @@ class App:
             self.config.http_bridge,
             event_loop=event_loop,
             emit_user_message=bus.user_message_received.emit,
+            emit_system_message=bus.system_message_received.emit,
             update_chrome_audible_tabs=lambda received_at, audible_tabs: self.chrome_audible_tabs_tracker.update(
                 received_at=received_at,
                 audible_tabs=audible_tabs,

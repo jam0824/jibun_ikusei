@@ -310,6 +310,25 @@ async def test_chat_messages_retry_503_then_use_current_session_fallback():
 
 
 @pytest.mark.asyncio
+async def test_chat_messages_label_system_messages_distinctly():
+    api = _make_api()
+    api.get_chat_sessions.return_value = [
+        _make_session("s1", "2026-03-29T00:00:00Z", "2026-03-29T10:00:00Z", "current session"),
+    ]
+    api.get_chat_messages.return_value = [
+        _make_chat_message("s1", "system", "bridge notice", "2026-03-28T15:00:00Z"),
+    ]
+    executor = ToolExecutor(api)
+
+    result = await executor.execute(
+        "get_messages_and_logs",
+        {"type": "chat_messages", "sessionId": "s1", "date": "2026-03-29"},
+    )
+
+    assert "[system] bridge notice" in result
+
+
+@pytest.mark.asyncio
 async def test_complete_quest_keeps_one_time_status_completed_when_saving_default_skill(monkeypatch):
     api = _make_api()
     api.get_quests.return_value = [{

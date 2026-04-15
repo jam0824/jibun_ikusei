@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   LILY_DESKTOP_BRIDGE_URL,
   sendChromeAudibleTabsToLilyDesktop,
-  sendBrowsingUserMessageToLilyDesktop,
+  sendBrowsingSystemMessageToLilyDesktop,
 } from '@ext/lib/lily-desktop-bridge'
 
 describe('lily-desktop-bridge', () => {
@@ -16,12 +16,12 @@ describe('lily-desktop-bridge', () => {
     vi.restoreAllMocks()
   })
 
-  it('sends a good browsing user_message to Lily Desktop', async () => {
+  it('sends a good browsing system_message to Lily Desktop', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), { status: 202 }),
     )
 
-    const ok = await sendBrowsingUserMessageToLilyDesktop({
+    const ok = await sendBrowsingSystemMessageToLilyDesktop({
       browsingType: 'good',
       xp: 2,
       title: 'Reactチュートリアルを見る',
@@ -47,7 +47,7 @@ describe('lily-desktop-bridge', () => {
     }
 
     expect(body).toMatchObject({
-      eventType: 'user_message',
+      eventType: 'system_message',
       source: 'chrome_extension_browsing',
       eventId: '00000000-0000-4000-8000-000000000000',
       payload: {
@@ -64,12 +64,12 @@ describe('lily-desktop-bridge', () => {
     expect(body).not.toHaveProperty('occurredAt')
   })
 
-  it('sends a bad browsing user_message with domain fallback', async () => {
+  it('sends a bad browsing system_message with domain fallback', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), { status: 202 }),
     )
 
-    const ok = await sendBrowsingUserMessageToLilyDesktop({
+    const ok = await sendBrowsingSystemMessageToLilyDesktop({
       browsingType: 'bad',
       xp: -5,
       domain: 'game.com',
@@ -94,12 +94,12 @@ describe('lily-desktop-bridge', () => {
     })
   })
 
-  it('sends a warning browsing user_message with domain context', async () => {
+  it('sends a warning browsing system_message with domain context', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ ok: true }), { status: 202 }),
     )
 
-    const ok = await sendBrowsingUserMessageToLilyDesktop({
+    const ok = await sendBrowsingSystemMessageToLilyDesktop({
       browsingType: 'warning',
       xp: 0,
       domain: 'game.com',
@@ -129,7 +129,7 @@ describe('lily-desktop-bridge', () => {
       new Response(JSON.stringify({ ok: true }), { status: 202 }),
     )
 
-    await sendBrowsingUserMessageToLilyDesktop({
+    await sendBrowsingSystemMessageToLilyDesktop({
       browsingType: 'good',
       xp: 2,
     })
@@ -142,7 +142,7 @@ describe('lily-desktop-bridge', () => {
   it('returns false when fetch fails', async () => {
     vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('connect ECONNREFUSED'))
 
-    const ok = await sendBrowsingUserMessageToLilyDesktop({
+    const ok = await sendBrowsingSystemMessageToLilyDesktop({
       browsingType: 'good',
       xp: 2,
       title: '集中タイム',
@@ -160,7 +160,7 @@ describe('lily-desktop-bridge', () => {
       })
     }))
 
-    const promise = sendBrowsingUserMessageToLilyDesktop({
+    const promise = sendBrowsingSystemMessageToLilyDesktop({
       browsingType: 'good',
       xp: 2,
       title: '集中タイム',

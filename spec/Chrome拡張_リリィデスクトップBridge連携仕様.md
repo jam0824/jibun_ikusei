@@ -33,10 +33,11 @@
 - タイムアウトは `2秒`
 - `AbortController` で timeout を管理する
 - `occurredAt` は送らない
+- `good_quest` / `bad_quest` / `warning` はユーザー発話ではないため `eventType` は `system_message` を使う
 
 ```json
 {
-  "eventType": "user_message",
+  "eventType": "system_message",
   "source": "chrome_extension_browsing",
   "eventId": "uuid",
   "payload": {
@@ -105,6 +106,7 @@
 ## テスト観点
 
 - helper 単体で good / bad / warning の本文生成を検証する
+- helper 単体で good / bad / warning の `eventType=system_message` を検証する
 - helper 単体で `chrome_audible_tabs` の body 生成を検証する
 - title 不在時は `domain`、domain も不在時は `閲覧活動` にフォールバックする
 - fetch 失敗時に throw せず `false` を返す

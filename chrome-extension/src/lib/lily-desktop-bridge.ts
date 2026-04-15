@@ -70,7 +70,7 @@ async function sendBridgeEvent(body: object): Promise<boolean> {
   }
 }
 
-export async function sendBrowsingUserMessageToLilyDesktop({
+export async function sendBrowsingSystemMessageToLilyDesktop({
   browsingType,
   xp,
   title,
@@ -78,7 +78,7 @@ export async function sendBrowsingUserMessageToLilyDesktop({
   category,
 }: SendBrowsingUserMessageParams): Promise<boolean> {
   return sendBridgeEvent({
-    eventType: 'user_message',
+    eventType: 'system_message',
     source: 'chrome_extension_browsing',
     eventId: crypto.randomUUID(),
     payload: {

@@ -3,6 +3,7 @@
 import os
 
 import pytest
+from PySide6.QtGui import QColor
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -39,4 +40,14 @@ def test_show_message_不正な秒数は既定値にフォールバックする(
         widget._hide_timer.interval()
         == round(DEFAULT_USER_BALLOON_DISPLAY_SECONDS * 1000)
     )
+    widget.close()
+
+
+def test_show_message_system_variant_uses_distinct_blue_background(qapp):
+    widget = UserBalloonWidget()
+
+    widget.show_message("システム通知です", variant="system")
+
+    assert widget._variant == "system"
+    assert widget._background_color == QColor(14, 116, 144, 210)
     widget.close()
