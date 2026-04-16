@@ -1,6 +1,6 @@
 # 自分育成ゲームアプリ 仕様 v0.3（サーバー実装反映版）
 
-更新日: 2026-03-21
+更新日: 2026-04-16
 
 ## 0. この版の位置づけ
 
@@ -40,7 +40,6 @@
 
 - 厳密な不正防止
 - SNS 的な競争
-- 自動行動監視
 - AI が何でも勝手に決める全自動運用
 - 公開サインアップ導線
 - 高度な競合解決つきリアルタイム同期
@@ -100,6 +99,8 @@
 - ルーティング: React Router
 - ローカル保存: `localStorage`
 - オフライン再訪: Service Worker
+- 補助クライアントとして Windows 常駐の `lily_desktop` を持ち、行動ログ収集と Web deep link 起動を担当する
+- `lily_desktop` は閲覧 UI を持たず、内部の `Activity Capture Service` が行動ログ収集を担当する。収集専用の別デスクトップアプリは v0.1 では設けない
 
 ### 4-2. 認証
 
@@ -213,6 +214,45 @@ Cognito で認証される利用アカウント。アプリのデータ分離単
 設定はホーム右上から遷移する。
 ステータス画面はホームのレベルカードから遷移する。
 
+### 6-3. 主要ルート
+
+- `/`
+  - ホーム
+- `/status`
+  - ステータス
+- `/quests`
+  - クエスト一覧
+- `/quests/new`
+  - クエスト作成
+- `/skills`
+  - スキル一覧
+- `/records`
+  - 記録系の入口
+  - 直近に見ていた `records` 配下の route を復元し、未保存時は `/records/quests?range=today` へ遷移する
+- `/records/quests?range=today|week|all`
+  - 成長記録
+- `/records/activity/today?view=session|event`
+  - 今日の行動ログ
+- `/records/activity/day/:dateKey?view=session|event`
+  - 任意日の行動ログ詳細
+- `/records/activity/calendar`
+  - 行動ログカレンダー
+- `/records/activity/search`
+  - 行動ログ検索
+- `/records/activity/review/week?weekKey=YYYY-Www`
+  - 週次行動レビュー
+- `/weekly-reflection`
+  - 既存の週次ふりかえり
+- `/lily`
+  - リリィチャット
+- `/settings`
+  - 設定
+
+#### deep link の扱い
+
+- 認証前に deep link へアクセスした場合、ログイン完了後に元の URL へ戻す。
+- `pathname` または `search` が変わる遷移は、`画面遷移スクロール仕様_2026-04-12.md` のスクロールリセット対象とする。
+
 ---
 
 ## 7. 画面仕様
@@ -267,6 +307,11 @@ Cognito で認証される利用アカウント。アプリのデータ分離単
    - クエスト追加
    - 今日の記録を見る
    - スキルを見る
+
+#### 導線
+
+- `今日の記録を見る` は `/records` へ遷移する。
+- `/records` は前回見ていた記録系 route を復元する。初回は `/records/quests?range=today` を開く。
 
 #### 補足
 
@@ -406,13 +451,38 @@ Cognito で認証される利用アカウント。アプリのデータ分離単
 
 ### 7-7. 記録画面
 
-#### フィルタ
+#### タブ
+
+- `quests`
+  - 既存の成長記録を表示する
+- `activity`
+  - PC 行動ログ・日記を表示する
+  - 正本仕様は `spec/行動ログ基盤仕様_v_0_1.md` とする
+
+#### 入口 route
+
+- BottomNav の `記録` は `/records` を開く。
+- `/records` は直近に見ていた `records` 配下 route を復元する。
+- 初回または復元不可時は `/records/quests?range=today` を開く。
+
+#### 正式 route
+
+- `quests`
+  - `/records/quests?range=today|week|all`
+- `activity`
+  - `/records/activity/today?view=session|event`
+  - `/records/activity/day/:dateKey?view=session|event`
+  - `/records/activity/calendar`
+  - `/records/activity/search`
+  - `/records/activity/review/week?weekKey=YYYY-Www`
+
+#### `quests` タブのフィルタ
 
 - `today`
 - `week`
 - `all`
 
-#### 表示内容
+#### `quests` タブの表示内容
 
 - `today`
   - クリア履歴一覧のみ表示する
@@ -430,10 +500,34 @@ Cognito で認証される利用アカウント。アプリのデータ分離単
 - Lily コメント有無
 - メモ
 
-#### 操作
+#### `quests` タブの操作
 
 - クリアから 10 分以内なら `取り消し`
 - 候補状態の completion に対してスキル確定
+
+#### `activity` タブの表示内容
+
+- タイムライン
+- デイリーログ
+- 検索導線
+- 週次行動レビュー導線
+- セッションの手動補正、非表示化、タイトル修正の導線
+
+#### `activity` タブ内の通常導線
+
+- `行動ログ` タブを開くと `/records/activity/today` へ遷移する。
+- `今日` から特定日へ移動する時は `/records/activity/day/:dateKey` を使う。
+- `カレンダー` は `/records/activity/calendar`
+- `検索` は `/records/activity/search`
+- `週次レビュー` は `/records/activity/review/week`
+- `session` / `event` 切り替えは `view` query で表現する。
+
+#### `activity` タブの補足
+
+- 行動ログは `quests` / `completions` と別レイヤーの記録である。
+- 同一行動が成長記録と行動ログの両方に現れることはある。
+- `RawEvent` は最近の詳細確認用データとして短期保持し、既定では 30 日で自動削除する。
+- 長期的に見返す正本は `ActivitySession`, `DailyActivityLog`, `WeeklyActivityReview` とする。
 
 ### 7-8. 設定画面
 
@@ -849,6 +943,9 @@ app.meta
 }
 ```
 
+- `POST /completions` は保存済み `USER#profile.totalXp` / `SKILL#*.totalXp` への単純加算ではなく、active completion の集合を正本として `user` / `skills` を再集計した結果を返す
+- 既存の集計値がずれていても、同 API 実行時に対象ユーザーの `user` / `skills` は completion 由来の値へ自己修復される
+
 #### `PUT /user` / `PUT /settings` / `PUT /ai-config` / `PUT /meta`
 
 ```json
@@ -868,6 +965,8 @@ app.meta
 ### 15-4. 更新 API の扱い
 
 - `PUT /completions/{id}` は既存データを読み込んでマージする
+- `PUT /completions/{id}` 実行後は、active completion の集合を正本として `USER#profile.totalXp` / `level` と既存 `SKILL#*` の `totalXp` / `level` を再集計する
+- この再集計は AI 再判定による `resolvedSkillId` / `skillXpAwarded` の後付け、手動スキル確定、undo の `undoneAt` 更新、skill merge に伴う `resolvedSkillId` の付け替えに共通で適用する
 - `PUT /quests/{id}` は現実装ではフルオブジェクト置換に近い
 - `PUT /skills/{id}` も現実装ではフルオブジェクト置換に近い
 - `PUT /dictionary/{id}` も現実装ではフルオブジェクト置換に近い
@@ -1071,6 +1170,7 @@ interface PersistedAppState {
 - `undoneAt` を付与する
 - 単発クエストは `active` に戻す
 - クラウド側では `PUT /completions/{id}` と必要に応じて `PUT /quests/{id}` を呼ぶ
+- `PUT /completions/{id}` 後は active completion を基準に user XP / skill XP を再集計し、取り消した completion ぶんの増分をクラウド集計から除外する
 
 ### 18-4. API 失敗時
 
