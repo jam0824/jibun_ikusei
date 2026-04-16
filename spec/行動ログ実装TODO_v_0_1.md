@@ -1,6 +1,6 @@
 # 行動ログ実装 TODO v0.1
 
-更新日: 2026-04-16
+更新日: 2026-04-17
 
 関連仕様:
 - [行動ログ基盤仕様_v_0_1.md](./行動ログ基盤仕様_v_0_1.md)
@@ -53,48 +53,49 @@
 
 ### 目的
 
-- [ ] PWA 上で行動ログ画面群の見た目と導線を先に確認できる状態を作る
-- [ ] `records/activity/...` の route を実 UI に先行してモックで確認できるようにする
-- [ ] desktop から開く URL 着地先を先に固める
+- [x] PWA 上で行動ログ画面群の見た目と導線を先に確認できる状態を作る
+- [x] `records/activity/...` の route を実 UI に先行してモックで確認できるようにする
+- [x] desktop から開く URL 着地先を先に固める
 
 ### 実装対象
 
-- [ ] `RawEvent / ActivitySession / DailyActivityLog / WeeklyActivityReview` のダミーデータを用意する
-- [ ] `today / day / calendar / search / review/week` のモック画面を PWA 側に出す
-- [ ] `records/activity/...` の主要 route をモック画面へ接続する
-- [ ] desktop から開く前提の URL をモック画面で受けられるようにする
-- [ ] `gpt-5.4` / `gemma4` / 実収集 / 実同期はまだ接続しない
+- [x] `RawEvent / ActivitySession / DailyActivityLog / WeeklyActivityReview` のダミーデータを用意する
+- [x] `today / day / calendar / search / review/year / review/week` のモック画面を PWA 側に出す
+- [x] `records/activity/...` の主要 route をモック画面へ接続する
+- [x] desktop から開く前提の URL をモック画面で受けられるようにする
+- [x] `gpt-5.4` / `gemma4` / 実収集 / 実同期はまだ接続しない
 
 ### 先に書く failing test
 
-- [ ] `records/activity/today` がモック画面を表示するテスト
-- [ ] `records/activity/day/:dateKey` が日別モック画面を表示するテスト
-- [ ] `records/activity/search` が検索モック画面を表示するテスト
-- [ ] `records/activity/review/week` が週次レビューのモック画面を表示するテスト
-- [ ] モックデータでも `DailyActivityLog` と `WeeklyActivityReview` の表示枠が成立するテスト
+- [x] `records/activity/today` がモック画面を表示するテスト
+- [x] `records/activity/day/:dateKey` が日別モック画面を表示するテスト
+- [x] `records/activity/search` が検索モック画面を表示するテスト
+- [x] `records/activity/review/year` が週次レビュー一覧のモック画面を表示するテスト
+- [x] `records/activity/review/week` が週次レビュー詳細のモック画面を表示するテスト
+- [x] モックデータでも `DailyActivityLog` と `WeeklyActivityReview` の表示枠が成立するテスト
 
 ### 実装メモ
 
-- [ ] public interface は本決めしすぎず、route・画面導線・モックデータ形状の確認までに留める
-- [ ] 既存の `records` 配下導線と衝突しないように配置する
-- [ ] 見た目確認に必要な最小限の状態だけを持つ
-- [ ] データ取得は固定モックまたは UI 層内の仮データ供給に留める
+- [x] public interface は本決めしすぎず、route・画面導線・モックデータ形状の確認までに留める
+- [x] 既存の `records` 配下導線と衝突しないように配置する
+- [x] 見た目確認に必要な最小限の状態だけを持つ
+- [x] データ取得は固定モックまたは UI 層内の仮データ供給に留める
 
 ### 完了条件
 
-- [ ] `records/activity/...` の主要 route がモック表示できる
-- [ ] PWA 上で今日画面、検索画面、週次レビュー画面の見た目と導線が確認できる
-- [ ] desktop から開く想定 URL がモック画面に正しく着地する
-- [ ] モックデータでも `DailyActivityLog` と `WeeklyActivityReview` の表示枠が成立している
-- [ ] **STOP: ここで一度ストップし、ユーザー確認待ちに入る**
+- [x] `records/activity/...` の主要 route がモック表示できる
+- [x] PWA 上で今日画面、検索画面、週次レビュー画面の見た目と導線が確認できる
+- [x] desktop から開く想定 URL がモック画面に正しく着地する
+- [x] モックデータでも `DailyActivityLog` と `WeeklyActivityReview` の表示枠が成立している
+- [x] **STOP: ここで一度ストップし、ユーザー確認待ちに入る**
 
 ### 自己レビュー項目
 
-- [ ] spec とモック導線のズレがないか
-- [ ] route 命名が既存仕様と一致しているか
-- [ ] 実装が本番データ前提になっていないか
-- [ ] 後続フェーズで差し替えやすいモック境界になっているか
-- [ ] 関連テストが route と表示枠を十分にカバーしているか
+- [x] spec とモック導線のズレがないか
+- [x] route 命名が既存仕様と一致しているか
+- [x] 実装が本番データ前提になっていないか
+- [x] 後続フェーズで差し替えやすいモック境界になっているか
+- [x] 関連テストが route と表示枠を十分にカバーしているか
 
 ---
 
@@ -340,11 +341,17 @@
 
 - [ ] `/records/activity/today`
 - [ ] `/records/activity/day/:dateKey`
-- [ ] `/records/activity/calendar`
+- [ ] `/records/activity/calendar?month=YYYY-MM`
+- [ ] `/records/activity/review/year?year=YYYY`
 - [ ] `/records/activity/search`
-- [ ] `/records/activity/review/week`
+- [ ] `/records/activity/review/week?weekKey=YYYY-Www`
 - [ ] `records` 内導線と desktop deep link の整合
 - [ ] `event / session` view query の反映
+- [ ] `calendar` の `month` query 反映
+- [ ] `calendar` の `前月` / `次月` / `年月ピッカー`
+- [ ] `review/year` の `year` query 反映
+- [ ] `review/year` の `前年` / `次年` / `年ピッカー`
+- [ ] `review/year` から `review/week` 詳細への遷移
 - [ ] `records` 配下 route の復元と既定 route 制御
 - [ ] `DailyActivityLog` の手動メモ表示と追加
 
@@ -352,11 +359,20 @@
 
 - [ ] 各 route のデータ表示テスト
 - [ ] event view / session view 切り替えテスト
+- [ ] `month` 未指定時に JST 基準の当月を表示するカレンダーテスト
+- [ ] `month=YYYY-MM` 指定時に対象月を表示するカレンダーテスト
+- [ ] `前月` / `次月` 操作で `month` query が更新されるテスト
+- [ ] `年月ピッカー` 変更で `month` query が更新されるテスト
+- [ ] `year` 未指定時に JST 基準の当年または直近の利用可能年を表示する週次レビュー一覧テスト
+- [ ] `year=YYYY` 指定時に対象年を表示する週次レビュー一覧テスト
+- [ ] `前年` / `次年` 操作で `year` query が更新されるテスト
+- [ ] `年ピッカー` 変更で `year` query が更新されるテスト
+- [ ] 年一覧の週カードから `review/week?weekKey=YYYY-Www` へ遷移するテスト
+- [ ] `weekKey=YYYY-Www` 指定時に対象週を表示するテスト
 - [ ] 検索条件の反映テスト
 - [ ] desktop からの URL 着地テスト
 - [ ] `/records` から最後に見ていた `records` 配下 route を復元するテスト
 - [ ] 初回または復元不能時は `/records/quests?range=today` を開くテスト
-- [ ] `weekKey` 未指定時に既定週を表示するテスト
 - [ ] 手動メモの追加 / 表示テスト
 
 ### 実装メモ
@@ -364,6 +380,11 @@
 - [ ] PWA を唯一の正式 UI として育てる
 - [ ] PC とスマホで同じ route を使えるようにする
 - [ ] UI 層で本来の storage 境界を崩さない
+- [ ] カレンダーは 1 画面 1 か月分表示を正本にする
+- [ ] `month` query がなくても JST 基準の当月に着地できるようにする
+- [ ] 週次レビューの主入口は 1 画面 1 年分の一覧表示を正本にする
+- [ ] `year` query がなくても JST 基準の当年または直近の利用可能年に着地できるようにする
+- [ ] `review/week` は個別週の詳細 route として扱う
 - [ ] 手動操作は `ActivitySession / DailyActivityLog / ManualNote` の責務を越えないようにする
 - [ ] v0.1 の手動補正は非表示・手動メモに留める
 
@@ -372,6 +393,9 @@
 - [ ] 主要 route が本データで表示される
 - [ ] PC / スマホの両方で主要閲覧導線が成立する
 - [ ] desktop deep link と PWA 導線が一致している
+- [ ] カレンダーが 1 か月単位で安定表示され、前月 / 次月 / 年月ピッカーで移動できる
+- [ ] 週次レビュー一覧が 1 年単位で安定表示され、前年 / 次年 / 年ピッカーで移動できる
+- [ ] 年一覧から週詳細へ安定して遷移できる
 - [ ] 手動メモの導線が成立する
 
 ### 自己レビュー項目
@@ -398,6 +422,7 @@
 - [ ] 週次レビュー生成
 - [ ] `gpt-5.4` 失敗時のテンプレート fallback
 - [ ] `ActivitySession` ベースの整形済み入力生成
+- [ ] リリィがユーザーの観察日記を書いたような文体ガイドを prompt / fallback へ組み込む
 
 ### 先に書く failing test
 
@@ -405,18 +430,24 @@
 - [ ] PC / スマホのどちらから開いても同じ生成条件になるテスト
 - [ ] 週次レビュー生成テスト
 - [ ] `gpt-5.4` 失敗時にテンプレート fallback するテスト
+- [ ] 日次まとめ prompt がリリィ観察日記トーンを要求するテスト
+- [ ] 週次まとめ prompt がリリィ観察日記トーンを要求するテスト
+- [ ] fallback 文も観察日記風の地の文になるテスト
 
 ### 実装メモ
 
 - [ ] raw event 全文やスクリーンショット本体は `gpt-5.4` に送らない
 - [ ] `DailyActivityLog` は未生成時のみ作る
 - [ ] local `gemma4` と責務を混ぜない
+- [ ] 直接話しかけるチャット口調ではなく、リリィがそっと見守って書いた観察日記風の地の文を正本にする
+- [ ] 提案や励ましは補足に留め、本文は観察記述を主にする
 
 ### 完了条件
 
 - [ ] 日次・週次まとめが `gpt-5.4` で生成される
 - [ ] 失敗時の fallback がある
 - [ ] PC / スマホの閲覧起点で挙動が揃っている
+- [ ] 日次・週次まとめの文体がリリィ観察日記トーンで揃っている
 
 ### 自己レビュー項目
 

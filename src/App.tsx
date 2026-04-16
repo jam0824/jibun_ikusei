@@ -15,8 +15,36 @@ import { SkillsScreen } from '@/screens/skills-screen'
 import { StatusScreen } from '@/screens/status-screen'
 import { WeeklyReflectionScreen } from '@/screens/weekly-reflection-screen'
 import { ScrollToTopOnRouteChange } from '@/components/scroll-to-top-on-route-change'
+import { ActivityLogMockScreen } from '@/screens/activity-log-mock-screen'
 import { useAppStore } from '@/store/app-store'
 import { isLoggedIn } from '@/lib/auth'
+
+export function AppShellRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<HomeScreen />} />
+      <Route path="/status" element={<StatusScreen />} />
+      <Route path="/quests" element={<QuestListScreen />} />
+      <Route path="/quests/new" element={<QuestFormScreen />} />
+      <Route path="/skills" element={<SkillsScreen />} />
+      <Route path="/records" element={<RecordsScreen />} />
+      <Route path="/records/activity/today" element={<ActivityLogMockScreen variant="today" />} />
+      <Route path="/records/activity/day/:dateKey" element={<ActivityLogMockScreen variant="day" />} />
+      <Route path="/records/activity/calendar" element={<ActivityLogMockScreen variant="calendar" />} />
+      <Route path="/records/activity/search" element={<ActivityLogMockScreen variant="search" />} />
+      <Route path="/records/activity/review/year" element={<ActivityLogMockScreen variant="review-year" />} />
+      <Route path="/records/activity/review/week" element={<ActivityLogMockScreen variant="review-week" />} />
+      <Route path="/weekly-reflection" element={<WeeklyReflectionScreen />} />
+      <Route path="/lily" element={<LilyChatScreen />} />
+      <Route path="/settings" element={<SettingsScreen />} />
+      <Route path="/clear/:completionId" element={<ClearEffectScreen />} />
+      <Route path="/meal" element={<MealRegisterScreen />} />
+      <Route path="/meal/analyze" element={<MealAnalyzeScreen />} />
+      <Route path="/meal/confirm" element={<MealConfirmScreen />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
+}
 
 function AppRoutes() {
   const initialize = useAppStore((state) => state.initialize)
@@ -50,24 +78,7 @@ function AppRoutes() {
     )
   }
 
-  return (
-    <Routes>
-      <Route path="/" element={<HomeScreen />} />
-      <Route path="/status" element={<StatusScreen />} />
-      <Route path="/quests" element={<QuestListScreen />} />
-      <Route path="/quests/new" element={<QuestFormScreen />} />
-      <Route path="/skills" element={<SkillsScreen />} />
-      <Route path="/records" element={<RecordsScreen />} />
-      <Route path="/weekly-reflection" element={<WeeklyReflectionScreen />} />
-      <Route path="/lily" element={<LilyChatScreen />} />
-      <Route path="/settings" element={<SettingsScreen />} />
-      <Route path="/clear/:completionId" element={<ClearEffectScreen />} />
-      <Route path="/meal" element={<MealRegisterScreen />} />
-      <Route path="/meal/analyze" element={<MealAnalyzeScreen />} />
-      <Route path="/meal/confirm" element={<MealConfirmScreen />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-  )
+  return <AppShellRoutes />
 }
 
 export default function App() {
