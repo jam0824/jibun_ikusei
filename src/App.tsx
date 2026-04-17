@@ -20,6 +20,39 @@ import { getDefaultRecordsRoute, readLastRecordsRoute } from '@/lib/records-rout
 import { useAppStore } from '@/store/app-store'
 import { isLoggedIn } from '@/lib/auth'
 
+function normalizeLoginReturnTarget(target: string | null | undefined): string {
+  if (!target) {
+    return '/'
+  }
+
+  const raw = target.startsWith('#') ? target.slice(1) : target
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/login')) {
+    return '/'
+  }
+  return raw
+}
+
+function buildLoginHash(hashValue: string): string {
+  const raw = hashValue.startsWith('#') ? hashValue.slice(1) : hashValue
+  if (raw.startsWith('/login')) {
+    return hashValue || '#/login'
+  }
+
+  const returnTo = encodeURIComponent(normalizeLoginReturnTarget(raw))
+  return `#/login?returnTo=${returnTo}`
+}
+
+function resolveLoginReturnTarget(hashValue: string): string {
+  const raw = hashValue.startsWith('#') ? hashValue.slice(1) : hashValue
+  if (!raw.startsWith('/login')) {
+    return normalizeLoginReturnTarget(raw)
+  }
+
+  const [, query = ''] = raw.split('?')
+  const returnTo = new URLSearchParams(query).get('returnTo')
+  return normalizeLoginReturnTarget(returnTo)
+}
+
 function RecordsRouteHub() {
   const location = useLocation()
   const target = useMemo(() => {
@@ -79,6 +112,17 @@ function AppRoutes() {
     })
   }, [initialize])
 
+  useEffect(() => {
+    if (!authChecked || loggedIn) {
+      return
+    }
+
+    const loginHash = buildLoginHash(window.location.hash)
+    if (window.location.hash !== loginHash) {
+      window.location.hash = loginHash
+    }
+  }, [authChecked, loggedIn])
+
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -91,8 +135,10 @@ function AppRoutes() {
     return (
       <LoginScreen
         onLogin={() => {
+          const targetPath = resolveLoginReturnTarget(window.location.hash)
           setLoggedIn(true)
           initialize()
+          window.location.hash = `#${targetPath}`
         }}
       />
     )

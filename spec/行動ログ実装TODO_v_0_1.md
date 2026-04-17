@@ -483,47 +483,52 @@
 
 ### 目的
 
-- [ ] Lily が行動ログ正本を仕様どおり参照できるようにする
-- [ ] `lily_desktop` の `Web を開く` 契約を仕様どおり実装する
+- [x] Lily が行動ログ正本を仕様どおり参照できるようにする
+- [x] `lily_desktop` の `Web を開く` 契約を仕様どおり実装する
 
 ### 実装対象
 
-- [ ] `activity_logs` 参照で `ActivitySession / DailyActivityLog / OpenLoop` を優先して返す
-- [ ] `RawEvent` を Lily の既定の長期参照対象にしない
-- [ ] 非表示セッションを Lily 会話コンテキストから除外する
-- [ ] `web.base_url` + deep link path を使った既定ブラウザ起動
-- [ ] `今日の行動ログ / 行動ログカレンダー / 行動ログ検索 / 週次行動レビュー` の右クリックメニュー導線
-- [ ] 認証切れ時にログイン後、元の URL へ戻す導線
+- [x] Web 側 Lily の `activity_logs` 参照を action-log API へ切り替える
+- [x] desktop 側 Lily の `activity_logs` 参照を action-log API へ切り替える
+- [x] `activity_logs` 参照で `ActivitySession / DailyActivityLog / OpenLoop` を優先して返す
+- [x] `RawEvent` を Lily の既定の長期参照対象にしない
+- [x] 非表示セッションを Lily 会話コンテキストから除外する
+- [x] `web.base_url` + deep link path を使った既定ブラウザ起動
+- [x] `今日の行動ログ / 行動ログカレンダー / 行動ログ検索 / 週次行動レビュー` を含む右クリックメニュー導線
+- [x] 認証切れ時にログイン後、元の URL へ戻す導線
 
 ### 先に書く failing test
 
-- [ ] Lily の `activity_logs` が `ActivitySession / DailyActivityLog / OpenLoop` を返すテスト
-- [ ] `RawEvent` 全文を既定で返さないテスト
-- [ ] 非表示セッションが Lily 会話コンテキストから除外されるテスト
-- [ ] `web.base_url` を使って既定ブラウザ起動 URL を組み立てるテスト
-- [ ] 右クリックメニュー各項目が正しい deep link path を開くテスト
-- [ ] 認証後に元 URL へ戻る導線テスト
+- [x] Web 側 Lily の `activity_logs` が `ActivitySession / DailyActivityLog / OpenLoop` を返すテスト
+- [x] desktop 側 Lily の `activity_logs` が `ActivitySession / DailyActivityLog / OpenLoop` を返すテスト
+- [x] `RawEvent` 全文を既定で返さないテスト
+- [x] 非表示セッションが Lily 会話コンテキストから除外されるテスト
+- [x] `web.base_url` を使って既定ブラウザ起動 URL を組み立てるテスト
+- [x] 右クリックメニュー各項目が正しい deep link path を開くテスト
+- [x] 認証後に元 URL へ戻る導線テスト
 
 ### 実装メモ
 
-- [ ] Lily の通常参照は長期保持データを正本にする
-- [ ] desktop 側は閲覧 UI を持たず、Web 起動のハブに留める
-- [ ] deep link は一時 state に依存しすぎない安定 path を優先する
+- [x] Lily の通常参照は長期保持データを正本にする
+- [x] desktop 側は閲覧 UI を持たず、Web 起動のハブに留める
+- [x] deep link は一時 state に依存しすぎない安定 path を優先する
+- [x] tray icon ではなくキャラクター右クリックメニューだけを対象にする
 
 ### 完了条件
 
-- [ ] Lily が行動ログを仕様どおり参照できる
-- [ ] 非表示セッションが Lily に流れない
-- [ ] desktop の `Web を開く` が仕様どおり動作する
+- [x] Lily が行動ログを仕様どおり参照できる
+- [x] 非表示セッションが Lily に流れない
+- [x] desktop の `Web を開く` が仕様どおり動作する
+- [x] Web の deep link ログイン復帰が仕様どおり動作する
 
 ### 自己レビュー項目
 
-- [ ] spec と実装のズレがないか
-- [ ] JST 前提を壊していないか
-- [ ] privacy 境界を破っていないか
-- [ ] 既存の責務分離を壊していないか
-- [ ] 不要な重複計測や二重保存がないか
-- [ ] テストが対象範囲を十分にカバーしているか
+- [x] spec と実装のズレがないか
+- [x] JST 前提を壊していないか
+- [x] privacy 境界を破っていないか
+- [x] 既存の責務分離を壊していないか
+- [x] 不要な重複計測や二重保存がないか
+- [x] テストが対象範囲を十分にカバーしているか
 
 ---
 

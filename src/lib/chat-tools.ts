@@ -1,5 +1,7 @@
 import {
-  getActivityLogs,
+  getActionLogDailyActivityLogs,
+  getActionLogOpenLoops,
+  getActionLogSessions,
   getBrowsingTimes,
   getChatMessages,
   getChatMessagesRange,
@@ -8,11 +10,8 @@ import {
   getNutritionRange,
   getSituationLogs,
 } from '@/lib/api-client'
-import type {
-  ActivityLogEntry,
-  NutritionRangeResult,
-  SituationLogEntry,
-} from '@/lib/api-client'
+import type { NutritionRangeResult, SituationLogEntry } from '@/lib/api-client'
+import type { ActivitySession, DailyActivityLog, OpenLoop } from '@/domain/action-log-types'
 import { aggregateByCategory, aggregateDomains } from '@/lib/browsing-aggregator'
 import { NUTRIENT_META } from '@/domain/nutrition-constants'
 import { formatSeconds } from '@/lib/time-format'
@@ -311,6 +310,23 @@ function sliceWithOverflow(items: string[], totalCount: number): string[] {
     return [...items, `  ...他${totalCount - items.length}件`]
   }
   return items
+}
+
+function formatActivitySessionLine(session: ActivitySession): string {
+  const category = session.primaryCategory || 'その他'
+  const activityKinds = session.activityKinds.join(' / ')
+  const activityKindsSuffix = activityKinds ? ` / ${activityKinds}` : ''
+  const summarySuffix = session.summary ? ` / ${session.summary}` : ''
+  return `- [${category}${activityKindsSuffix}] ${session.title} (${toJst(session.startedAt)})${summarySuffix}`
+}
+
+function formatDailyActivityLogLine(log: DailyActivityLog): string {
+  return `- [その日のまとめ] ${log.summary} (${log.dateKey})`
+}
+
+function formatOpenLoopLine(openLoop: OpenLoop): string {
+  const descriptionSuffix = openLoop.description ? ` / ${openLoop.description}` : ''
+  return `- [OpenLoop / ${openLoop.status}] ${openLoop.title}${descriptionSuffix}`
 }
 
 async function loadMessagesForSessions(
@@ -1234,21 +1250,30 @@ async function executeGetMessagesAndLogs(args: ToolArgs, context: ToolContext): 
       return filter.error
     }
 
-    let logs: ActivityLogEntry[]
+    let sessions: ActivitySession[]
+    let dailyLogs: DailyActivityLog[]
+    let openLoops: OpenLoop[]
     try {
-      logs = await getActivityLogs(filter.from, filter.to)
+      ;[sessions, dailyLogs, openLoops] = await Promise.all([
+        getActionLogSessions(filter.from, filter.to),
+        getActionLogDailyActivityLogs(filter.from, filter.to),
+        getActionLogOpenLoops(filter.from, filter.to),
+      ])
     } catch {
       return 'アクティビティログの取得に失敗しました。'
     }
 
-    if (logs.length === 0) return `${filter.label} のアクティビティログがありません。`
+    const visibleSessions = sessions.filter((session) => session.hidden !== true)
+    const items = [
+      ...visibleSessions.map(formatActivitySessionLine),
+      ...dailyLogs.map(formatDailyActivityLogLine),
+      ...openLoops.map(formatOpenLoopLine),
+    ]
 
-    const lines = [`【アクティビティログ（${filter.label}）】`, `合計: ${logs.length}件`, '']
-    const items = logs
-      .slice(0, 20)
-      .map((log) => `- [${log.category}] ${log.action}（${toJst(log.timestamp)}）`)
+    if (items.length === 0) return `${filter.label} のアクティビティログがありません。`
 
-    return [...lines, ...sliceWithOverflow(items, logs.length)].join('\n')
+    const lines = [`【アクティビティログ（${filter.label}）】`, `合計: ${items.length}件`, '']
+    return [...lines, ...sliceWithOverflow(items.slice(0, 20), items.length)].join('\n')
   }
 
   if (type === 'situation_logs') {

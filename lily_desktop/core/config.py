@@ -19,6 +19,7 @@ DEFAULT_ACTIVITY_CAPTURE_POLL_INTERVAL_SECONDS = 2
 DEFAULT_ACTIVITY_CAPTURE_SYNC_INTERVAL_SECONDS = 30
 DEFAULT_ACTIVITY_PROCESSING_MAX_COMPLETION_TOKENS = 400
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
+DEFAULT_WEB_BASE_URL = "http://127.0.0.1:5173/#"
 DEFAULT_MEMORY_DIRECTORY = r"D:\codes\mixi2-api\generated_text"
 DEFAULT_AUTO_TALK_SKIP_AUDIBLE_DOMAINS = [
     "youtube.com",
@@ -184,6 +185,24 @@ def normalize_ai_base_url(value: object) -> str:
     if parts.scheme and parts.netloc:
         return f"{parts.scheme}://{parts.netloc}"
     return raw.rstrip("/")
+
+
+def normalize_web_base_url(value: object) -> str:
+    if not isinstance(value, str):
+        return DEFAULT_WEB_BASE_URL
+    raw = value.strip()
+    if not raw:
+        return DEFAULT_WEB_BASE_URL
+    parts = urlsplit(raw)
+    if parts.scheme and parts.netloc:
+        normalized = f"{parts.scheme}://{parts.netloc}{parts.path.rstrip('/')}"
+    else:
+        normalized = raw.rstrip("/")
+    if normalized.endswith("/#"):
+        return normalized
+    if normalized.endswith("#"):
+        return normalized
+    return f"{normalized}/#"
 
 
 def normalize_memory_directory(
@@ -357,6 +376,11 @@ class HttpBridgeConfig:
 
 
 @dataclass
+class WebConfig:
+    base_url: str = DEFAULT_WEB_BASE_URL
+
+
+@dataclass
 class ActivityCaptureConfig:
     enabled: bool = True
     initial_state: str = "active"
@@ -390,6 +414,7 @@ class AppConfig:
     healthplanet: HealthPlanetConfig = field(default_factory=HealthPlanetConfig)
     fitbit: FitbitConfig = field(default_factory=FitbitConfig)
     http_bridge: HttpBridgeConfig = field(default_factory=HttpBridgeConfig)
+    web: WebConfig = field(default_factory=WebConfig)
     activity_capture: ActivityCaptureConfig = field(default_factory=ActivityCaptureConfig)
     activity_processing: ActivityProcessingConfig = field(default_factory=ActivityProcessingConfig)
 
@@ -433,6 +458,14 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         http_bridge_raw = dict(http_bridge_raw)
     http_bridge_raw["port"] = normalize_http_bridge_port(
         http_bridge_raw.get("port", DEFAULT_HTTP_BRIDGE_PORT)
+    )
+    web_raw = raw.get("web", {}) or {}
+    if not isinstance(web_raw, dict):
+        web_raw = {}
+    else:
+        web_raw = dict(web_raw)
+    web_raw["base_url"] = normalize_web_base_url(
+        web_raw.get("base_url", DEFAULT_WEB_BASE_URL)
     )
     activity_capture_raw = raw.get("activity_capture", {}) or {}
     if not isinstance(activity_capture_raw, dict):
@@ -551,6 +584,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         healthplanet=HealthPlanetConfig(**healthplanet_raw),
         fitbit=FitbitConfig(**raw.get("fitbit", {})),
         http_bridge=HttpBridgeConfig(**http_bridge_raw),
+        web=WebConfig(**web_raw),
         activity_capture=ActivityCaptureConfig(**activity_capture_raw),
         activity_processing=ActivityProcessingConfig(**activity_processing_raw),
     )

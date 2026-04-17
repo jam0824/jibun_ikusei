@@ -278,6 +278,28 @@ def test_activity_processing_uses_config_values(tmp_path):
     assert config.activity_processing.max_completion_tokens == 256
 
 
+def test_web_config_defaults_to_local_pwa_origin(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.web.base_url == "http://127.0.0.1:5173/#"
+
+
+def test_web_config_normalizes_hash_base_url(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "web:\n"
+        "  base_url: http://localhost:5173\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.web.base_url == "http://localhost:5173/#"
+
+
 def test_voice_pause_during_tts_defaults_to_true(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text("", encoding="utf-8")

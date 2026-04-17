@@ -24,6 +24,9 @@ def _make_api():
     api.get_messages = AsyncMock(return_value=[])
     api.get_ai_config = AsyncMock(return_value={})
     api.get_activity_logs = AsyncMock(return_value=[])
+    api.get_action_log_sessions = AsyncMock(return_value=[])
+    api.get_action_log_daily_logs = AsyncMock(return_value=[])
+    api.get_action_log_open_loops = AsyncMock(return_value=[])
     api.get_situation_logs = AsyncMock(return_value=[])
     api.get_chat_sessions = AsyncMock(return_value=[])
     api.get_chat_messages = AsyncMock(return_value=[])
@@ -187,9 +190,28 @@ async def test_assistant_messages_use_jst_day_boundary():
 @pytest.mark.asyncio
 async def test_activity_logs_pass_explicit_range_to_api():
     api = _make_api()
-    api.get_activity_logs.return_value = [
-        {"category": "work", "action": "coding", "timestamp": "2026-03-29T03:00:00Z"},
+    api.get_action_log_sessions.return_value = [
+        {
+            "id": "session_1",
+            "deviceId": "device_main",
+            "startedAt": "2026-03-29T12:00:00+09:00",
+            "endedAt": "2026-03-29T13:00:00+09:00",
+            "dateKey": "2026-03-29",
+            "title": "coding",
+            "primaryCategory": "仕事",
+            "activityKinds": ["開発"],
+            "appNames": ["Code"],
+            "domains": [],
+            "projectNames": [],
+            "summary": "実装を進めていた。",
+            "searchKeywords": ["coding"],
+            "noteIds": [],
+            "openLoopIds": [],
+            "hidden": False,
+        },
     ]
+    api.get_action_log_daily_logs.return_value = []
+    api.get_action_log_open_loops.return_value = []
     executor = ToolExecutor(api)
 
     result = await executor.execute(
@@ -197,8 +219,89 @@ async def test_activity_logs_pass_explicit_range_to_api():
         {"type": "activity_logs", "fromDate": "2026-03-29", "toDate": "2026-03-30"},
     )
 
-    api.get_activity_logs.assert_awaited_once_with("2026-03-29", "2026-03-30")
+    api.get_action_log_sessions.assert_awaited_once_with("2026-03-29", "2026-03-30")
+    api.get_action_log_daily_logs.assert_awaited_once_with("2026-03-29", "2026-03-30")
+    api.get_action_log_open_loops.assert_awaited_once_with("2026-03-29", "2026-03-30")
+    api.get_activity_logs.assert_not_awaited()
     assert "coding" in result
+
+
+@pytest.mark.asyncio
+async def test_activity_logs_exclude_hidden_sessions_and_include_daily_and_open_loops():
+    api = _make_api()
+    api.get_action_log_sessions.return_value = [
+        {
+            "id": "session_visible",
+            "deviceId": "device_main",
+            "startedAt": "2026-03-29T09:00:00+09:00",
+            "endedAt": "2026-03-29T10:00:00+09:00",
+            "dateKey": "2026-03-29",
+            "title": "Chrome 拡張の調査",
+            "primaryCategory": "学習",
+            "activityKinds": ["調査"],
+            "appNames": ["Chrome"],
+            "domains": ["developer.chrome.com"],
+            "projectNames": [],
+            "summary": "Manifest V3 を確認していた。",
+            "searchKeywords": ["Chrome拡張"],
+            "noteIds": [],
+            "openLoopIds": ["loop_1"],
+            "hidden": False,
+        },
+        {
+            "id": "session_hidden",
+            "deviceId": "device_main",
+            "startedAt": "2026-03-29T11:00:00+09:00",
+            "endedAt": "2026-03-29T12:00:00+09:00",
+            "dateKey": "2026-03-29",
+            "title": "隠しセッション",
+            "primaryCategory": "仕事",
+            "activityKinds": ["開発"],
+            "appNames": ["Code"],
+            "domains": [],
+            "projectNames": [],
+            "summary": "hidden",
+            "searchKeywords": ["hidden"],
+            "noteIds": [],
+            "openLoopIds": [],
+            "hidden": True,
+        },
+    ]
+    api.get_action_log_daily_logs.return_value = [
+        {
+            "id": "daily_2026-03-29",
+            "dateKey": "2026-03-29",
+            "summary": "リリィは、この日の流れを静かに見ていた。",
+            "mainThemes": ["Chrome拡張"],
+            "noteIds": [],
+            "openLoopIds": ["loop_1"],
+            "reviewQuestions": [],
+            "generatedAt": "2026-03-29T22:00:00+09:00",
+        }
+    ]
+    api.get_action_log_open_loops.return_value = [
+        {
+            "id": "loop_1",
+            "createdAt": "2026-03-29T10:00:00+09:00",
+            "updatedAt": "2026-03-29T10:05:00+09:00",
+            "dateKey": "2026-03-29",
+            "title": "権限設定の確認",
+            "description": "permissions を見直す",
+            "status": "open",
+            "linkedSessionIds": ["session_visible"],
+        }
+    ]
+    executor = ToolExecutor(api)
+
+    result = await executor.execute(
+        "get_messages_and_logs",
+        {"type": "activity_logs", "date": "2026-03-29"},
+    )
+
+    assert "Chrome 拡張の調査" in result
+    assert "権限設定の確認" in result
+    assert "リリィは、この日の流れを静かに見ていた。" in result
+    assert "隠しセッション" not in result
 
 
 @pytest.mark.asyncio
