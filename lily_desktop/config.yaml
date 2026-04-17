@@ -93,3 +93,9 @@ activity_capture:
   initial_state: active
   poll_interval_seconds: 2
   sync_interval_seconds: 30
+activity_processing:
+  enabled: true
+  provider: ollama
+  base_url: http://127.0.0.1:11434
+  model: gemma4:e4b
+  max_completion_tokens: 400

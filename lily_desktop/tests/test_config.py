@@ -244,6 +244,40 @@ def test_activity_capture_invalid_sync_interval_falls_back_to_30_seconds(tmp_pat
     assert config.activity_capture.sync_interval_seconds == 30
 
 
+def test_activity_processing_defaults_to_ollama_gemma4(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.activity_processing.enabled is True
+    assert config.activity_processing.provider == "ollama"
+    assert config.activity_processing.base_url == "http://127.0.0.1:11434"
+    assert config.activity_processing.model == "gemma4:e4b"
+    assert config.activity_processing.max_completion_tokens == 400
+
+
+def test_activity_processing_uses_config_values(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "activity_processing:\n"
+        "  enabled: false\n"
+        "  provider: ollama\n"
+        "  base_url: http://localhost:11434/\n"
+        "  model: gemma4:custom\n"
+        "  max_completion_tokens: 256\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.activity_processing.enabled is False
+    assert config.activity_processing.provider == "ollama"
+    assert config.activity_processing.base_url == "http://localhost:11434"
+    assert config.activity_processing.model == "gemma4:custom"
+    assert config.activity_processing.max_completion_tokens == 256
+
+
 def test_voice_pause_during_tts_defaults_to_true(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text("", encoding="utf-8")

@@ -98,6 +98,7 @@ export interface ActivitySession {
   domains: string[]
   projectNames: string[]
   summary?: string
+  searchKeywords: string[]
   noteIds: string[]
   openLoopIds: string[]
   hidden: boolean
@@ -135,6 +136,8 @@ export interface ManualNote {
 export interface OpenLoop {
   id: string
   createdAt: string
+  updatedAt: string
+  dateKey: string
   title: string
   description?: string
   status: OpenLoopStatus

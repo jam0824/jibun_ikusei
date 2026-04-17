@@ -8,6 +8,7 @@ import {
   getActionLogDailyActivityLogs,
   getActionLogDailyActivityLog,
   getActionLogDevices,
+  getActionLogOpenLoops,
   getActionLogPrivacyRules,
   getActionLogRawEvents,
   getActionLogSessions,
@@ -18,6 +19,7 @@ import {
   postActivityLogs,
   putActionLogDailyActivityLog,
   putActionLogDevice,
+  putActionLogOpenLoops,
   putActionLogPrivacyRules,
   putActionLogSessions,
   putActionLogWeeklyActivityReview,
@@ -86,6 +88,7 @@ describe('api-client action-log stubs', () => {
           appNames: ['Chrome'],
           domains: ['developer.chrome.com'],
           projectNames: ['self-growth-app'],
+          searchKeywords: ['Chrome extension', 'developer.chrome.com'],
           noteIds: [],
           openLoopIds: [],
           hidden: false,
@@ -111,6 +114,7 @@ describe('api-client action-log stubs', () => {
           appNames: ['Chrome'],
           domains: ['developer.chrome.com'],
           projectNames: ['self-growth-app'],
+          searchKeywords: ['Chrome extension', 'developer.chrome.com'],
           noteIds: [],
           openLoopIds: [],
           hidden: false,
@@ -157,6 +161,22 @@ describe('api-client action-log stubs', () => {
         enabled: true,
       },
     ])
+    await getActionLogOpenLoops('2026-04-01', '2026-04-17')
+    await putActionLogOpenLoops({
+      dateKeys: ['2026-04-17'],
+      openLoops: [
+        {
+          id: 'loop_1',
+          createdAt: '2026-04-17T10:00:00+09:00',
+          updatedAt: '2026-04-17T10:05:00+09:00',
+          dateKey: '2026-04-17',
+          title: 'manifestの確認',
+          description: 'manifest v3 を見直す',
+          status: 'open',
+          linkedSessionIds: ['session_1'],
+        },
+      ],
+    })
 
     const calledPaths = fetchMock.mock.calls.map(([input]) => input)
     expect(calledPaths).toEqual(
@@ -173,6 +193,8 @@ describe('api-client action-log stubs', () => {
         expect.stringContaining('/action-log/devices/device_1'),
         expect.stringContaining('/action-log/privacy-rules'),
         expect.stringContaining('/action-log/privacy-rules'),
+        expect.stringContaining('/action-log/open-loops?from=2026-04-01&to=2026-04-17'),
+        expect.stringContaining('/action-log/open-loops'),
       ]),
     )
   })

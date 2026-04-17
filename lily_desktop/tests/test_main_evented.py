@@ -9,6 +9,8 @@ import pytest
 
 import main as main_mod
 from core.domain_events import (
+    ActionLogOrganizeRequested,
+    ActionLogSyncRequested,
     AppStarted,
     CaptureSnapshotRequested,
     CaptureSummaryDue,
@@ -229,6 +231,17 @@ def test_start_action_log_sync_timer_is_noop_when_activity_capture_disabled():
     main_mod.App.start_action_log_sync_timer(app)
 
     assert timer.started_with == []
+
+
+def test_action_log_sync_timer_publishes_sync_and_organize_events_when_event_hub_exists():
+    hub = _CaptureHub()
+    app = SimpleNamespace(event_hub=hub)
+
+    main_mod.App._on_action_log_sync_timer(app)
+
+    assert len(hub.events) == 2
+    assert isinstance(hub.events[0], ActionLogSyncRequested)
+    assert isinstance(hub.events[1], ActionLogOrganizeRequested)
 
 
 @pytest.mark.asyncio

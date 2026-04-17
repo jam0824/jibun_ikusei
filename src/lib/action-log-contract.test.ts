@@ -3,9 +3,11 @@ import { describe, expect, it } from 'vitest'
 import { getWeekKey } from '@/lib/date'
 
 import {
+  activitySessionSchema,
   deviceSchema,
   normalizeActivitySessionDraft,
   normalizeRawEventDraft,
+  openLoopSchema,
   rawEventSchema,
   resolvePrivacyRuleOutcome,
   toActionLogDateKey,
@@ -57,12 +59,37 @@ describe('action-log-contract', () => {
       appNames: ['Chrome'],
       domains: ['developer.chrome.com'],
       projectNames: ['self-growth-app'],
+      searchKeywords: ['Chrome', 'developer.chrome.com'],
       noteIds: [],
       openLoopIds: [],
       hidden: false,
     })
 
     expect(session.dateKey).toBe('2026-04-17')
+  })
+
+  it('requires searchKeywords on ActivitySession', () => {
+    expect(
+      activitySessionSchema.parse({
+        id: 'session_1',
+        deviceId: 'device_1',
+        startedAt: '2026-04-17T10:00:00+09:00',
+        endedAt: '2026-04-17T10:45:00+09:00',
+        dateKey: '2026-04-17',
+        title: 'Chrome拡張の調査',
+        primaryCategory: '学習',
+        activityKinds: ['調査'],
+        appNames: ['Chrome'],
+        domains: ['developer.chrome.com'],
+        projectNames: ['self-growth-app'],
+        searchKeywords: ['Chrome拡張', 'developer.chrome.com'],
+        noteIds: [],
+        openLoopIds: ['loop_1'],
+        hidden: false,
+      }),
+    ).toMatchObject({
+      searchKeywords: ['Chrome拡張', 'developer.chrome.com'],
+    })
   })
 
   it('reuses the existing ISO week-year helper for week keys', () => {
@@ -108,6 +135,24 @@ describe('action-log-contract', () => {
         clipboardText: 'secret',
       }),
     ).toThrow()
+  })
+
+  it('accepts OpenLoop dateKey and updatedAt fields', () => {
+    expect(
+      openLoopSchema.parse({
+        id: 'loop_1',
+        createdAt: '2026-04-17T09:15:00+09:00',
+        updatedAt: '2026-04-17T09:20:00+09:00',
+        dateKey: '2026-04-17',
+        title: 'manifestの確認',
+        description: 'manifest v3 を見直す',
+        status: 'open',
+        linkedSessionIds: ['session_1'],
+      }),
+    ).toMatchObject({
+      dateKey: '2026-04-17',
+      updatedAt: '2026-04-17T09:20:00+09:00',
+    })
   })
 
   it('resolves privacy rules by window_title > domain > app > storage_mode priority', () => {

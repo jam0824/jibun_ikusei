@@ -11,6 +11,7 @@ const SESSION_PREFIX = "ACTION_LOG#SESSION#";
 const DAILY_PREFIX = "ACTION_LOG#DAILY#";
 const WEEKLY_PREFIX = "ACTION_LOG#WEEKLY#";
 const DEVICE_PREFIX = "ACTION_LOG#DEVICE#";
+const OPEN_LOOP_PREFIX = "ACTION_LOG#OPEN_LOOP#";
 const PRIVACY_RULES_SK = "ACTION_LOG#PRIVACY_RULES";
 
 function nowJstIso() {
@@ -120,6 +121,14 @@ function buildDeviceItem(pk, id, existing, updates) {
     id,
     createdAt: existing?.createdAt ?? updates.createdAt ?? now,
     updatedAt: now,
+  };
+}
+
+function buildOpenLoopItem(pk, openLoop) {
+  return {
+    PK: pk,
+    SK: `${OPEN_LOOP_PREFIX}${openLoop.dateKey}#${openLoop.id}`,
+    ...openLoop,
   };
 }
 
@@ -340,6 +349,55 @@ export const handler = async (event) => {
         }),
       );
       return response(200, { updated: rules.length });
+    }
+
+    case "GET /action-log/open-loops": {
+      const range = requireDateRange(event);
+      if ("error" in range) {
+        return range.error;
+      }
+      const result = await queryBetween({
+        pk,
+        prefix: OPEN_LOOP_PREFIX,
+        from: range.from,
+        to: range.to,
+      });
+      return response(200, (result.Items ?? []).map(stripSystemFields));
+    }
+
+    case "PUT /action-log/open-loops": {
+      const body = parseBody(event);
+      const dateKeys = Array.isArray(body.dateKeys) ? body.dateKeys.filter(Boolean) : null;
+      const openLoops = Array.isArray(body.openLoops) ? body.openLoops : null;
+      if (dateKeys === null || openLoops === null) {
+        return response(400, { error: "dateKeys and openLoops are required" });
+      }
+
+      for (const dateKey of [...new Set(dateKeys)]) {
+        const existing = await queryBeginsWith({
+          pk,
+          prefix: `${OPEN_LOOP_PREFIX}${dateKey}#`,
+        });
+        for (const item of existing.Items ?? []) {
+          await db.send(
+            new DeleteCommand({
+              TableName: TABLE_NAME,
+              Key: { PK: pk, SK: item.SK },
+            }),
+          );
+        }
+      }
+
+      for (const openLoop of openLoops) {
+        await db.send(
+          new PutCommand({
+            TableName: TABLE_NAME,
+            Item: buildOpenLoopItem(pk, openLoop),
+          }),
+        );
+      }
+
+      return response(200, { updated: openLoops.length });
     }
 
     default:

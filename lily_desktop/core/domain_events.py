@@ -60,6 +60,11 @@ class ActionLogSyncRequested(DomainEvent):
 
 
 @dataclass(slots=True, kw_only=True)
+class ActionLogOrganizeRequested(DomainEvent):
+    pass
+
+
+@dataclass(slots=True, kw_only=True)
 class ChatAutoTalkDue(DomainEvent):
     forced_source: str | None = None
 

@@ -278,6 +278,8 @@ export class JibunIkuseiStack extends cdk.Stack {
     api.addRoutes({ path: '/action-log/devices/{id}', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
     api.addRoutes({ path: '/action-log/privacy-rules', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
     api.addRoutes({ path: '/action-log/privacy-rules', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/open-loops', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/open-loops', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
 
     // Situation Logs
     const situationLogIntegration = new integrations.HttpLambdaIntegration('SituationLogIntegration', situationLogFn)

@@ -16,6 +16,7 @@ from ai.tool_definitions import CHAT_TOOLS
 from ai.tool_executor import ToolExecutor
 from api.api_client import ApiClient
 from api.auth import CognitoAuth
+from core.action_log_organizer import ActionLogOrganizer
 from core.activity_capture_service import ActivityCaptureService, default_device_id
 from core.background_event_runtime import register_background_event_handlers
 from core.camera import find_camera_index
@@ -28,6 +29,7 @@ from core.config import (
 )
 from core.desktop_context import format_context_log
 from core.domain_events import (
+    ActionLogOrganizeRequested,
     ActionLogSyncRequested,
     AppStarted,
     CaptureSnapshotRequested,
@@ -105,6 +107,7 @@ class App:
         self.chrome_audible_tabs_tracker = ChromeAudibleTabsTracker()
         self.level_watch = LevelWatchService()
         self.activity_capture_service: ActivityCaptureService | None = None
+        self.action_log_organizer: ActionLogOrganizer | None = None
 
         # Fitbit 同期
         self.fitbit_sync: FitbitSync | None = None
@@ -617,11 +620,13 @@ class App:
 
     def _on_action_log_sync_timer(self) -> None:
         if getattr(self, "event_hub", None) is not None:
+            self.event_hub.publish(ActionLogSyncRequested(source="action_log.sync.timer"))
             self.event_hub.publish(
-                ActionLogSyncRequested(source="action_log.sync.timer")
+                ActionLogOrganizeRequested(source="action_log.organize.timer")
             )
             return
         asyncio.ensure_future(self.handle_action_log_sync_request())
+        asyncio.ensure_future(self.handle_action_log_organize_request())
 
     async def handle_action_log_sync_request(self) -> None:
         if self.activity_capture_service is None:
@@ -649,6 +654,30 @@ class App:
                 return
 
             self.activity_capture_service.ack_pending_raw_events(pending)
+
+    async def handle_action_log_organize_request(self) -> None:
+        if not self.config.activity_capture.enabled:
+            return
+        if not getattr(self.auth, "is_configured", False):
+            logger.info("Action log organize skipped: Cognito not configured")
+            return
+
+        organizer = self._get_action_log_organizer()
+        await organizer.organize_and_sync()
+
+    def _get_action_log_organizer(self) -> ActionLogOrganizer:
+        if self.action_log_organizer is None:
+            self.action_log_organizer = ActionLogOrganizer(
+                device_id=(
+                    self.activity_capture_service.device_id
+                    if self.activity_capture_service is not None
+                    else default_device_id()
+                ),
+                api_client=self.api_client,
+                processing_config=self.config.activity_processing,
+                logger_instance=logger,
+            )
+        return self.action_log_organizer
 
     async def run_level_watch_job(self) -> None:
         if not getattr(self.auth, "is_configured", False):

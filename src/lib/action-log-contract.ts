@@ -85,6 +85,7 @@ export const activitySessionSchema = z
     domains: z.array(z.string().min(1)),
     projectNames: z.array(z.string().min(1)),
     summary: z.string().min(1).optional(),
+    searchKeywords: z.array(z.string().min(1)),
     noteIds: z.array(z.string().min(1)),
     openLoopIds: z.array(z.string().min(1)),
     hidden: z.boolean(),
@@ -130,6 +131,8 @@ export const openLoopSchema = z
   .object({
     id: z.string().min(1),
     createdAt: jstRfc3339Schema,
+    updatedAt: jstRfc3339Schema,
+    dateKey: dateKeySchema,
     title: z.string().min(1),
     description: z.string().min(1).optional(),
     status: openLoopStatusSchema,

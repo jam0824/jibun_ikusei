@@ -195,48 +195,48 @@
 ### 目的
 
 - [x] `lily_desktop` を正式ホストとして `Activity Capture Service` を組み込む
-- [ ] OS 側イベントと extension イベントを同じ内部イベント層へ統合する
+- [x] OS 側イベントと extension イベントを同じ内部イベント層へ統合する
 
 ### 実装対象
 
 - [x] `Activity Capture Service` の土台
-- [x] active window / idle / file context 取得の統合
+- [x] active window / idle の統合と、desktop 起点 file context は空許容で扱う整理
 - [x] `Local HTTP Bridge` を capture service の入力アダプタとして接続
-- [ ] privacy rule 適用とローカル一時キュー
+- [x] privacy rule 適用とローカル一時キュー
 - [x] デバイス単位の `収集中 / 一時停止 / 無効` 制御
-- [ ] 収集機能のみを停止・再起動できる制御境界
+- [x] 収集機能のみを停止・再起動できる制御境界
 
 ### 先に書く failing test
 
-- [ ] active window 変更が `RawEvent` に変換されるテスト
-- [ ] idle 開始 / 終了のテスト
-- [ ] bridge から受けた browser event が正規化されるテスト
-- [ ] privacy rule によって除外されるテスト
+- [x] active window 変更が `RawEvent` に変換されるテスト
+- [x] idle 開始 / 終了のテスト
+- [x] bridge から受けた browser event が正規化されるテスト
+- [x] privacy rule によって除外されるテスト
 - [x] `一時停止` 中は新規 `RawEvent` を生成しないテスト
 - [x] `無効` 状態では収集が起動しないテスト
 
 ### 実装メモ
 
-- [ ] UI・会話処理と収集処理の責務境界を守る
-- [ ] v0.1 は同一プロセスでもよいが、将来サブプロセス化しやすい境界にする
-- [ ] ローカル一時保存は再送前提の spool として扱う
-- [ ] 収集機能障害時も `lily_desktop` の表示・会話は継続できる境界を保つ
+- [x] UI・会話処理と収集処理の責務境界を守る
+- [x] v0.1 は同一プロセスでもよいが、将来サブプロセス化しやすい境界にする
+- [x] ローカル一時保存は再送前提の spool として扱う
+- [x] 収集機能障害時も `lily_desktop` の表示・会話は継続できる境界を保つ
 
 ### 完了条件
 
-- [ ] desktop 側の主要イベントが `RawEvent` として統一形式で扱える
-- [ ] bridge 経由の browser event が capture service に統合される
-- [ ] privacy rule と一時キューが機能する
+- [x] desktop 側の主要イベントが `RawEvent` として統一形式で扱える
+- [x] bridge 経由の browser event が capture service に統合される
+- [x] privacy rule と一時キューが機能する
 - [x] `収集中 / 一時停止 / 無効` のデバイス状態が機能する
 
 ### 自己レビュー項目
 
-- [ ] spec と実装のズレがないか
-- [ ] JST 前提を壊していないか
-- [ ] privacy 境界を破っていないか
-- [ ] 既存の責務分離を壊していないか
-- [ ] 不要な重複計測や二重保存がないか
-- [ ] テストが対象範囲を十分にカバーしているか
+- [x] spec と実装のズレがないか
+- [x] JST 前提を壊していないか
+- [x] privacy 境界を破っていないか
+- [x] 既存の責務分離を壊していないか
+- [x] 不要な重複計測や二重保存がないか
+- [x] テストが対象範囲を十分にカバーしているか
 
 ---
 
@@ -244,106 +244,89 @@
 
 ### 目的
 
-- [ ] 行動ログの正本保存と端末同期の基盤を作る
-- [ ] `RawEvent` の短期保持と `ActivitySession` 以上の長期保持をサーバー側に反映する
+- [x] 行動ログの正本保存と端末同期の基盤を作る
+- [x] `RawEvent` の短期保持と `ActivitySession` 以上の長期保持をサーバー側に反映する
 
 ### 実装対象
 
-- [ ] `RawEvent` 保存 API
-- [ ] `ActivitySession / DailyActivityLog / WeeklyActivityReview` 保存 API
-- [ ] `RawEvent` TTL 設定と `expiresAt` 反映
-- [ ] デバイスごとの送信・再送・重複防止
+- [x] `RawEvent` 保存 API
+- [x] `ActivitySession / DailyActivityLog / WeeklyActivityReview` 保存 API
+- [x] `RawEvent` TTL 設定と `expiresAt` 反映
+- [x] デバイスごとの送信・再送・重複防止
 
 ### 先に書く failing test
 
-- [ ] `RawEvent` 保存と TTL フィールド設定のテスト
-- [ ] session 以上の長期保存テスト
-- [ ] 同一イベントの重複送信抑止テスト
+- [x] `RawEvent` 保存と TTL フィールド設定のテスト
+- [x] session 以上の長期保存テスト
+- [x] 同一イベントの重複送信抑止テスト
 - [ ] オフライン復帰後の再送テスト
 
 ### 実装メモ
 
-- [ ] `RawEvent` の長期参照を前提にしない
-- [ ] `ActivitySession` 以上を UI と Lily の正本参照に使う
-- [ ] storage 層で privacy 境界を破らない
+- [x] `RawEvent` の長期参照を前提にしない
+- [x] `ActivitySession` 以上を UI と Lily の正本参照に使う
+- [x] storage 層で privacy 境界を破らない
 
 ### 完了条件
 
-- [ ] サーバーに保存すべき単位が仕様どおり保存される
-- [ ] TTL と長期保持の住み分けが正しく機能する
+- [x] サーバーに保存すべき単位が仕様どおり保存される
+- [x] TTL と長期保持の住み分けが正しく機能する
 - [ ] 端末同期と再送の基本ケースが通る
 
 ### 自己レビュー項目
 
-- [ ] spec と実装のズレがないか
-- [ ] JST 前提を壊していないか
-- [ ] privacy 境界を破っていないか
-- [ ] 既存の責務分離を壊していないか
-- [ ] 不要な重複計測や二重保存がないか
+- [x] spec と実装のズレがないか
+- [x] JST 前提を壊していないか
+- [x] privacy 境界を破っていないか
+- [x] 既存の責務分離を壊していないか
+- [x] 不要な重複計測や二重保存がないか
 - [ ] テストが対象範囲を十分にカバーしているか
 
 ---
-
-## Phase 3-4 完了メモ
-
-### Phase 3 完了
-- [x] `Activity Capture Service` が desktop 側の正式収集ホストとして動作する
-- [x] active window / idle / browser bridge event が同一 `RawEvent` 形式で JSONL spool される
-- [x] `snapshot_pending_raw_events` / `ack_pending_raw_events` と `sync_state.json` による durable spool が動く
-- [x] `active / paused / disabled` の停止境界がテストで担保されている
-- [x] `Local HTTP Bridge` が `browser_page_changed` / `heartbeat` を正式受理して capture service へ渡す
-
-### Phase 4 完了
-- [x] desktop 起動時 1 回 + 30 秒ごとの `ActionLogSyncRequested` が動く
-- [x] action-log sync job が `single_flight_coalesce` で動く
-- [x] `/action-log/raw-events`, `/action-log/sessions`, `/action-log/daily`, `/action-log/weekly`, `/action-log/devices`, `/action-log/privacy-rules` API が実装済み
-- [x] `GET /action-log/raw-events?from&to`, `GET /action-log/sessions?from&to`, `GET /action-log/daily?from&to`, `GET /action-log/weekly?year=YYYY` が実装済み
-- [x] `RawEvent` は `expiresAt` から TTL を保存し、同じ event id の再送は同じ key へ upsert される
-- [x] desktop / frontend / infra の関連テストと型チェックが通っている
 
 ## Phase 5: セッション化と local gemma4
 
 ### 目的
 
-- [ ] 生イベントから人が読める作業単位を作る
-- [ ] local `gemma4` を使った通常整理処理を組み込む
+- [x] 生イベントから人が読める作業単位を作る
+- [x] local `gemma4` を使った通常整理処理を組み込む
 
 ### 実装対象
 
-- [ ] `RawEvent -> ActivitySession` のセッション化
-- [ ] セッション名付け
-- [ ] primary category と activity kind の分類
-- [ ] OpenLoop 抽出
-- [ ] 検索補助インデックス生成
+- [x] `RawEvent -> ActivitySession` のセッション化
+- [x] セッション名付け
+- [x] primary category と activity kind の分類
+- [x] OpenLoop 抽出
+- [x] 検索補助インデックス生成
 
 ### 先に書く failing test
 
-- [ ] 近接イベントが同一 session に束ねられるテスト
-- [ ] idle やアプリ切り替えで session が分かれるテスト
-- [ ] local `gemma4` 結果の保存テスト
-- [ ] local AI 不可時にルールベース fallback へ落ちるテスト
+- [x] 近接イベントが同一 session に束ねられるテスト
+- [x] idle やアプリ切り替えで session が分かれるテスト
+- [x] local `gemma4` 結果の保存テスト
+- [x] local AI 不可時にルールベース fallback へ落ちるテスト
 
 ### 実装メモ
 
-- [ ] local `gemma4` は整理用であり、日次・週次まとめには使わない
-- [ ] LLM 入力は必要最小限の構造化データに絞る
-- [ ] fallback 時も UI が壊れない形にする
-- [ ] v0.1 ではセッション手動分割を持たず、自動セッション化の安定性を優先する
+- [x] local `gemma4` は整理用であり、日次・週次まとめには使わない
+- [x] LLM 入力は必要最小限の構造化データに絞る
+- [x] fallback 時も UI が壊れない形にする
+- [x] v0.1 ではセッション手動分割を持たず、自動セッション化の安定性を優先する
 
 ### 完了条件
 
-- [ ] session タイトル・カテゴリ・OpenLoop が生成される
-- [ ] local `gemma4` が通常整理処理に使われる
-- [ ] fallback 時も最低限の session 生成が成立する
+- [x] session タイトル・カテゴリ・OpenLoop が生成される
+- [x] local `gemma4` が通常整理処理に使われる
+- [x] fallback 時も最低限の session 生成が成立する
 
 ### 自己レビュー項目
 
-- [ ] spec と実装のズレがないか
-- [ ] JST 前提を壊していないか
-- [ ] privacy 境界を破っていないか
-- [ ] 既存の責務分離を壊していないか
-- [ ] 不要な重複計測や二重保存がないか
-- [ ] テストが対象範囲を十分にカバーしているか
+- [x] spec と実装のズレがないか
+- [x] JST 前提を壊していないか
+- [x] privacy 境界を破っていないか
+- [x] 既存の責務分離を壊していないか
+- [x] 不要な重複計測や二重保存がないか
+- [x] テストが対象範囲を十分にカバーしているか
 
 ---
 

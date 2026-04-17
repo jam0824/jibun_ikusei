@@ -17,6 +17,7 @@ DEFAULT_LEVEL_WATCH_INTERVAL_MINUTES = 10
 DEFAULT_HTTP_BRIDGE_PORT = 18765
 DEFAULT_ACTIVITY_CAPTURE_POLL_INTERVAL_SECONDS = 2
 DEFAULT_ACTIVITY_CAPTURE_SYNC_INTERVAL_SECONDS = 30
+DEFAULT_ACTIVITY_PROCESSING_MAX_COMPLETION_TOKENS = 400
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_MEMORY_DIRECTORY = r"D:\codes\mixi2-api\generated_text"
 DEFAULT_AUTO_TALK_SKIP_AUDIBLE_DOMAINS = [
@@ -115,6 +116,16 @@ def normalize_activity_capture_sync_interval_seconds(value: object) -> int:
     if seconds <= 0:
         return DEFAULT_ACTIVITY_CAPTURE_SYNC_INTERVAL_SECONDS
     return seconds
+
+
+def normalize_activity_processing_max_completion_tokens(value: object) -> int:
+    try:
+        tokens = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_ACTIVITY_PROCESSING_MAX_COMPLETION_TOKENS
+    if tokens <= 0:
+        return DEFAULT_ACTIVITY_PROCESSING_MAX_COMPLETION_TOKENS
+    return tokens
 
 
 def normalize_activity_capture_privacy_rules(value: object) -> list[dict]:
@@ -355,6 +366,15 @@ class ActivityCaptureConfig:
 
 
 @dataclass
+class ActivityProcessingConfig:
+    enabled: bool = True
+    provider: str = "ollama"
+    base_url: str = DEFAULT_OLLAMA_BASE_URL
+    model: str = "gemma4:e4b"
+    max_completion_tokens: int = DEFAULT_ACTIVITY_PROCESSING_MAX_COMPLETION_TOKENS
+
+
+@dataclass
 class AppConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     desktop: DesktopConfig = field(default_factory=DesktopConfig)
@@ -371,6 +391,7 @@ class AppConfig:
     fitbit: FitbitConfig = field(default_factory=FitbitConfig)
     http_bridge: HttpBridgeConfig = field(default_factory=HttpBridgeConfig)
     activity_capture: ActivityCaptureConfig = field(default_factory=ActivityCaptureConfig)
+    activity_processing: ActivityProcessingConfig = field(default_factory=ActivityProcessingConfig)
 
 
 def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
@@ -435,6 +456,25 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
     )
     activity_capture_raw["privacy_rules"] = normalize_activity_capture_privacy_rules(
         activity_capture_raw.get("privacy_rules", [])
+    )
+    activity_processing_raw = raw.get("activity_processing", {}) or {}
+    if not isinstance(activity_processing_raw, dict):
+        activity_processing_raw = {}
+    else:
+        activity_processing_raw = dict(activity_processing_raw)
+    activity_processing_raw["provider"] = normalize_ai_provider(
+        activity_processing_raw.get("provider", "ollama")
+    )
+    activity_processing_raw["base_url"] = normalize_ai_base_url(
+        activity_processing_raw.get("base_url", DEFAULT_OLLAMA_BASE_URL)
+    )
+    activity_processing_raw["max_completion_tokens"] = (
+        normalize_activity_processing_max_completion_tokens(
+            activity_processing_raw.get(
+                "max_completion_tokens",
+                DEFAULT_ACTIVITY_PROCESSING_MAX_COMPLETION_TOKENS,
+            )
+        )
     )
     camera_raw = raw.get("camera", {}) or {}
     if not isinstance(camera_raw, dict):
@@ -512,6 +552,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         fitbit=FitbitConfig(**raw.get("fitbit", {})),
         http_bridge=HttpBridgeConfig(**http_bridge_raw),
         activity_capture=ActivityCaptureConfig(**activity_capture_raw),
+        activity_processing=ActivityProcessingConfig(**activity_processing_raw),
     )
 
     # .env から秘密情報を上書き（.env の値を優先）
