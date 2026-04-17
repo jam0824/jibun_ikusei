@@ -103,43 +103,43 @@
 
 ### 目的
 
-- [ ] 行動ログ全体で共通に使う型・保存単位・ API 契約を固める
-- [ ] `RawEvent` TTL と `ActivitySession` 以上の長期保持の前提をコードに落とす
+- [x] 行動ログ全体で共通に使う型・保存単位・ API 契約を固める
+- [x] `RawEvent` TTL と `ActivitySession` 以上の長期保持の前提をコードに落とす
 
 ### 実装対象
 
-- [ ] `RawEvent / ActivitySession / DailyActivityLog / WeeklyActivityReview / ManualNote / OpenLoop / PrivacyRule / Device` の型定義
-- [ ] サーバー保存モデルと API 契約の骨組み
-- [ ] privacy rule と storage mode の土台
-- [ ] `RawEvent` の TTL 既定値 30 日の扱い
+- [x] `RawEvent / ActivitySession / DailyActivityLog / WeeklyActivityReview / ManualNote / OpenLoop / PrivacyRule / Device` の型定義
+- [x] サーバー保存モデルと API 契約の骨組み
+- [x] privacy rule と storage mode の土台
+- [x] `RawEvent` の TTL 既定値 30 日の扱い
 
 ### 先に書く failing test
 
-- [ ] 型変換・バリデーションのテスト
-- [ ] JST 基準の `dateKey / weekKey / occurredAt` の解釈テスト
-- [ ] `RawEvent.expiresAt` の計算テスト
-- [ ] privacy rule の適用優先順位テスト
+- [x] 型変換・バリデーションのテスト
+- [x] JST 基準の `dateKey / weekKey / occurredAt` の解釈テスト
+- [x] `RawEvent.expiresAt` の計算テスト
+- [x] privacy rule の適用優先順位テスト
 
 ### 実装メモ
 
-- [ ] route や UI と密結合しない共有契約として切り出す
-- [ ] URL 全文保存とドメインのみ保存の両モードを持てる形にする
-- [ ] 画像本文やキー入力本文は契約に含めない
+- [x] route や UI と密結合しない共有契約として切り出す
+- [x] URL 全文保存とドメインのみ保存の両モードを持てる形にする
+- [x] 画像本文やキー入力本文は契約に含めない
 
 ### 完了条件
 
-- [ ] 行動ログ系の主要型が正本として定義されている
-- [ ] API 契約と保存モデルの責務分離が明確
-- [ ] TTL と privacy の前提がテストで担保されている
+- [x] 行動ログ系の主要型が正本として定義されている
+- [x] API 契約と保存モデルの責務分離が明確
+- [x] TTL と privacy の前提がテストで担保されている
 
 ### 自己レビュー項目
 
-- [ ] spec と実装のズレがないか
-- [ ] JST 前提を壊していないか
-- [ ] privacy 境界を破っていないか
-- [ ] 既存の責務分離を壊していないか
-- [ ] 不要な重複計測や二重保存がないか
-- [ ] テストが対象範囲を十分にカバーしているか
+- [x] spec と実装のズレがないか
+- [x] JST 前提を壊していないか
+- [x] privacy 境界を破っていないか
+- [x] 既存の責務分離を壊していないか
+- [x] 不要な重複計測や二重保存がないか
+- [x] テストが対象範囲を十分にカバーしているか
 
 ---
 

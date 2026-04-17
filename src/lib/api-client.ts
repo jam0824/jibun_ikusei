@@ -11,6 +11,14 @@ import type {
   Skill,
   UserSettings,
 } from '@/domain/types'
+import type {
+  ActivitySession,
+  DailyActivityLog,
+  Device,
+  PrivacyRule,
+  RawEvent,
+  WeeklyActivityReview,
+} from '@/domain/action-log-types'
 import { getIdToken } from '@/lib/auth'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL as string
@@ -291,6 +299,64 @@ export interface ActivityLogEntry {
 
 export function getActivityLogs(from: string, to: string) {
   return request<ActivityLogEntry[]>(`/activity-logs?from=${from}&to=${to}`)
+}
+
+export function postActionLogRawEvents(input: { deviceId: string; events: RawEvent[] }) {
+  return request<{ logged: number }>('/action-log/raw-events', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function putActionLogSessions(input: { deviceId: string; sessions: ActivitySession[] }) {
+  return request<{ updated: number }>('/action-log/sessions', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
+}
+
+export function getActionLogDailyActivityLog(dateKey: string) {
+  return request<DailyActivityLog | null>(`/action-log/daily/${dateKey}`)
+}
+
+export function putActionLogDailyActivityLog(log: DailyActivityLog) {
+  return request<DailyActivityLog>(`/action-log/daily/${log.dateKey}`, {
+    method: 'PUT',
+    body: JSON.stringify(log),
+  })
+}
+
+export function getActionLogWeeklyActivityReview(weekKey: string) {
+  return request<WeeklyActivityReview | null>(`/action-log/weekly/${weekKey}`)
+}
+
+export function putActionLogWeeklyActivityReview(review: WeeklyActivityReview) {
+  return request<WeeklyActivityReview>(`/action-log/weekly/${review.weekKey}`, {
+    method: 'PUT',
+    body: JSON.stringify(review),
+  })
+}
+
+export function getActionLogDevices() {
+  return request<Device[]>('/action-log/devices')
+}
+
+export function putActionLogDevice(id: string, updates: Partial<Device>) {
+  return request<Device>(`/action-log/devices/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  })
+}
+
+export function getActionLogPrivacyRules() {
+  return request<PrivacyRule[]>('/action-log/privacy-rules')
+}
+
+export function putActionLogPrivacyRules(rules: PrivacyRule[]) {
+  return request<{ updated: number }>('/action-log/privacy-rules', {
+    method: 'PUT',
+    body: JSON.stringify({ rules }),
+  })
 }
 
 // ---- 状況ログ ----
