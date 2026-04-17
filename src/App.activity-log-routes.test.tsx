@@ -405,6 +405,33 @@ describe('activity log routes', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/records/activity/review/week?weekKey=2026-W15')
   })
 
+  it('canonicalizes a yearless review route to the latest available year', async () => {
+    vi.setSystemTime(new Date('2026-01-05T09:00:00+09:00'))
+    vi.mocked(api.getActionLogWeeklyActivityReviews).mockImplementation(async (year) => {
+      if (year === 2026) {
+        return []
+      }
+      if (year === 2025) {
+        return [
+          createWeeklyReview('2025-W52', {
+            id: 'weekly_2025-W52',
+            weekKey: '2025-W52',
+            summary: '前年の最後のレビュー',
+            focusThemes: ['2025'],
+            generatedAt: '2025-12-29T08:00:00+09:00',
+          }),
+        ]
+      }
+      return []
+    })
+
+    renderApp('/records/activity/review/year')
+    await settleApp()
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/activity/review/year?year=2025')
+    expect(screen.getByText('対象年: 2025')).toBeInTheDocument()
+  })
+
   it('generates the previous-week review from the week screen only on Monday for the previous week', async () => {
     vi.setSystemTime(new Date('2026-04-20T09:00:00+09:00'))
     vi.mocked(api.getActionLogWeeklyActivityReview).mockResolvedValue(null)
@@ -425,6 +452,53 @@ describe('activity log routes', () => {
 
     expect(ai.generateWeeklyActivityReview).not.toHaveBeenCalled()
     expect(api.putActionLogWeeklyActivityReview).not.toHaveBeenCalled()
+  })
+
+  it('uses a yearless weekly review nav link on activity screens and canonicalizes after navigation', async () => {
+    renderApp('/records/activity/search')
+    await settleApp()
+
+    const weeklyReviewLink = screen.getByRole('link', { name: '週次レビュー' })
+    expect(weeklyReviewLink.getAttribute('href')).toContain('/records/activity/review/year')
+    expect(weeklyReviewLink.getAttribute('href')).not.toContain('year=')
+
+    fireEvent.click(weeklyReviewLink)
+    await settleApp()
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/activity/review/year?year=2026')
+  })
+
+  it('renders top apps and domains on the weekly detail screen', async () => {
+    vi.mocked(api.getActionLogSessions).mockResolvedValue([
+      createSession('week_session_1', {
+        id: 'week_session_1',
+        dateKey: '2026-04-14',
+        startedAt: '2026-04-14T09:00:00+09:00',
+        endedAt: '2026-04-14T10:10:00+09:00',
+        appNames: ['Chrome'],
+        domains: ['developer.chrome.com'],
+      }),
+      createSession('week_session_2', {
+        id: 'week_session_2',
+        dateKey: '2026-04-15',
+        startedAt: '2026-04-15T13:00:00+09:00',
+        endedAt: '2026-04-15T13:20:00+09:00',
+        appNames: ['Code'],
+        domains: ['github.com'],
+      }),
+    ])
+
+    renderApp('/records/activity/review/week?weekKey=2026-W16')
+    await settleApp()
+
+    expect(screen.getByText('よく使ったアプリ')).toBeInTheDocument()
+    expect(screen.getByText('よく見ていたドメイン')).toBeInTheDocument()
+    expect(screen.getByText('Chrome')).toBeInTheDocument()
+    expect(screen.getByText('Code')).toBeInTheDocument()
+    expect(screen.getByText('developer.chrome.com')).toBeInTheDocument()
+    expect(screen.getByText('github.com')).toBeInTheDocument()
+    expect(screen.getAllByText('70分')).toHaveLength(2)
+    expect(screen.getAllByText('20分')).toHaveLength(2)
   })
 
   it.skip('filters search results on the search screen', async () => {

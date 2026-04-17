@@ -28,6 +28,7 @@ import {
   normalizeViewMode,
   normalizeWeekKey,
   normalizeYear,
+  resolveDefaultReviewYearJst,
   searchActivityLogs,
   setActivitySessionHidden,
   shiftMonthKey,
@@ -216,13 +217,11 @@ function SessionsOrEventsCard({
   day,
   viewMode,
   includeHidden,
-  onIncludeHiddenChange,
   onToggleSessionHidden,
 }: {
   day: ActivityDayViewData
   viewMode: ActivityLogViewMode
   includeHidden: boolean
-  onIncludeHiddenChange: (next: boolean) => void
   onToggleSessionHidden?: (sessionId: string, dateKey: string, hidden: boolean) => void
 }) {
   const visibleSessions = day.sessions.filter((session) => includeHidden || !session.hidden)
@@ -439,7 +438,6 @@ function TodayOrDayView({
               day={day}
               viewMode={viewMode}
               includeHidden={includeHiddenSessions}
-              onIncludeHiddenChange={setIncludeHiddenSessions}
               onToggleSessionHidden={handleToggleSessionHidden}
             />
             <OpenLoopsCard openLoops={day.openLoops} />
@@ -571,7 +569,9 @@ function ReviewYearView() {
   const settings = useAppStore((state) => state.settings)
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
-  const year = normalizeYear(searchParams.get('year'))
+  const rawYear = searchParams.get('year')
+  const year = rawYear ? normalizeYear(rawYear) : null
+  const displayYear = year ?? getCurrentYearJst()
   const [reviews, setReviews] = useState<Awaited<ReturnType<typeof fetchActivityReviewYear>>>([])
   const [error, setError] = useState<string>()
   const [isLoading, setIsLoading] = useState(true)
@@ -581,15 +581,30 @@ function ReviewYearView() {
     setIsLoading(true)
     setError(undefined)
 
-    void ensurePreviousWeekReviewForWeb({
-      aiConfig,
-      settings,
-      routeScope: 'year',
-      year,
-    })
-      .then(() => fetchActivityReviewYear(year))
+    void Promise.resolve()
+      .then(async () => {
+        const targetYear = year ?? (await resolveDefaultReviewYearJst())
+
+        if (!active) {
+          return null
+        }
+
+        if (year === null) {
+          setSearchParams({ year: String(targetYear) }, { replace: true })
+          return null
+        }
+
+        await ensurePreviousWeekReviewForWeb({
+          aiConfig,
+          settings,
+          routeScope: 'year',
+          year: targetYear,
+        })
+
+        return fetchActivityReviewYear(targetYear)
+      })
       .then((nextReviews) => {
-        if (active) {
+        if (active && nextReviews) {
           setReviews(nextReviews)
         }
       })
@@ -607,27 +622,27 @@ function ReviewYearView() {
     return () => {
       active = false
     }
-  }, [aiConfig, settings, year])
+  }, [aiConfig, setSearchParams, settings, year])
 
   return (
     <Screen title="週次行動レビュー" subtitle="1年分の週次レビューを一覧で確認します。">
       <div className="space-y-4 pb-6">
         <RecordsSectionTabs active="activity" />
-        <ActivityLogNav year={year} />
+        <ActivityLogNav year={year ?? undefined} />
         <h2 className="text-xl font-bold text-slate-900">週次行動レビュー一覧</h2>
         <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
               Target Year
             </div>
-            <div className="mt-1 text-lg font-bold text-slate-900">対象年: {year}</div>
+            <div className="mt-1 text-lg font-bold text-slate-900">対象年: {displayYear}</div>
           </div>
           <div className="flex items-center gap-2">
             <Button
               variant="outline"
               size="icon"
               aria-label="Previous year"
-              onClick={() => setSearchParams({ year: String(year - 1) })}
+              onClick={() => setSearchParams({ year: String(displayYear - 1) })}
             >
               <span aria-hidden="true">&lt;</span>
             </Button>
@@ -635,14 +650,14 @@ function ReviewYearView() {
               type="number"
               aria-label="Year picker"
               className="w-[8rem]"
-              value={String(year)}
+              value={String(displayYear)}
               onChange={(event) => setSearchParams({ year: String(normalizeYear(event.target.value)) })}
             />
             <Button
               variant="outline"
               size="icon"
               aria-label="Next year"
-              onClick={() => setSearchParams({ year: String(year + 1) })}
+              onClick={() => setSearchParams({ year: String(displayYear + 1) })}
             >
               <span aria-hidden="true">&gt;</span>
             </Button>
@@ -691,6 +706,41 @@ function ReviewYearView() {
         ) : null}
       </div>
     </Screen>
+  )
+}
+
+function UsageSummaryCard({
+  title,
+  items,
+  emptyLabel,
+}: {
+  title: string
+  items: ActivityWeekViewData['topApps'] | ActivityWeekViewData['topDomains']
+  emptyLabel: string
+}) {
+  return (
+    <Card>
+      <CardContent className="space-y-4">
+        <div className="text-sm font-semibold text-slate-900">{title}</div>
+        {items.length === 0 ? (
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+            {emptyLabel}
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {items.map((item) => (
+              <div
+                key={`${title}_${item.label}`}
+                className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+              >
+                <div className="text-sm font-medium text-slate-900">{item.label}</div>
+                <Badge tone="outline">{item.minutes}分</Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 
@@ -781,6 +831,18 @@ function ReviewWeekView({ weekKey }: { weekKey: string }) {
                 ) : null}
               </CardContent>
             </Card>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <UsageSummaryCard
+                title="よく使ったアプリ"
+                items={week?.topApps ?? []}
+                emptyLabel="この週のアプリ利用はまだありません。"
+              />
+              <UsageSummaryCard
+                title="よく見ていたドメイン"
+                items={week?.topDomains ?? []}
+                emptyLabel="この週のドメイン利用はまだありません。"
+              />
+            </div>
             <OpenLoopsCard title="その週の OpenLoop" openLoops={week?.openLoops ?? []} />
           </>
         ) : null}

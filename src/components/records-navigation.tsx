@@ -39,7 +39,7 @@ export function RecordsSectionTabs({
 }
 
 export function ActivityLogNav({
-  year = new Date().getFullYear(),
+  year,
 }: {
   year?: number
 }) {
@@ -47,7 +47,11 @@ export function ActivityLogNav({
     { label: '今日', to: '/records/activity/today', icon: Sparkles },
     { label: 'カレンダー', to: '/records/activity/calendar', icon: CalendarDays },
     { label: '検索', to: '/records/activity/search', icon: Search },
-    { label: '週次レビュー', to: `/records/activity/review/year?year=${year}`, icon: ScrollText },
+    {
+      label: '週次レビュー',
+      to: year ? `/records/activity/review/year?year=${year}` : '/records/activity/review/year',
+      icon: ScrollText,
+    },
   ]
 
   return (

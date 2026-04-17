@@ -34,6 +34,8 @@ import {
   ensurePreviousDayDailyActivityLog,
   ensurePreviousWeekReviewForWeb,
   exportActionLogBundle,
+  fetchActivityReviewWeek,
+  resolveDefaultReviewYearJst,
   searchActivityLogs,
   setActivitySessionHidden,
 } from '@/lib/action-log-view'
@@ -319,6 +321,82 @@ describe('action log view orchestration', () => {
     expect(generated).toBe(false)
     expect(ai.generateWeeklyActivityReview).not.toHaveBeenCalled()
     expect(api.putActionLogWeeklyActivityReview).not.toHaveBeenCalled()
+  })
+
+  it('resolves the latest available review year when the current year has no saved reviews', async () => {
+    vi.mocked(api.getActionLogWeeklyActivityReviews).mockImplementation(async (year) => {
+      if (year === 2026) {
+        return []
+      }
+      if (year === 2025) {
+        return [
+          createWeeklyReview('2025-W52', {
+            id: 'weekly_2025-W52',
+            weekKey: '2025-W52',
+            summary: 'Last saved review year.',
+            generatedAt: '2025-12-29T08:00:00+09:00',
+          }),
+        ]
+      }
+      return []
+    })
+
+    const resolvedYear = await resolveDefaultReviewYearJst({
+      currentYear: 2026,
+      minYear: 2024,
+    })
+
+    expect(resolvedYear).toBe(2025)
+    expect(api.getActionLogWeeklyActivityReviews).toHaveBeenNthCalledWith(1, 2026)
+    expect(api.getActionLogWeeklyActivityReviews).toHaveBeenNthCalledWith(2, 2025)
+  })
+
+  it('falls back to the current year when no saved review year exists', async () => {
+    vi.mocked(api.getActionLogWeeklyActivityReviews).mockResolvedValue([])
+
+    const resolvedYear = await resolveDefaultReviewYearJst({
+      currentYear: 2026,
+      minYear: 2024,
+    })
+
+    expect(resolvedYear).toBe(2026)
+    expect(api.getActionLogWeeklyActivityReviews).toHaveBeenNthCalledWith(1, 2026)
+    expect(api.getActionLogWeeklyActivityReviews).toHaveBeenNthCalledWith(2, 2025)
+    expect(api.getActionLogWeeklyActivityReviews).toHaveBeenNthCalledWith(3, 2024)
+  })
+
+  it('builds weekly app and domain usage summaries from session durations without double counting', async () => {
+    vi.mocked(api.getActionLogSessions).mockResolvedValue([
+      createSession('multi_context', {
+        dateKey: '2026-04-14',
+        startedAt: '2026-04-14T09:00:00+09:00',
+        endedAt: '2026-04-14T10:00:00+09:00',
+        appNames: ['Chrome', 'Code'],
+        domains: ['developer.chrome.com', 'github.com'],
+      }),
+      createSession('focused_chrome', {
+        dateKey: '2026-04-15',
+        startedAt: '2026-04-15T09:00:00+09:00',
+        endedAt: '2026-04-15T09:30:00+09:00',
+        appNames: ['Chrome'],
+        domains: ['developer.chrome.com'],
+      }),
+    ])
+    vi.mocked(api.getActionLogWeeklyActivityReview).mockResolvedValue(createWeeklyReview('2026-W16'))
+    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
+      createOpenLoop('week_loop', { dateKey: '2026-04-14' }),
+    ])
+
+    const result = await fetchActivityReviewWeek('2026-W16')
+
+    expect(result.topApps).toEqual([
+      { label: 'Chrome', minutes: 60 },
+      { label: 'Code', minutes: 30 },
+    ])
+    expect(result.topDomains).toEqual([
+      { label: 'developer.chrome.com', minutes: 60 },
+      { label: 'github.com', minutes: 30 },
+    ])
   })
 
   it('filters sessions by hidden/category/app/domain and optionally includes open loops', async () => {

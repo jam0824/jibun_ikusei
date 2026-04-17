@@ -37,9 +37,16 @@ export interface ActivityCalendarDay {
   dailyLog: DailyActivityLog | null
 }
 
+export interface UsageSummaryItem {
+  label: string
+  minutes: number
+}
+
 export interface ActivityWeekViewData {
   review: WeeklyActivityReview | null
   openLoops: OpenLoop[]
+  topApps: UsageSummaryItem[]
+  topDomains: UsageSummaryItem[]
 }
 
 export interface ActivitySearchResult {
@@ -110,6 +117,29 @@ export function getCurrentMonthKeyJst() {
 
 export function getCurrentYearJst() {
   return new Date().getFullYear()
+}
+
+export async function resolveDefaultReviewYearJst(options?: {
+  currentYear?: number
+  minYear?: number
+}) {
+  const currentYear = options?.currentYear ?? getCurrentYearJst()
+  const minYear = options?.minYear ?? 2000
+  const boundedMinYear = Math.min(minYear, currentYear)
+
+  const currentYearReviews = await getActionLogWeeklyActivityReviews(currentYear)
+  if (currentYearReviews.length > 0) {
+    return currentYear
+  }
+
+  for (let year = currentYear - 1; year >= boundedMinYear; year -= 1) {
+    const reviews = await getActionLogWeeklyActivityReviews(year)
+    if (reviews.length > 0) {
+      return year
+    }
+  }
+
+  return currentYear
 }
 
 export function isMondayJst(referenceDate = new Date()) {
@@ -258,6 +288,40 @@ function sortOpenLoopsNewestFirst(openLoops: OpenLoop[]) {
   return [...openLoops].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 }
 
+function buildUsageSummaries(
+  sessions: ActivitySession[],
+  selectValues: (session: ActivitySession) => string[],
+): UsageSummaryItem[] {
+  const totals = new Map<string, number>()
+
+  sessions.forEach((session) => {
+    const labels = Array.from(
+      new Set(
+        selectValues(session)
+          .map((value) => value.trim())
+          .filter(Boolean),
+      ),
+    )
+    if (labels.length === 0) {
+      return
+    }
+
+    const distributedMinutes = toDurationMinutes(session.startedAt, session.endedAt) / labels.length
+    labels.forEach((label) => {
+      totals.set(label, (totals.get(label) ?? 0) + distributedMinutes)
+    })
+  })
+
+  return [...totals.entries()]
+    .map(([label, minutes]) => ({
+      label,
+      minutes: Math.round(minutes),
+    }))
+    .filter((item) => item.minutes > 0)
+    .sort((left, right) => right.minutes - left.minutes || left.label.localeCompare(right.label))
+    .slice(0, 5)
+}
+
 function buildExportYears(from: string, to: string) {
   const fromYear = Number(from.slice(0, 4))
   const toYear = Number(to.slice(0, 4))
@@ -370,16 +434,22 @@ export async function fetchActivityReviewYear(year: number) {
 
 export async function fetchActivityReviewWeek(weekKey: string): Promise<ActivityWeekViewData> {
   const range = buildWeekDateRangeFromWeekKey(weekKey)
-  const [review, openLoops] = await Promise.all([
+  const [review, openLoops, sessions] = await Promise.all([
     getActionLogWeeklyActivityReview(weekKey),
     getActionLogOpenLoops(range.from, range.to),
+    getActionLogSessions(range.from, range.to),
   ])
+  const weeklySessions = sessions.filter((session) =>
+    isWithinDateRange(session.dateKey, range.from, range.to),
+  )
 
   return {
     review,
     openLoops: openLoops.filter((openLoop) =>
       isWithinDateRange(openLoop.dateKey, range.from, range.to),
     ),
+    topApps: buildUsageSummaries(weeklySessions, (session) => session.appNames),
+    topDomains: buildUsageSummaries(weeklySessions, (session) => session.domains),
   }
 }
 
