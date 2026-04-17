@@ -7,11 +7,13 @@ import type {
 } from '@/domain/action-log-types'
 import type { AiConfig, UserSettings } from '@/domain/types'
 import {
+  deleteActionLogRange,
   getActionLogDailyActivityLog,
   getActionLogDailyActivityLogs,
   getActionLogOpenLoops,
   getActionLogRawEvents,
   getActionLogSessions,
+  putActionLogSessionHidden,
   putActionLogDailyActivityLog,
   putActionLogWeeklyActivityReview,
   getActionLogWeeklyActivityReview,
@@ -49,6 +51,25 @@ export interface ActivitySearchParams {
   from: string
   to: string
   keyword: string
+  categories?: string[]
+  apps?: string[]
+  domains?: string[]
+  includeOpenLoops?: boolean
+  includeHidden?: boolean
+}
+
+export interface ActionLogExportBundle {
+  rawEvents: RawEvent[]
+  sessions: ActivitySession[]
+  dailyLogs: DailyActivityLog[]
+  weeklyReviews: WeeklyActivityReview[]
+  openLoops: OpenLoop[]
+  meta: {
+    from: string
+    to: string
+    exportedAt: string
+    timezone: 'Asia/Tokyo'
+  }
 }
 
 function toMonthKey(date: Date) {
@@ -203,6 +224,18 @@ function buildOpenLoopSearchText(openLoop: OpenLoop) {
   return [openLoop.title, openLoop.description ?? '', openLoop.status].join(' ').toLowerCase()
 }
 
+function normalizeFilterValues(values: string[] | undefined) {
+  return (values ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean)
+}
+
+function matchesAnyFilter(haystack: string[], filters: string[]) {
+  if (filters.length === 0) {
+    return true
+  }
+  const normalized = haystack.map((value) => value.toLowerCase())
+  return filters.some((filter) => normalized.includes(filter))
+}
+
 function toDurationMinutes(startedAt: string, endedAt: string) {
   const started = parseDate(startedAt).getTime()
   const ended = parseDate(endedAt).getTime()
@@ -215,6 +248,31 @@ function buildCategoryDurations(sessions: ActivitySession[]) {
     accumulator[session.primaryCategory] = (accumulator[session.primaryCategory] ?? 0) + minutes
     return accumulator
   }, {})
+}
+
+function sortSessionsNewestFirst(sessions: ActivitySession[]) {
+  return [...sessions].sort((left, right) => right.startedAt.localeCompare(left.startedAt))
+}
+
+function sortOpenLoopsNewestFirst(openLoops: OpenLoop[]) {
+  return [...openLoops].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+}
+
+function buildExportYears(from: string, to: string) {
+  const fromYear = Number(from.slice(0, 4))
+  const toYear = Number(to.slice(0, 4))
+  if (!Number.isFinite(fromYear) || !Number.isFinite(toYear)) {
+    return []
+  }
+  const years: number[] = []
+  for (let year = fromYear; year <= toYear; year += 1) {
+    years.push(year)
+  }
+  return years
+}
+
+function rangesOverlap(from: string, to: string, candidateFrom: string, candidateTo: string) {
+  return !(candidateTo < from || candidateFrom > to)
 }
 
 function filterDaySessions(sessions: ActivitySession[], dateKey: string) {
@@ -390,14 +448,112 @@ export async function searchActivityLogs(params: ActivitySearchParams): Promise<
     getActionLogSessions(params.from, params.to),
     getActionLogOpenLoops(params.from, params.to),
   ])
-
   const keyword = lower(params.keyword.trim())
-  if (!keyword) {
-    return { sessions, openLoops }
-  }
+  const categoryFilters = normalizeFilterValues(params.categories)
+  const appFilters = normalizeFilterValues(params.apps)
+  const domainFilters = normalizeFilterValues(params.domains)
+  const includeHidden = params.includeHidden ?? false
+  const includeOpenLoops = params.includeOpenLoops ?? true
+
+  const filteredSessions = sortSessionsNewestFirst(
+    sessions.filter((session) => {
+      if (!includeHidden && session.hidden) {
+        return false
+      }
+      if (keyword && !buildSessionSearchText(session).includes(keyword)) {
+        return false
+      }
+      if (!matchesAnyFilter([session.primaryCategory], categoryFilters)) {
+        return false
+      }
+      if (!matchesAnyFilter(session.appNames, appFilters)) {
+        return false
+      }
+      if (!matchesAnyFilter(session.domains, domainFilters)) {
+        return false
+      }
+      return true
+    }),
+  )
+
+  const filteredOpenLoops = includeOpenLoops
+    ? sortOpenLoopsNewestFirst(
+        openLoops.filter((openLoop) => (keyword ? buildOpenLoopSearchText(openLoop).includes(keyword) : true)),
+      )
+    : []
 
   return {
-    sessions: sessions.filter((session) => buildSessionSearchText(session).includes(keyword)),
-    openLoops: openLoops.filter((openLoop) => buildOpenLoopSearchText(openLoop).includes(keyword)),
+    sessions: filteredSessions,
+    openLoops: filteredOpenLoops,
   }
+}
+
+export async function setActivitySessionHidden(params: {
+  sessionId: string
+  dateKey: string
+  hidden: boolean
+}) {
+  return putActionLogSessionHidden(params.sessionId, {
+    dateKey: params.dateKey,
+    hidden: params.hidden,
+  })
+}
+
+export async function exportActionLogBundle(params: {
+  from: string
+  to: string
+  now?: Date
+}): Promise<ActionLogExportBundle> {
+  const years = buildExportYears(params.from, params.to)
+  const [rawEvents, sessions, dailyLogs, openLoops, weeklyReviewBatches] = await Promise.all([
+    getActionLogRawEvents(params.from, params.to),
+    getActionLogSessions(params.from, params.to),
+    getActionLogDailyActivityLogs(params.from, params.to),
+    getActionLogOpenLoops(params.from, params.to),
+    Promise.all(years.map((year) => getActionLogWeeklyActivityReviews(year))),
+  ])
+
+  const weeklyReviews = weeklyReviewBatches
+    .flat()
+    .filter((review) => {
+      const range = buildWeekDateRangeFromWeekKey(review.weekKey)
+      return rangesOverlap(params.from, params.to, range.from, range.to)
+    })
+    .sort((left, right) => right.weekKey.localeCompare(left.weekKey))
+
+  return {
+    rawEvents,
+    sessions,
+    dailyLogs,
+    weeklyReviews,
+    openLoops,
+    meta: {
+      from: params.from,
+      to: params.to,
+      exportedAt: toJstIso(params.now ?? new Date()),
+      timezone: 'Asia/Tokyo',
+    },
+  }
+}
+
+export async function deleteActionLogDateRange(params: {
+  from: string
+  to: string
+  now?: Date
+}) {
+  if (!canDeleteActionLogRange(params)) {
+    throw new Error('Action-log deletion is limited to yesterday or earlier in JST.')
+  }
+  return deleteActionLogRange(params.from, params.to)
+}
+
+export function canDeleteActionLogRange(params: {
+  from: string
+  to: string
+  now?: Date
+}) {
+  if (!params.from || !params.to || params.to < params.from) {
+    return false
+  }
+  return params.to <= getYesterdayDateKeyJst(params.now ?? new Date())
 }

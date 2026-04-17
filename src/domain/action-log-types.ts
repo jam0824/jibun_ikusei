@@ -152,3 +152,10 @@ export interface PrivacyRule {
   enabled: boolean
   updatedAt?: string
 }
+
+export interface ActionLogDeletionRequest {
+  id: string
+  from: string
+  to: string
+  createdAt: string
+}

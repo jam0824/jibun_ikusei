@@ -13,6 +13,7 @@ import type {
 } from '@/domain/types'
 import type {
   ActivitySession,
+  ActionLogDeletionRequest,
   DailyActivityLog,
   Device,
   OpenLoop,
@@ -320,6 +321,16 @@ export function putActionLogSessions(input: { deviceId: string; sessions: Activi
   })
 }
 
+export function putActionLogSessionHidden(
+  id: string,
+  input: { dateKey: string; hidden: boolean },
+) {
+  return request<ActivitySession>(`/action-log/sessions/${id}/hidden`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
+}
+
 export function getActionLogSessions(from: string, to: string) {
   return request<ActivitySession[]>(`/action-log/sessions?from=${from}&to=${to}`)
 }
@@ -384,6 +395,31 @@ export function putActionLogOpenLoops(input: { dateKeys: string[]; openLoops: Op
   return request<{ updated: number }>('/action-log/open-loops', {
     method: 'PUT',
     body: JSON.stringify(input),
+  })
+}
+
+export function deleteActionLogRange(from: string, to: string) {
+  return request<{
+    deleted: {
+      rawEvents: number
+      sessions: number
+      dailyLogs: number
+      weeklyReviews: number
+      openLoops: number
+    }
+    deletionRequestId: string
+  }>(`/action-log/range?from=${from}&to=${to}`, {
+    method: 'DELETE',
+  })
+}
+
+export function getActionLogDeletionRequests() {
+  return request<ActionLogDeletionRequest[]>('/action-log/deletion-requests')
+}
+
+export function postActionLogDeletionRequestAck(id: string) {
+  return request<{ acked: string }>(`/action-log/deletion-requests/${id}/ack`, {
+    method: 'POST',
   })
 }
 

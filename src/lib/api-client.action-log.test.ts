@@ -5,8 +5,10 @@ vi.mock('@/lib/auth', () => ({
 }))
 
 import {
+  deleteActionLogRange,
   getActionLogDailyActivityLogs,
   getActionLogDailyActivityLog,
+  getActionLogDeletionRequests,
   getActionLogDevices,
   getActionLogOpenLoops,
   getActionLogPrivacyRules,
@@ -17,10 +19,12 @@ import {
   getActivityLogs,
   postActionLogRawEvents,
   postActivityLogs,
+  postActionLogDeletionRequestAck,
   putActionLogDailyActivityLog,
   putActionLogDevice,
   putActionLogOpenLoops,
   putActionLogPrivacyRules,
+  putActionLogSessionHidden,
   putActionLogSessions,
   putActionLogWeeklyActivityReview,
 } from './api-client'
@@ -177,6 +181,13 @@ describe('api-client action-log stubs', () => {
         },
       ],
     })
+    await putActionLogSessionHidden('session_1', {
+      dateKey: '2026-04-17',
+      hidden: true,
+    })
+    await deleteActionLogRange('2026-04-01', '2026-04-17')
+    await getActionLogDeletionRequests()
+    await postActionLogDeletionRequestAck('delete_1')
 
     const calledPaths = fetchMock.mock.calls.map(([input]) => input)
     expect(calledPaths).toEqual(
@@ -195,6 +206,10 @@ describe('api-client action-log stubs', () => {
         expect.stringContaining('/action-log/privacy-rules'),
         expect.stringContaining('/action-log/open-loops?from=2026-04-01&to=2026-04-17'),
         expect.stringContaining('/action-log/open-loops'),
+        expect.stringContaining('/action-log/sessions/session_1/hidden'),
+        expect.stringContaining('/action-log/range?from=2026-04-01&to=2026-04-17'),
+        expect.stringContaining('/action-log/deletion-requests'),
+        expect.stringContaining('/action-log/deletion-requests/delete_1/ack'),
       ]),
     )
   })

@@ -18,7 +18,11 @@ from api.api_client import ApiClient
 from api.auth import CognitoAuth
 from core.action_log_organizer import ActionLogOrganizer
 from core.action_log_summary_backfill_service import ActionLogSummaryBackfillService
-from core.activity_capture_service import ActivityCaptureService, default_device_id
+from core.activity_capture_service import (
+    ActivityCaptureService,
+    default_device_id,
+    purge_raw_event_range,
+)
 from core.background_event_runtime import register_background_event_handlers
 from core.camera import find_camera_index
 from core.chrome_audible_tabs import ChromeAudibleTabsTracker
@@ -632,23 +636,115 @@ class App:
         asyncio.ensure_future(self.handle_action_log_organize_request())
 
     async def handle_action_log_sync_request(self) -> None:
-        if self.activity_capture_service is None:
+        if not self.config.activity_capture.enabled:
             return
         if not getattr(self.auth, "is_configured", False):
             logger.info("Action log sync skipped: Cognito not configured")
             return
 
+        capture_service = self.activity_capture_service
+        device_id = (
+            capture_service.device_id if capture_service is not None else default_device_id()
+        )
+        current_capture_state = (
+            getattr(capture_service, "capture_state", self.config.activity_capture.initial_state)
+            if capture_service is not None
+            else self.config.activity_capture.initial_state
+        )
+
+        try:
+            devices = await self.api_client.get_action_log_devices()
+        except Exception:
+            logger.exception("Action log device sync failed")
+            return
+
+        matched_device = next(
+            (
+                device
+                for device in devices
+                if str(device.get("id", "")).strip() == device_id
+            ),
+            None,
+        )
+        if matched_device is None:
+            try:
+                await self.api_client.put_action_log_device(
+                    device_id,
+                    {
+                        "id": device_id,
+                        "name": device_id,
+                        "captureState": current_capture_state,
+                    },
+                )
+            except Exception:
+                logger.exception("Action log device registration failed")
+                return
+            effective_capture_state = current_capture_state
+        else:
+            effective_capture_state = str(
+                matched_device.get("captureState", current_capture_state)
+            ).strip() or current_capture_state
+
+        if effective_capture_state not in {"active", "paused", "disabled"}:
+            effective_capture_state = current_capture_state
+
+        if effective_capture_state == "disabled":
+            stop_capture = getattr(self, "stop_activity_capture_service", None)
+            if callable(stop_capture):
+                stop_capture()
+            capture_service = self.activity_capture_service
+        else:
+            if capture_service is None:
+                self.config.activity_capture.initial_state = effective_capture_state
+                start_capture = getattr(self, "start_activity_capture_service", None)
+                if callable(start_capture):
+                    start_capture()
+                capture_service = self.activity_capture_service
+            if capture_service is not None:
+                capture_service.set_capture_state(effective_capture_state)
+
+        try:
+            privacy_rules = await self.api_client.get_action_log_privacy_rules()
+        except Exception:
+            logger.exception("Action log privacy rule sync failed")
+            return
+
+        if capture_service is not None:
+            capture_service.set_privacy_rules(privacy_rules)
+
+        try:
+            deletion_requests = await self.api_client.get_action_log_deletion_requests()
+        except Exception:
+            logger.exception("Action log deletion-request sync failed")
+            return
+
+        for request in deletion_requests:
+            request_id = str(request.get("id", "")).strip()
+            from_date = str(request.get("from", "")).strip()
+            to_date = str(request.get("to", "")).strip()
+            if not request_id or not from_date or not to_date:
+                continue
+            purge_raw_event_range(from_date=from_date, to_date=to_date)
+            try:
+                await self.api_client.ack_action_log_deletion_request(request_id)
+            except Exception:
+                logger.exception(
+                    "Action log deletion-request ack failed: %s",
+                    request_id,
+                )
+
+        if capture_service is None:
+            return
+
         while True:
-            pending = self.activity_capture_service.snapshot_pending_raw_events(
-                limit=100
-            )
+            pending = capture_service.snapshot_pending_raw_events(limit=100)
             if not pending:
                 return
 
             try:
                 await self.api_client.post_action_log_raw_events(
                     {
-                        "deviceId": self.activity_capture_service.device_id,
+                        "deviceId": capture_service.device_id,
                         "events": [entry["event"] for entry in pending],
                     }
                 )
@@ -656,7 +752,7 @@ class App:
                 logger.exception("Action log raw-event sync failed")
                 return
 
-            self.activity_capture_service.ack_pending_raw_events(pending)
+            capture_service.ack_pending_raw_events(pending)
 
     async def handle_action_log_organize_request(self) -> None:
         if not self.config.activity_capture.enabled:

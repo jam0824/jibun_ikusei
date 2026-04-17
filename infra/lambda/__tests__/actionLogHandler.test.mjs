@@ -397,6 +397,167 @@ describe('actionLogHandler', () => {
     expect(getBody).toEqual(openLoops)
   })
 
+  it('PUT /action-log/sessions/{id}/hidden updates only the target session hidden state', async () => {
+    const existingSession = {
+      PK: 'user#test-user-123',
+      SK: 'ACTION_LOG#SESSION#2026-04-17#2026-04-17T09:00:00+09:00#session_1',
+      id: 'session_1',
+      deviceId: 'device_1',
+      startedAt: '2026-04-17T09:00:00+09:00',
+      endedAt: '2026-04-17T10:00:00+09:00',
+      dateKey: '2026-04-17',
+      title: 'Chrome調査',
+      primaryCategory: '学習',
+      activityKinds: ['調査'],
+      appNames: ['Chrome'],
+      domains: ['developer.chrome.com'],
+      projectNames: [],
+      searchKeywords: ['chrome'],
+      noteIds: [],
+      openLoopIds: [],
+      hidden: false,
+    }
+
+    let savedItem = null
+    mockSend.mockImplementation((command) => {
+      if (command.constructor.name === 'QueryCommand') {
+        return Promise.resolve({ Items: [existingSession] })
+      }
+      if (command.constructor.name === 'PutCommand') {
+        savedItem = command.input.Item
+      }
+      return Promise.resolve({})
+    })
+
+    const event = makeEvent('PUT /action-log/sessions/{id}/hidden', {
+      pathParameters: { id: 'session_1' },
+      body: { dateKey: '2026-04-17', hidden: true },
+    })
+    const { statusCode, body } = parseResponse(await handler(event))
+
+    expect(statusCode).toBe(200)
+    expect(body.hidden).toBe(true)
+    expect(savedItem.hidden).toBe(true)
+    expect(savedItem.SK).toBe(existingSession.SK)
+  })
+
+  it('DELETE /action-log/range deletes action-log data and creates a deletion request', async () => {
+    const commands = []
+    mockSend.mockImplementation((command) => {
+      commands.push(command)
+      if (command.constructor.name === 'QueryCommand') {
+        const prefix = command.input.ExpressionAttributeValues[':skFrom']
+        if (String(prefix).startsWith('ACTION_LOG#RAW_EVENT#')) {
+          return Promise.resolve({
+            Items: [
+              {
+                PK: 'user#test-user-123',
+                SK: 'ACTION_LOG#RAW_EVENT#2026-04-16#2026-04-16T09:00:00+09:00#raw_1',
+              },
+            ],
+          })
+        }
+        if (String(prefix).startsWith('ACTION_LOG#SESSION#')) {
+          return Promise.resolve({
+            Items: [
+              {
+                PK: 'user#test-user-123',
+                SK: 'ACTION_LOG#SESSION#2026-04-16#2026-04-16T09:00:00+09:00#session_1',
+              },
+            ],
+          })
+        }
+        if (String(prefix).startsWith('ACTION_LOG#DAILY#')) {
+          return Promise.resolve({
+            Items: [{ PK: 'user#test-user-123', SK: 'ACTION_LOG#DAILY#2026-04-16' }],
+          })
+        }
+        if (String(prefix).startsWith('ACTION_LOG#OPEN_LOOP#')) {
+          return Promise.resolve({
+            Items: [
+              { PK: 'user#test-user-123', SK: 'ACTION_LOG#OPEN_LOOP#2026-04-16#loop_1' },
+            ],
+          })
+        }
+        if (command.input.ExpressionAttributeValues[':prefix'] === 'ACTION_LOG#WEEKLY#') {
+          return Promise.resolve({
+            Items: [
+              {
+                PK: 'user#test-user-123',
+                SK: 'ACTION_LOG#WEEKLY#2026-W16',
+                weekKey: '2026-W16',
+              },
+            ],
+          })
+        }
+      }
+      return Promise.resolve({})
+    })
+
+    const event = makeEvent('DELETE /action-log/range')
+    event.queryStringParameters = { from: '2026-04-16', to: '2026-04-16' }
+    const { statusCode, body } = parseResponse(await handler(event))
+
+    expect(statusCode).toBe(200)
+    expect(body.deleted.rawEvents).toBe(1)
+    expect(body.deleted.sessions).toBe(1)
+    expect(body.deleted.dailyLogs).toBe(1)
+    expect(body.deleted.openLoops).toBe(1)
+    expect(body.deleted.weeklyReviews).toBe(1)
+    const putCommands = commands.filter((command) => command.constructor.name === 'PutCommand')
+    expect(
+      putCommands.some((command) =>
+        String(command.input.Item.SK).startsWith('ACTION_LOG#DELETION_REQUEST#'),
+      ),
+    ).toBe(true)
+  })
+
+  it('deletion request routes list pending requests and ack removes them', async () => {
+    mockSend.mockResolvedValueOnce({
+      Items: [
+        {
+          PK: 'user#test-user-123',
+          SK: 'ACTION_LOG#DELETION_REQUEST#delete_1',
+          id: 'delete_1',
+          from: '2026-04-16',
+          to: '2026-04-16',
+          createdAt: '2026-04-18T09:00:00+09:00',
+        },
+      ],
+    })
+
+    const getEvent = makeEvent('GET /action-log/deletion-requests')
+    const { statusCode: getStatus, body: getBody } = parseResponse(await handler(getEvent))
+    expect(getStatus).toBe(200)
+    expect(getBody).toEqual([
+      {
+        id: 'delete_1',
+        from: '2026-04-16',
+        to: '2026-04-16',
+        createdAt: '2026-04-18T09:00:00+09:00',
+      },
+    ])
+
+    mockSend.mockReset()
+    let deletedKey = null
+    mockSend.mockImplementation((command) => {
+      if (command.constructor.name === 'DeleteCommand') {
+        deletedKey = command.input.Key
+      }
+      return Promise.resolve({})
+    })
+    const ackEvent = makeEvent('POST /action-log/deletion-requests/{id}/ack', {
+      pathParameters: { id: 'delete_1' },
+    })
+    const { statusCode: ackStatus, body: ackBody } = parseResponse(await handler(ackEvent))
+    expect(ackStatus).toBe(200)
+    expect(ackBody).toEqual({ acked: 'delete_1' })
+    expect(deletedKey).toEqual({
+      PK: 'user#test-user-123',
+      SK: 'ACTION_LOG#DELETION_REQUEST#delete_1',
+    })
+  })
+
   it('returns 400 for unsupported action-log routes', async () => {
     const result = await handler(makeEvent('PATCH /action-log/raw-events'))
     expect(result.statusCode).toBe(400)

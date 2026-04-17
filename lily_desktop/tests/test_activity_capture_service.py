@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
-from core.activity_capture_service import ActivityCaptureService
+from core.activity_capture_service import ActivityCaptureService, purge_raw_event_range
 from core.active_window import ActiveWindowInfo
 
 
@@ -346,3 +347,105 @@ def test_paused_and_disabled_states_do_not_expose_pending_sync_snapshot(
 
     assert paused_service.snapshot_pending_raw_events() == []
     assert disabled_service.snapshot_pending_raw_events() == []
+
+
+def test_set_privacy_rules_replaces_runtime_rules(tmp_path, monkeypatch):
+    monkeypatch.setattr("core.activity_capture_service._RAW_EVENT_LOG_DIR", tmp_path)
+    service = ActivityCaptureService(
+        device_id="device_1",
+        privacy_rules=[],
+        get_active_window_info=lambda: _make_window(),
+        get_idle_seconds=lambda: 0,
+    )
+
+    service.set_privacy_rules(
+        [
+            {
+                "id": "rule_domain_only",
+                "type": "domain",
+                "value": "developer.chrome.com",
+                "mode": "domain_only",
+                "enabled": True,
+                "updatedAt": "2026-04-17T08:00:00+09:00",
+            }
+        ]
+    )
+    created = service.ingest_browser_event(
+        event_type="browser_page_changed",
+        source="chrome_extension",
+        occurred_at=datetime(2026, 4, 17, 9, 0, tzinfo=JST),
+        payload={
+            "tabId": 1,
+            "url": "https://developer.chrome.com/docs/extensions/",
+            "domain": "developer.chrome.com",
+            "title": "Chrome Extensions",
+        },
+        metadata={"trigger": "tab_activated"},
+    )
+
+    assert created is not None
+    assert created["domain"] == "developer.chrome.com"
+    assert "url" not in created
+
+
+def test_purge_raw_event_range_removes_matching_files_and_sync_state(tmp_path, monkeypatch):
+    raw_dir = tmp_path / "raw"
+    sync_state_path = tmp_path / "sync_state.json"
+    monkeypatch.setattr("core.activity_capture_service._RAW_EVENT_LOG_DIR", raw_dir)
+    monkeypatch.setattr("core.activity_capture_service._SYNC_STATE_PATH", sync_state_path)
+
+    service = ActivityCaptureService(
+        device_id="device_1",
+        get_active_window_info=lambda: _make_window(),
+        get_idle_seconds=lambda: 0,
+    )
+
+    for date_value in (
+        datetime(2026, 4, 16, 9, 0, tzinfo=JST),
+        datetime(2026, 4, 17, 9, 0, tzinfo=JST),
+    ):
+        service.ingest_browser_event(
+            event_type="browser_page_changed",
+            source="chrome_extension",
+            occurred_at=date_value,
+            payload={
+                "tabId": date_value.day,
+                "url": f"https://example.com/{date_value.day}",
+                "domain": "example.com",
+                "title": f"Page {date_value.day}",
+            },
+            metadata={"trigger": "tab_activated"},
+        )
+
+    pending = service.snapshot_pending_raw_events()
+    service.ack_pending_raw_events([pending[0]])
+
+    purge_raw_event_range(
+        from_date="2026-04-16",
+        to_date="2026-04-16",
+        raw_event_log_dir=raw_dir,
+        sync_state_path=sync_state_path,
+    )
+
+    assert not (raw_dir / "2026-04-16.jsonl").exists()
+    assert (raw_dir / "2026-04-17.jsonl").exists()
+    remaining = json.loads(sync_state_path.read_text(encoding="utf-8"))
+    assert "2026-04-16.jsonl" not in remaining["files"]
+    assert service.snapshot_pending_raw_events() == [
+        {
+            "event": {
+                "id": service.snapshot_pending_raw_events()[0]["event"]["id"],
+                "deviceId": "device_1",
+                "source": "chrome_extension",
+                "eventType": "browser_page_changed",
+                "occurredAt": "2026-04-17T09:00:00+09:00",
+                "expiresAt": "2026-05-17T09:00:00+09:00",
+                "windowTitle": "Page 17",
+                "url": "https://example.com/17",
+                "domain": "example.com",
+                "metadata": {"trigger": "tab_activated", "tabId": 17},
+            },
+            "fileName": "2026-04-17.jsonl",
+            "lineNumber": 1,
+        }
+    ]

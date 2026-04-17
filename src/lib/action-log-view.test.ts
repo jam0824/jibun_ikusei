@@ -9,15 +9,17 @@ import type {
 import { hydratePersistedState } from '@/domain/logic'
 
 vi.mock('@/lib/api-client', () => ({
+  deleteActionLogRange: vi.fn(),
   getActionLogDailyActivityLog: vi.fn(),
+  getActionLogDailyActivityLogs: vi.fn(),
   getActionLogOpenLoops: vi.fn(),
   getActionLogRawEvents: vi.fn(),
   getActionLogSessions: vi.fn(),
   getActionLogWeeklyActivityReview: vi.fn(),
-  putActionLogDailyActivityLog: vi.fn(),
-  putActionLogWeeklyActivityReview: vi.fn(),
-  getActionLogDailyActivityLogs: vi.fn(),
   getActionLogWeeklyActivityReviews: vi.fn(),
+  putActionLogDailyActivityLog: vi.fn(),
+  putActionLogSessionHidden: vi.fn(),
+  putActionLogWeeklyActivityReview: vi.fn(),
 }))
 
 vi.mock('@/lib/ai', () => ({
@@ -28,8 +30,12 @@ vi.mock('@/lib/ai', () => ({
 import * as api from '@/lib/api-client'
 import * as ai from '@/lib/ai'
 import {
+  canDeleteActionLogRange,
   ensurePreviousDayDailyActivityLog,
   ensurePreviousWeekReviewForWeb,
+  exportActionLogBundle,
+  searchActivityLogs,
+  setActivitySessionHidden,
 } from '@/lib/action-log-view'
 
 function createSession(id: string, overrides: Partial<ActivitySession> = {}): ActivitySession {
@@ -39,14 +45,14 @@ function createSession(id: string, overrides: Partial<ActivitySession> = {}): Ac
     startedAt: '2026-04-16T09:00:00+09:00',
     endedAt: '2026-04-16T09:40:00+09:00',
     dateKey: '2026-04-16',
-    title: 'Chrome 拡張の調査',
-    primaryCategory: '学習',
-    activityKinds: ['調査'],
+    title: 'Chrome docs research',
+    primaryCategory: 'study',
+    activityKinds: ['research'],
     appNames: ['Chrome'],
     domains: ['developer.chrome.com'],
     projectNames: [],
-    summary: 'Chrome 拡張まわりを調査していた。',
-    searchKeywords: ['Chrome拡張', 'developer.chrome.com'],
+    summary: 'Looked through Chrome extension docs.',
+    searchKeywords: ['chrome', 'docs'],
     noteIds: [],
     openLoopIds: ['open_loop_1'],
     hidden: false,
@@ -77,8 +83,8 @@ function createOpenLoop(id = 'open_loop_1', overrides: Partial<OpenLoop> = {}): 
     createdAt: '2026-04-16T09:40:00+09:00',
     updatedAt: '2026-04-16T09:40:00+09:00',
     dateKey: '2026-04-16',
-    title: '権限設定の確認',
-    description: 'manifest の権限設定を確認する。',
+    title: 'Review manifest settings',
+    description: 'Double-check the manifest settings.',
     status: 'open',
     linkedSessionIds: ['session_1'],
     ...overrides,
@@ -89,12 +95,28 @@ function createDailyLog(dateKey = '2026-04-16', overrides: Partial<DailyActivity
   return {
     id: `daily_${dateKey}`,
     dateKey,
-    summary: 'リリィは、この日は拡張の調査へ静かな集中が集まっていたと見ている。',
-    mainThemes: ['Chrome拡張', '調査'],
+    summary: 'Lily noted a steady day of research and implementation.',
+    mainThemes: ['Chrome docs', 'research'],
     noteIds: [],
     openLoopIds: ['open_loop_1'],
-    reviewQuestions: ['次に確認したい仕様はどこだったか。'],
+    reviewQuestions: ['What should be explored next?'],
     generatedAt: `${dateKey}T22:00:00+09:00`,
+    ...overrides,
+  }
+}
+
+function createWeeklyReview(
+  weekKey = '2026-W16',
+  overrides: Partial<WeeklyActivityReview> = {},
+): WeeklyActivityReview {
+  return {
+    id: `weekly_${weekKey}`,
+    weekKey,
+    summary: 'Lily observed a week centered on research and implementation.',
+    categoryDurations: { study: 40 },
+    focusThemes: ['Chrome docs'],
+    openLoopIds: ['open_loop_1'],
+    generatedAt: '2026-04-18T08:00:00+09:00',
     ...overrides,
   }
 }
@@ -112,12 +134,12 @@ describe('action log view orchestration', () => {
         dateKey: '2026-04-17',
         startedAt: '2026-04-17T10:00:00+09:00',
         endedAt: '2026-04-17T10:20:00+09:00',
-        title: 'VS Code での実装',
-        primaryCategory: '仕事',
-        activityKinds: ['開発'],
+        title: 'VS Code implementation',
+        primaryCategory: 'work',
+        activityKinds: ['implementation'],
         appNames: ['Code'],
         domains: [],
-        searchKeywords: ['VS Code', '開発'],
+        searchKeywords: ['vscode', 'implementation'],
         openLoopIds: [],
       }),
     ])
@@ -127,15 +149,22 @@ describe('action log view orchestration', () => {
     vi.mocked(api.getActionLogWeeklyActivityReview).mockResolvedValue(null)
     vi.mocked(api.putActionLogDailyActivityLog).mockImplementation(async (log) => log)
     vi.mocked(api.putActionLogWeeklyActivityReview).mockImplementation(async (review) => review)
+    vi.mocked(api.putActionLogSessionHidden).mockImplementation(async (_id, input) =>
+      createSession('session_1', { hidden: input.hidden }),
+    )
+    vi.mocked(api.getActionLogDailyActivityLogs).mockResolvedValue([createDailyLog('2026-04-16')])
+    vi.mocked(api.getActionLogWeeklyActivityReviews).mockResolvedValue([
+      createWeeklyReview('2026-W16'),
+    ])
   })
 
   it('generates and saves a missing DailyActivityLog only for yesterday using ActivitySession input', async () => {
     const state = hydratePersistedState()
     vi.mocked(ai.generateDailyActivityLog).mockResolvedValue({
       provider: 'template',
-      summary: 'リリィは、前日の調査の流れをひとつのまとまりとして見ていた。',
-      mainThemes: ['Chrome拡張', '調査'],
-      reviewQuestions: ['次に確認したい仕様はどこだったか。'],
+      summary: 'Lily stitched together the day from the surrounding sessions.',
+      mainThemes: ['Chrome docs', 'research'],
+      reviewQuestions: ['What should be explored next?'],
     })
 
     const result = await ensurePreviousDayDailyActivityLog({
@@ -159,7 +188,7 @@ describe('action log view orchestration', () => {
         openLoopIds: ['open_loop_1'],
       }),
     )
-    expect(result.dailyLog?.summary).toBe('リリィは、前日の調査の流れをひとつのまとまりとして見ていた。')
+    expect(result.dailyLog?.summary).toBe('Lily stitched together the day from the surrounding sessions.')
   })
 
   it('does not generate a DailyActivityLog for today even when it is missing', async () => {
@@ -194,8 +223,8 @@ describe('action log view orchestration', () => {
     const state = hydratePersistedState()
     vi.mocked(ai.generateWeeklyActivityReview).mockResolvedValue({
       provider: 'template',
-      summary: 'リリィは、この週には調査と実装の往復がゆっくり深まっていたと見ている。',
-      focusThemes: ['Chrome拡張', '開発'],
+      summary: 'Lily observed a week centered on research and implementation.',
+      focusThemes: ['Chrome docs', 'implementation'],
     })
 
     const generated = await ensurePreviousWeekReviewForWeb({
@@ -211,7 +240,7 @@ describe('action log view orchestration', () => {
     expect(vi.mocked(ai.generateWeeklyActivityReview).mock.calls[0][0]).toMatchObject({
       weekKey: '2026-W16',
       openLoops: [createOpenLoop()],
-      categoryDurations: { 学習: 40, 仕事: 20 },
+      categoryDurations: { study: 40, work: 20 },
     })
     expect(api.putActionLogWeeklyActivityReview).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -258,8 +287,8 @@ describe('action log view orchestration', () => {
     const state = hydratePersistedState()
     vi.mocked(ai.generateWeeklyActivityReview).mockResolvedValue({
       provider: 'template',
-      summary: 'リリィは、この週のまとまりを静かに見返している。',
-      focusThemes: ['Chrome拡張'],
+      summary: 'Lily tied the previous week together from the saved sessions.',
+      focusThemes: ['Chrome docs'],
     })
 
     const generated = await ensurePreviousWeekReviewForWeb({
@@ -290,5 +319,123 @@ describe('action log view orchestration', () => {
     expect(generated).toBe(false)
     expect(ai.generateWeeklyActivityReview).not.toHaveBeenCalled()
     expect(api.putActionLogWeeklyActivityReview).not.toHaveBeenCalled()
+  })
+
+  it('filters sessions by hidden/category/app/domain and optionally includes open loops', async () => {
+    vi.mocked(api.getActionLogSessions).mockResolvedValue([
+      createSession('visible_chrome', {
+        primaryCategory: 'study',
+        appNames: ['Chrome'],
+        domains: ['developer.chrome.com'],
+        searchKeywords: ['chrome'],
+        hidden: false,
+      }),
+      createSession('hidden_code', {
+        primaryCategory: 'work',
+        appNames: ['Code'],
+        domains: [],
+        searchKeywords: ['code'],
+        hidden: true,
+      }),
+    ])
+    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
+      createOpenLoop('loop_visible', {
+        title: 'Chrome task',
+        dateKey: '2026-04-16',
+      }),
+    ])
+
+    const filtered = await searchActivityLogs({
+      from: '2026-04-01',
+      to: '2026-04-17',
+      keyword: 'chrome',
+      categories: ['study'],
+      apps: ['Chrome'],
+      domains: ['developer.chrome.com'],
+      includeOpenLoops: false,
+      includeHidden: false,
+    })
+
+    expect(filtered.sessions.map((session) => session.id)).toEqual(['visible_chrome'])
+    expect(filtered.openLoops).toEqual([])
+
+    const withHidden = await searchActivityLogs({
+      from: '2026-04-01',
+      to: '2026-04-17',
+      keyword: 'code',
+      categories: [],
+      apps: [],
+      domains: [],
+      includeOpenLoops: true,
+      includeHidden: true,
+    })
+
+    expect(withHidden.sessions.map((session) => session.id)).toEqual(['hidden_code'])
+    expect(withHidden.openLoops.map((openLoop) => openLoop.id)).toEqual([])
+  })
+
+  it('exports an action-log bundle with overlapping weekly reviews only', async () => {
+    vi.mocked(api.getActionLogRawEvents).mockResolvedValue([createRawEvent('raw_1')])
+    vi.mocked(api.getActionLogSessions).mockResolvedValue([createSession('session_1')])
+    vi.mocked(api.getActionLogDailyActivityLogs).mockResolvedValue([createDailyLog('2026-04-16')])
+    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([createOpenLoop('open_loop_1')])
+    vi.mocked(api.getActionLogWeeklyActivityReviews).mockResolvedValue([
+      createWeeklyReview('2026-W16'),
+      createWeeklyReview('2026-W10', {
+        id: 'weekly_2026-W10',
+        summary: 'older week summary',
+        generatedAt: '2026-03-10T08:00:00+09:00',
+      }),
+    ])
+
+    const bundle = await exportActionLogBundle({
+      from: '2026-04-14',
+      to: '2026-04-18',
+      now: new Date('2026-04-18T10:00:00+09:00'),
+    })
+
+    expect(bundle.rawEvents.map((event) => event.id)).toEqual(['raw_1'])
+    expect(bundle.sessions.map((session) => session.id)).toEqual(['session_1'])
+    expect(bundle.dailyLogs.map((log) => log.id)).toEqual(['daily_2026-04-16'])
+    expect(bundle.openLoops.map((openLoop) => openLoop.id)).toEqual(['open_loop_1'])
+    expect(bundle.weeklyReviews.map((review) => review.id)).toEqual(['weekly_2026-W16'])
+    expect(bundle.meta).toMatchObject({
+      from: '2026-04-14',
+      to: '2026-04-18',
+      timezone: 'Asia/Tokyo',
+      exportedAt: '2026-04-18T10:00:00+09:00',
+    })
+  })
+
+  it('allows delete only up to yesterday JST', () => {
+    expect(
+      canDeleteActionLogRange({
+        from: '2026-04-10',
+        to: '2026-04-16',
+        now: new Date('2026-04-17T09:00:00+09:00'),
+      }),
+    ).toBe(true)
+
+    expect(
+      canDeleteActionLogRange({
+        from: '2026-04-10',
+        to: '2026-04-17',
+        now: new Date('2026-04-17T09:00:00+09:00'),
+      }),
+    ).toBe(false)
+  })
+
+  it('updates a session hidden flag through the targeted API', async () => {
+    const hiddenSession = await setActivitySessionHidden({
+      sessionId: 'session_1',
+      dateKey: '2026-04-16',
+      hidden: true,
+    })
+
+    expect(api.putActionLogSessionHidden).toHaveBeenCalledWith('session_1', {
+      dateKey: '2026-04-16',
+      hidden: true,
+    })
+    expect(hiddenSession.hidden).toBe(true)
   })
 })

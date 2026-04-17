@@ -12,6 +12,7 @@ const DAILY_PREFIX = "ACTION_LOG#DAILY#";
 const WEEKLY_PREFIX = "ACTION_LOG#WEEKLY#";
 const DEVICE_PREFIX = "ACTION_LOG#DEVICE#";
 const OPEN_LOOP_PREFIX = "ACTION_LOG#OPEN_LOOP#";
+const DELETION_REQUEST_PREFIX = "ACTION_LOG#DELETION_REQUEST#";
 const PRIVACY_RULES_SK = "ACTION_LOG#PRIVACY_RULES";
 
 function nowJstIso() {
@@ -132,6 +133,49 @@ function buildOpenLoopItem(pk, openLoop) {
   };
 }
 
+function buildDeletionRequestItem(pk, deletionRequest) {
+  return {
+    PK: pk,
+    SK: `${DELETION_REQUEST_PREFIX}${deletionRequest.id}`,
+    ...deletionRequest,
+  };
+}
+
+function buildWeekRangeFromWeekKey(weekKey) {
+  const match = /^(?<year>\d{4})-W(?<week>\d{2})$/.exec(String(weekKey ?? ""));
+  if (!match?.groups) {
+    return null;
+  }
+  const year = Number(match.groups.year);
+  const week = Number(match.groups.week);
+  const januaryFourth = new Date(Date.UTC(year, 0, 4));
+  const januaryFourthDay = januaryFourth.getUTCDay() || 7;
+  const weekOneMonday = new Date(Date.UTC(year, 0, 4 - (januaryFourthDay - 1)));
+  const start = new Date(weekOneMonday);
+  start.setUTCDate(weekOneMonday.getUTCDate() + (week - 1) * 7);
+  const end = new Date(start);
+  end.setUTCDate(start.getUTCDate() + 6);
+  return {
+    from: start.toISOString().slice(0, 10),
+    to: end.toISOString().slice(0, 10),
+  };
+}
+
+function rangesOverlap(leftFrom, leftTo, rightFrom, rightTo) {
+  return !(leftTo < rightFrom || rightTo < leftFrom);
+}
+
+async function deleteItems(items, pk) {
+  for (const item of items ?? []) {
+    await db.send(
+      new DeleteCommand({
+        TableName: TABLE_NAME,
+        Key: { PK: pk, SK: item.SK },
+      }),
+    );
+  }
+}
+
 export const handler = async (event) => {
   const userId = getUserId(event);
   const pk = `user#${userId}`;
@@ -217,6 +261,34 @@ export const handler = async (event) => {
         to: range.to,
       });
       return response(200, (result.Items ?? []).map(stripSystemFields));
+    }
+
+    case "PUT /action-log/sessions/{id}/hidden": {
+      const sessionId = event.pathParameters?.id;
+      const body = parseBody(event);
+      const dateKey = body.dateKey;
+      if (!dateKey || typeof body.hidden !== "boolean") {
+        return response(400, { error: "dateKey and hidden are required" });
+      }
+      const existing = await queryBeginsWith({
+        pk,
+        prefix: `${SESSION_PREFIX}${dateKey}#`,
+      });
+      const target = (existing.Items ?? []).find((item) => item.id === sessionId);
+      if (!target) {
+        return response(404, { error: "session not found" });
+      }
+      const item = {
+        ...target,
+        hidden: body.hidden,
+      };
+      await db.send(
+        new PutCommand({
+          TableName: TABLE_NAME,
+          Item: item,
+        }),
+      );
+      return response(200, stripSystemFields(item));
     }
 
     case "GET /action-log/daily/{dateKey}": {
@@ -398,6 +470,78 @@ export const handler = async (event) => {
       }
 
       return response(200, { updated: openLoops.length });
+    }
+
+    case "DELETE /action-log/range": {
+      const range = requireDateRange(event);
+      if ("error" in range) {
+        return range.error;
+      }
+
+      const [rawEvents, sessions, dailyLogs, openLoops, weeklyCandidates] = await Promise.all([
+        queryBetween({ pk, prefix: RAW_EVENT_PREFIX, from: range.from, to: range.to }),
+        queryBetween({ pk, prefix: SESSION_PREFIX, from: range.from, to: range.to }),
+        queryBetween({ pk, prefix: DAILY_PREFIX, from: range.from, to: range.to }),
+        queryBetween({ pk, prefix: OPEN_LOOP_PREFIX, from: range.from, to: range.to }),
+        queryBeginsWith({ pk, prefix: WEEKLY_PREFIX }),
+      ]);
+
+      const weeklyReviews = (weeklyCandidates.Items ?? []).filter((item) => {
+        const weekRange = buildWeekRangeFromWeekKey(item.weekKey);
+        if (!weekRange) {
+          return false;
+        }
+        return rangesOverlap(range.from, range.to, weekRange.from, weekRange.to);
+      });
+
+      await deleteItems(rawEvents.Items, pk);
+      await deleteItems(sessions.Items, pk);
+      await deleteItems(dailyLogs.Items, pk);
+      await deleteItems(openLoops.Items, pk);
+      await deleteItems(weeklyReviews, pk);
+
+      const deletionRequest = {
+        id: `delete_${nowJstIso().replace(/[^0-9]/g, "").slice(0, 14)}`,
+        from: range.from,
+        to: range.to,
+        createdAt: nowJstIso(),
+      };
+      await db.send(
+        new PutCommand({
+          TableName: TABLE_NAME,
+          Item: buildDeletionRequestItem(pk, deletionRequest),
+        }),
+      );
+
+      return response(200, {
+        deleted: {
+          rawEvents: rawEvents.Items?.length ?? 0,
+          sessions: sessions.Items?.length ?? 0,
+          dailyLogs: dailyLogs.Items?.length ?? 0,
+          weeklyReviews: weeklyReviews.length,
+          openLoops: openLoops.Items?.length ?? 0,
+        },
+        deletionRequestId: deletionRequest.id,
+      });
+    }
+
+    case "GET /action-log/deletion-requests": {
+      const result = await queryBeginsWith({ pk, prefix: DELETION_REQUEST_PREFIX });
+      const items = (result.Items ?? [])
+        .map(stripSystemFields)
+        .sort((left, right) => String(left.createdAt ?? "").localeCompare(String(right.createdAt ?? "")));
+      return response(200, items);
+    }
+
+    case "POST /action-log/deletion-requests/{id}/ack": {
+      const id = event.pathParameters?.id;
+      await db.send(
+        new DeleteCommand({
+          TableName: TABLE_NAME,
+          Key: { PK: pk, SK: `${DELETION_REQUEST_PREFIX}${id}` },
+        }),
+      );
+      return response(200, { acked: id });
     }
 
     default:

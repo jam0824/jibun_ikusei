@@ -268,6 +268,7 @@ export class JibunIkuseiStack extends cdk.Stack {
     api.addRoutes({ path: '/action-log/raw-events', methods: [apigwv2.HttpMethod.POST], integration: actionLogIntegration })
     api.addRoutes({ path: '/action-log/sessions', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
     api.addRoutes({ path: '/action-log/sessions', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/sessions/{id}/hidden', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
     api.addRoutes({ path: '/action-log/daily', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
     api.addRoutes({ path: '/action-log/daily/{dateKey}', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
     api.addRoutes({ path: '/action-log/daily/{dateKey}', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
@@ -280,6 +281,9 @@ export class JibunIkuseiStack extends cdk.Stack {
     api.addRoutes({ path: '/action-log/privacy-rules', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
     api.addRoutes({ path: '/action-log/open-loops', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
     api.addRoutes({ path: '/action-log/open-loops', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/range', methods: [apigwv2.HttpMethod.DELETE], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/deletion-requests', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/deletion-requests/{id}/ack', methods: [apigwv2.HttpMethod.POST], integration: actionLogIntegration })
 
     // Situation Logs
     const situationLogIntegration = new integrations.HttpLambdaIntegration('SituationLogIntegration', situationLogFn)

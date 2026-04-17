@@ -133,6 +133,13 @@ class ApiClient:
     async def put_action_log_sessions(self, payload: dict) -> dict:
         return await self._request("PUT", "/action-log/sessions", json=payload)
 
+    async def put_action_log_session_hidden(
+        self, session_id: str, payload: dict
+    ) -> dict:
+        return await self._request(
+            "PUT", f"/action-log/sessions/{session_id}/hidden", json=payload
+        )
+
     async def get_action_log_daily_logs(
         self, from_date: str, to_date: str
     ) -> list[dict]:
@@ -186,6 +193,19 @@ class ApiClient:
 
     async def put_action_log_open_loops(self, payload: dict) -> dict:
         return await self._request("PUT", "/action-log/open-loops", json=payload)
+
+    async def delete_action_log_range(self, from_date: str, to_date: str) -> dict:
+        return await self._request(
+            "DELETE", "/action-log/range", params={"from": from_date, "to": to_date}
+        )
+
+    async def get_action_log_deletion_requests(self) -> list[dict]:
+        return await self._request("GET", "/action-log/deletion-requests")
+
+    async def ack_action_log_deletion_request(self, request_id: str) -> dict:
+        return await self._request(
+            "POST", f"/action-log/deletion-requests/{request_id}/ack"
+        )
 
     # ---- 栄養素 ----
     async def get_nutrition_range(self, from_date: str, to_date: str) -> dict:

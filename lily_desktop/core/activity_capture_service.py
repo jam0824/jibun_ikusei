@@ -205,6 +205,64 @@ def _save_sync_state(state: dict[str, set[int]]) -> None:
     )
 
 
+def purge_raw_event_range(
+    *,
+    from_date: str,
+    to_date: str,
+    raw_event_log_dir: Path = _RAW_EVENT_LOG_DIR,
+    sync_state_path: Path = _SYNC_STATE_PATH,
+) -> None:
+    try:
+        start_date = datetime.strptime(from_date, "%Y-%m-%d").date()
+        end_date = datetime.strptime(to_date, "%Y-%m-%d").date()
+    except ValueError:
+        logger.exception(
+            "Failed to purge action-log spool because date range is invalid: from=%s to=%s",
+            from_date,
+            to_date,
+        )
+        return
+
+    if end_date < start_date:
+        return
+
+    current = start_date
+    deleted_file_names: set[str] = set()
+    while current <= end_date:
+        file_name = f"{current.strftime('%Y-%m-%d')}.jsonl"
+        deleted_file_names.add(file_name)
+        log_path = raw_event_log_dir / file_name
+        if log_path.exists():
+            try:
+                log_path.unlink()
+            except OSError:
+                logger.exception("Failed to delete action-log spool file: %s", log_path)
+        current += timedelta(days=1)
+
+    if not sync_state_path.exists():
+        return
+
+    try:
+        raw = json.loads(sync_state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        logger.exception("Failed to load action-log sync state for purge")
+        return
+
+    files = raw.get("files", {}) if isinstance(raw, dict) else {}
+    if not isinstance(files, dict):
+        return
+
+    updated_files = {
+        file_name: entry
+        for file_name, entry in files.items()
+        if file_name not in deleted_file_names
+    }
+    sync_state_path.write_text(
+        json.dumps({"files": updated_files}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 class ActivityCaptureService:
     def __init__(
         self,
@@ -271,6 +329,9 @@ class ActivityCaptureService:
             return
         if previous_state == "disabled":
             self.start()
+
+    def set_privacy_rules(self, rules: list[dict[str, Any]]) -> None:
+        self.privacy_rules = list(rules)
 
     def snapshot_recent_events(self) -> list[dict[str, Any]]:
         return [dict(event) for event in self._recent_events]

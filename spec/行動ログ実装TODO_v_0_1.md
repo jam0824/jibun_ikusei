@@ -1,6 +1,6 @@
 # 行動ログ実装 TODO v0.1
 
-更新日: 2026-04-17
+更新日: 2026-04-18
 
 関連仕様:
 - [行動ログ基盤仕様_v_0_1.md](./行動ログ基盤仕様_v_0_1.md)
@@ -536,57 +536,68 @@
 
 ### 目的
 
-- [ ] privacy・削除・非表示・設定・検索精度を整え、v0.1 として閉じる
-- [ ] 運用面の漏れを仕上げる
+- [x] privacy・削除・非表示・設定・検索精度を整え、v0.1 として閉じる
+- [x] 運用面の漏れを仕上げる
 
 ### 実装対象
 
-- [ ] 除外アプリ / 除外ドメイン設定
-- [ ] URL 保存粒度設定
-- [ ] AI 利用範囲 / 匿名化設定
-- [ ] デバイス単位の `収集中 / 一時停止 / 無効` 設定 UI
-- [ ] ログ削除 / 期間削除 / エクスポート
-- [ ] 非表示化
-- [ ] 検索精度改善
-- [ ] 監査観点のチェック
+- [x] `/settings` に行動ログ設定セクションを追加する
+- [x] device ごとの `captureState(active / paused / disabled)` を保存できるようにする
+- [x] 除外アプリ / 除外ドメインを `PrivacyRule` として保存できるようにする
+- [x] URL 保存粒度を `default_url_storage` rule に正規化して保存する
+- [x] AI 利用範囲を `default_ai_handling` rule に正規化して保存する
+- [x] desktop が起動時と 30 秒 sync tick ごとに server の device / privacy 設定を取り込む
+- [x] desktop が purge request を処理し、local spool と `sync_state.json` を更新して ack する
+- [x] `today / day / search` で session を非表示にできる
+- [x] `day / search` で hidden session を再表示できる
+- [x] search に `keyword / from / to / categories / apps / domains / includeOpenLoops / includeHidden` を追加する
+- [x] search から action-log 専用 JSON export を行えるようにする
+- [x] search から action-log 専用の期間削除を行えるようにする
+- [x] 削除した期間が raw sync / organizer で復活しないよう purge queue を入れる
+- [ ] `ManualNote` の追加・保存
 
 ### 先に書く failing test
 
-- [ ] 除外設定の反映テスト
-- [ ] URL 保存粒度切り替えテスト
-- [ ] AI 利用範囲 / 匿名化設定テスト
-- [ ] デバイス状態設定 UI テスト
-- [ ] 削除・エクスポートテスト
-- [ ] 非表示セッションの UI 反映テスト
-- [ ] 検索絞り込みの回帰テスト
+- [x] settings の行動ログセクションが device / privacy rule を読み込めるテスト
+- [x] app / domain exclusion, URL storage, AI handling を保存できるテスト
+- [x] session の非表示 / 再表示が day / search で効くテスト
+- [x] search の厳密 filter が効くテスト
+- [x] action-log export が現在の期間指定で JSON bundle を作るテスト
+- [x] `to > yesterday` では delete できないテスト
+- [x] desktop が device state / privacy rules を取り込むテスト
+- [x] purge request を受けると local spool と sync_state を更新して ack するテスト
+- [x] `PUT /action-log/sessions/{id}/hidden` が対象 session だけ更新するテスト
+- [x] `DELETE /action-log/range` が purge request を作るテスト
+- [x] deletion request list / ack が動くテスト
 
 ### 実装メモ
 
-- [ ] v0.1 の安心して止められる・消せる体験を優先する
-- [ ] 監査系の確認は UI と保存の両方を見る
-- [ ] ドキュメント・設定・テストの最終整合を取る
+- [x] settings は local draft + 明示 Save で動かし、`putActionLogDevice()` と `putActionLogPrivacyRules()` に分離して保存する
+- [x] `hidden=true` session は既定の一覧と Lily 会話コンテキストから除外し、明示的に含めたときだけ表示する
+- [x] export は client-side bundle とし、`rawEvents / sessions / dailyLogs / weeklyReviews / openLoops / meta` を含める
+- [x] delete は action-log entity だけを対象にし、quests / completions / messages などは対象外のまま維持する
 
 ### 完了条件
 
-- [ ] privacy と削除導線が仕様どおり機能する
-- [ ] 非表示・検索・設定が一通り揃う
-- [ ] 関連仕様とテストが更新済みである
+- [x] privacy と削除導線が仕様どおり機能する
+- [x] 非表示・検索・設定が一通り揃う
+- [x] 関連仕様とテストが更新済みである
 
 ### 自己レビュー項目
 
-- [ ] spec と実装のズレがないか
-- [ ] JST 前提を壊していないか
-- [ ] privacy 境界を破っていないか
-- [ ] 既存の責務分離を壊していないか
-- [ ] 不要な重複計測や二重保存がないか
-- [ ] テストが対象範囲を十分にカバーしているか
+- [x] spec と実装のズレがないか
+- [x] JST 前提を壊していないか
+- [x] privacy 境界を破っていないか
+- [x] 既存の責務分離を壊していないか
+- [x] 不要な重複計測や二重保存がないか
+- [x] テストが対象範囲を十分にカバーしているか
 
 ---
 
 ## 最終チェック
 
-- [ ] Phase 0 完了後に停止するルールが TODO に明記されている
-- [ ] 各フェーズに `目的 / 実装対象 / 先に書く failing test / 実装メモ / 完了条件 / 自己レビュー項目` が揃っている
-- [ ] `RawEvent / ActivitySession / DailyActivityLog / WeeklyActivityReview / Activity Capture Service` が明記されている
-- [ ] `Chrome Extension -> Desktop -> Server` の責務分離が TODO に反映されている
-- [ ] PWA 正本 / desktop ハブの方針が TODO に反映されている
+- [x] Phase 0 完了後に停止するルールが TODO に明記されている
+- [x] 各フェーズに `目的 / 実装対象 / 先に書く failing test / 実装メモ / 完了条件 / 自己レビュー項目` が揃っている
+- [x] `RawEvent / ActivitySession / DailyActivityLog / WeeklyActivityReview / Activity Capture Service` が明記されている
+- [x] `Chrome Extension -> Desktop -> Server` の責務分離が TODO に反映されている
+- [x] PWA 正本 / desktop ハブの方針が TODO に反映されている

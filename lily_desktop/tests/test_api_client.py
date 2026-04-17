@@ -112,6 +112,13 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
             ],
         }
     )
+    await client.put_action_log_session_hidden(
+        "session_1",
+        {"dateKey": "2026-04-17", "hidden": True},
+    )
+    await client.delete_action_log_range("2026-04-01", "2026-04-17")
+    await client.get_action_log_deletion_requests()
+    await client.ack_action_log_deletion_request("delete_1")
 
     client._request.assert_any_await(
         "POST",
@@ -250,4 +257,19 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
                 }
             ],
         },
+    )
+    client._request.assert_any_await(
+        "PUT",
+        "/action-log/sessions/session_1/hidden",
+        json={"dateKey": "2026-04-17", "hidden": True},
+    )
+    client._request.assert_any_await(
+        "DELETE",
+        "/action-log/range",
+        params={"from": "2026-04-01", "to": "2026-04-17"},
+    )
+    client._request.assert_any_await("GET", "/action-log/deletion-requests")
+    client._request.assert_any_await(
+        "POST",
+        "/action-log/deletion-requests/delete_1/ack",
     )
