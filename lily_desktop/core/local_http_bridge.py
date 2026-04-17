@@ -5,6 +5,7 @@ import logging
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 
@@ -15,7 +16,14 @@ JST = timezone(timedelta(hours=9))
 HTTP_BRIDGE_HOST = "127.0.0.1"
 HTTP_BRIDGE_ENDPOINT = "/v1/events"
 _SUPPORTED_EVENT_TYPES = frozenset(
-    {"user_message", "system_message", "quest_completed", "chrome_audible_tabs"}
+    {
+        "user_message",
+        "system_message",
+        "quest_completed",
+        "chrome_audible_tabs",
+        "browser_page_changed",
+        "heartbeat",
+    }
 )
 logger = logging.getLogger(__name__)
 
@@ -124,6 +132,57 @@ def _parse_audible_tabs_payload(payload_raw: dict[str, Any]) -> dict[str, Any]:
     return {"audibleTabs": normalized_tabs}
 
 
+def _optional_number(value: object, field_name: str) -> int | float | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise BridgeValidationError(
+            "invalid_payload",
+            f"{field_name} must be a number.",
+        )
+    return value
+
+
+def _parse_browser_action_payload(payload_raw: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "tabId": _require_tab_id(payload_raw.get("tabId"), "payload.tabId"),
+        "url": _require_non_empty_string(payload_raw.get("url"), "payload.url"),
+        "domain": _require_non_empty_string(payload_raw.get("domain"), "payload.domain"),
+        "title": _optional_string(payload_raw.get("title"), "payload.title"),
+    }
+
+
+def _parse_browser_action_metadata(value: object) -> dict[str, Any]:
+    metadata = _optional_metadata(value)
+    trigger = metadata.get("trigger")
+    if trigger not in {"tab_activated", "url_changed", "window_focus", "flush"}:
+        raise BridgeValidationError(
+            "invalid_payload",
+            "metadata.trigger must be one of tab_activated, url_changed, window_focus, flush.",
+        )
+
+    normalized: dict[str, Any] = {"trigger": trigger}
+    elapsed_seconds = _optional_number(metadata.get("elapsedSeconds"), "metadata.elapsedSeconds")
+    if elapsed_seconds is not None:
+        normalized["elapsedSeconds"] = elapsed_seconds
+
+    for field_name in ("category", "cacheKey"):
+        normalized_value = _optional_string(metadata.get(field_name), f"metadata.{field_name}")
+        if normalized_value is not None:
+            normalized[field_name] = normalized_value
+
+    is_growth = metadata.get("isGrowth")
+    if is_growth is not None:
+        if not isinstance(is_growth, bool):
+            raise BridgeValidationError(
+                "invalid_payload",
+                "metadata.isGrowth must be a boolean.",
+            )
+        normalized["isGrowth"] = is_growth
+
+    return normalized
+
+
 def _parse_occurred_at(value: object, *, received_at: datetime) -> datetime:
     if value is None:
         return received_at
@@ -229,8 +288,13 @@ def validate_http_bridge_event(
         }
         message_role = "user"
         internal_user_message = _build_quest_completed_message(payload)
-    else:
+    elif event_type == "chrome_audible_tabs":
         payload = _parse_audible_tabs_payload(payload_raw)
+        message_role = None
+        internal_user_message = ""
+    else:
+        payload = _parse_browser_action_payload(payload_raw)
+        metadata = _parse_browser_action_metadata(data.get("metadata"))
         message_role = None
         internal_user_message = ""
 
@@ -339,6 +403,14 @@ class _LocalHttpBridgeRequestHandler(BaseHTTPRequestHandler):
                 accepted.received_at,
                 accepted.payload["audibleTabs"],
             )
+        elif accepted.event_type in {"browser_page_changed", "heartbeat"}:
+            self.server.bridge.dispatch_browser_event(
+                event_type=accepted.event_type,
+                source=accepted.source,
+                occurred_at=accepted.occurred_at,
+                payload=accepted.payload,
+                metadata=accepted.metadata,
+            )
         elif accepted.message_role == "system":
             self.server.bridge.dispatch_system_message(accepted.internal_user_message)
         else:
@@ -424,6 +496,7 @@ class LocalHttpBridge:
         emit_user_message: Callable[[str], None],
         emit_system_message: Callable[[str], None],
         update_chrome_audible_tabs: Callable[[datetime, list[dict[str, Any]]], None] | None = None,
+        ingest_browser_event: Callable[..., Any] | None = None,
         host: str = HTTP_BRIDGE_HOST,
         logger_instance: logging.Logger | None = None,
     ):
@@ -433,6 +506,7 @@ class LocalHttpBridge:
         self._emit_user_message = emit_user_message
         self._emit_system_message = emit_system_message
         self._update_chrome_audible_tabs = update_chrome_audible_tabs
+        self._ingest_browser_event = ingest_browser_event
         self._server: _LocalHttpBridgeServer | None = None
         self._thread: threading.Thread | None = None
         self.logger = logger_instance or logger
@@ -493,6 +567,28 @@ class LocalHttpBridge:
             audible_tabs,
         )
 
+    def dispatch_browser_event(
+        self,
+        *,
+        event_type: str,
+        source: str,
+        occurred_at: datetime,
+        payload: dict[str, Any],
+        metadata: dict[str, Any],
+    ) -> None:
+        if self._ingest_browser_event is None:
+            return
+        self._event_loop.call_soon_threadsafe(
+            partial(
+                self._ingest_browser_event,
+                event_type=event_type,
+                source=source,
+                occurred_at=occurred_at,
+                payload=payload,
+                metadata=metadata,
+            )
+        )
+
     def log_result(
         self,
         *,
@@ -523,6 +619,7 @@ def start_local_http_bridge(
     emit_user_message: Callable[[str], None],
     emit_system_message: Callable[[str], None],
     update_chrome_audible_tabs: Callable[[datetime, list[dict[str, Any]]], None] | None = None,
+    ingest_browser_event: Callable[..., Any] | None = None,
     logger_instance: logging.Logger | None = None,
 ) -> LocalHttpBridge | None:
     active_logger = logger_instance or logger
@@ -536,6 +633,7 @@ def start_local_http_bridge(
         emit_user_message=emit_user_message,
         emit_system_message=emit_system_message,
         update_chrome_audible_tabs=update_chrome_audible_tabs,
+        ingest_browser_event=ingest_browser_event,
         logger_instance=active_logger,
     )
     try:

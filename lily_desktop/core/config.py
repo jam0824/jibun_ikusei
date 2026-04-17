@@ -15,6 +15,7 @@ DEFAULT_USER_BALLOON_DISPLAY_SECONDS = 8.0
 DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES = 15
 DEFAULT_LEVEL_WATCH_INTERVAL_MINUTES = 10
 DEFAULT_HTTP_BRIDGE_PORT = 18765
+DEFAULT_ACTIVITY_CAPTURE_POLL_INTERVAL_SECONDS = 2
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_MEMORY_DIRECTORY = r"D:\codes\mixi2-api\generated_text"
 DEFAULT_AUTO_TALK_SKIP_AUDIBLE_DOMAINS = [
@@ -84,6 +85,44 @@ def normalize_http_bridge_port(value: object) -> int:
     if port <= 0 or port > 65535:
         return DEFAULT_HTTP_BRIDGE_PORT
     return port
+
+
+def normalize_activity_capture_state(value: object) -> str:
+    if not isinstance(value, str):
+        return "active"
+    state = value.strip().lower()
+    if state in {"active", "paused", "disabled"}:
+        return state
+    return "active"
+
+
+def normalize_activity_capture_poll_interval_seconds(value: object) -> int:
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_ACTIVITY_CAPTURE_POLL_INTERVAL_SECONDS
+    if seconds <= 0:
+        return DEFAULT_ACTIVITY_CAPTURE_POLL_INTERVAL_SECONDS
+    return seconds
+
+
+def normalize_activity_capture_privacy_rules(value: object) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    normalized: list[dict] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        rule: dict[str, object] = {}
+        for key in ("id", "type", "value", "mode", "updatedAt"):
+            item_value = item.get(key)
+            if isinstance(item_value, str) and item_value.strip():
+                rule[key] = item_value.strip()
+        enabled = item.get("enabled")
+        rule["enabled"] = enabled if isinstance(enabled, bool) else True
+        if {"type", "value", "mode"}.issubset(rule.keys()):
+            normalized.append(rule)
+    return normalized
 
 
 def normalize_domain_list(value: object, *, default: list[str]) -> list[str]:
@@ -296,6 +335,14 @@ class HttpBridgeConfig:
 
 
 @dataclass
+class ActivityCaptureConfig:
+    enabled: bool = True
+    initial_state: str = "active"
+    poll_interval_seconds: int = DEFAULT_ACTIVITY_CAPTURE_POLL_INTERVAL_SECONDS
+    privacy_rules: list[dict] = field(default_factory=list)
+
+
+@dataclass
 class AppConfig:
     openai: OpenAIConfig = field(default_factory=OpenAIConfig)
     desktop: DesktopConfig = field(default_factory=DesktopConfig)
@@ -311,6 +358,7 @@ class AppConfig:
     healthplanet: HealthPlanetConfig = field(default_factory=HealthPlanetConfig)
     fitbit: FitbitConfig = field(default_factory=FitbitConfig)
     http_bridge: HttpBridgeConfig = field(default_factory=HttpBridgeConfig)
+    activity_capture: ActivityCaptureConfig = field(default_factory=ActivityCaptureConfig)
 
 
 def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
@@ -352,6 +400,23 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         http_bridge_raw = dict(http_bridge_raw)
     http_bridge_raw["port"] = normalize_http_bridge_port(
         http_bridge_raw.get("port", DEFAULT_HTTP_BRIDGE_PORT)
+    )
+    activity_capture_raw = raw.get("activity_capture", {}) or {}
+    if not isinstance(activity_capture_raw, dict):
+        activity_capture_raw = {}
+    else:
+        activity_capture_raw = dict(activity_capture_raw)
+    activity_capture_raw["initial_state"] = normalize_activity_capture_state(
+        activity_capture_raw.get("initial_state", "active")
+    )
+    activity_capture_raw["poll_interval_seconds"] = normalize_activity_capture_poll_interval_seconds(
+        activity_capture_raw.get(
+            "poll_interval_seconds",
+            DEFAULT_ACTIVITY_CAPTURE_POLL_INTERVAL_SECONDS,
+        )
+    )
+    activity_capture_raw["privacy_rules"] = normalize_activity_capture_privacy_rules(
+        activity_capture_raw.get("privacy_rules", [])
     )
     camera_raw = raw.get("camera", {}) or {}
     if not isinstance(camera_raw, dict):
@@ -428,6 +493,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         healthplanet=HealthPlanetConfig(**healthplanet_raw),
         fitbit=FitbitConfig(**raw.get("fitbit", {})),
         http_bridge=HttpBridgeConfig(**http_bridge_raw),
+        activity_capture=ActivityCaptureConfig(**activity_capture_raw),
     )
 
     # .env から秘密情報を上書き（.env の値を優先）

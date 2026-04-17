@@ -16,6 +16,7 @@ from ai.tool_definitions import CHAT_TOOLS
 from ai.tool_executor import ToolExecutor
 from api.api_client import ApiClient
 from api.auth import CognitoAuth
+from core.activity_capture_service import ActivityCaptureService, default_device_id
 from core.background_event_runtime import register_background_event_handlers
 from core.camera import find_camera_index
 from core.chrome_audible_tabs import ChromeAudibleTabsTracker
@@ -102,6 +103,7 @@ class App:
         self.pending_periodic_expires_at: datetime | None = None
         self.chrome_audible_tabs_tracker = ChromeAudibleTabsTracker()
         self.level_watch = LevelWatchService()
+        self.activity_capture_service: ActivityCaptureService | None = None
 
         # Fitbit 同期
         self.fitbit_sync: FitbitSync | None = None
@@ -534,6 +536,8 @@ class App:
 
     def start_http_bridge(self, event_loop: asyncio.AbstractEventLoop) -> None:
         """Local HTTP Bridge を起動する。"""
+        if self.activity_capture_service is None:
+            self.start_activity_capture_service()
         self.http_bridge = start_local_http_bridge(
             self.config.http_bridge,
             event_loop=event_loop,
@@ -542,6 +546,11 @@ class App:
             update_chrome_audible_tabs=lambda received_at, audible_tabs: self.chrome_audible_tabs_tracker.update(
                 received_at=received_at,
                 audible_tabs=audible_tabs,
+            ),
+            ingest_browser_event=(
+                self.activity_capture_service.ingest_browser_event
+                if self.activity_capture_service is not None
+                else None
             ),
             logger_instance=logger,
         )
@@ -552,6 +561,31 @@ class App:
             return
         self.http_bridge.stop()
         self.http_bridge = None
+
+    def start_activity_capture_service(self) -> None:
+        cfg = self.config.activity_capture
+        if not cfg.enabled:
+            logger.info("Activity capture is disabled by config")
+            self.activity_capture_service = None
+            return
+        if self.activity_capture_service is not None:
+            return
+
+        service = ActivityCaptureService(
+            device_id=default_device_id(),
+            initial_state=cfg.initial_state,
+            poll_interval_seconds=cfg.poll_interval_seconds,
+            privacy_rules=cfg.privacy_rules,
+            logger_instance=logger,
+        )
+        service.start()
+        self.activity_capture_service = service
+
+    def stop_activity_capture_service(self) -> None:
+        if self.activity_capture_service is None:
+            return
+        self.activity_capture_service.stop()
+        self.activity_capture_service = None
 
     def stop_camera_system(self) -> None:
         """カメラシステムを停止する"""
@@ -1039,6 +1073,7 @@ def main() -> None:
         if app_instance.tts_engine is not None:
             app_instance.tts_engine.clear_queue()
         app_instance.stop_http_bridge()
+        app_instance.stop_activity_capture_service()
         app_instance.stop_camera_system()
         app_instance.stop_level_watch_timer()
 

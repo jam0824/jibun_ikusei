@@ -64,7 +64,7 @@ export interface Device {
   id: string
   name: string
   platform: DevicePlatform
-  captureEnabled: boolean
+  captureState: DeviceCaptureState
   createdAt: string
   updatedAt: string
 }

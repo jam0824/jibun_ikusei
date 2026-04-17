@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { getWeekKey } from '@/lib/date'
 
 import {
+  deviceSchema,
   normalizeActivitySessionDraft,
   normalizeRawEventDraft,
   rawEventSchema,
@@ -12,6 +13,21 @@ import {
 } from './action-log-contract'
 
 describe('action-log-contract', () => {
+  it('accepts devices with captureState instead of captureEnabled', () => {
+    expect(
+      deviceSchema.parse({
+        id: 'device_1',
+        name: 'main-pc',
+        platform: 'windows',
+        captureState: 'paused',
+        createdAt: '2026-04-17T09:00:00+09:00',
+        updatedAt: '2026-04-17T09:05:00+09:00',
+      }),
+    ).toMatchObject({
+      captureState: 'paused',
+    })
+  })
+
   it('derives a JST dateKey from a raw event draft', () => {
     expect(toActionLogDateKey('2026-04-17T23:30:00+09:00')).toBe('2026-04-17')
   })

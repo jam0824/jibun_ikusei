@@ -14,6 +14,7 @@ import type {
 import {
   ACTION_LOG_SOURCES,
   ACTIVITY_CATEGORIES,
+  DEVICE_CAPTURE_STATES,
   DEVICE_PLATFORMS,
   OPEN_LOOP_STATUSES,
   PRIVACY_RULE_MODES,
@@ -36,6 +37,7 @@ const actionLogSourceSchema = z.enum(ACTION_LOG_SOURCES)
 const rawEventTypeSchema = z.enum(RAW_EVENT_TYPES)
 const activityCategorySchema = z.enum(ACTIVITY_CATEGORIES)
 const devicePlatformSchema = z.enum(DEVICE_PLATFORMS)
+const deviceCaptureStateSchema = z.enum(DEVICE_CAPTURE_STATES)
 const openLoopStatusSchema = z.enum(OPEN_LOOP_STATUSES)
 const privacyRuleTypeSchema = z.enum(PRIVACY_RULE_TYPES)
 const privacyRuleModeSchema = z.enum(PRIVACY_RULE_MODES)
@@ -45,7 +47,7 @@ export const deviceSchema = z
     id: z.string().min(1),
     name: z.string().min(1),
     platform: devicePlatformSchema,
-    captureEnabled: z.boolean(),
+    captureState: deviceCaptureStateSchema,
     createdAt: jstRfc3339Schema,
     updatedAt: jstRfc3339Schema,
   })

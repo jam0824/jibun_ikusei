@@ -123,6 +123,60 @@ def test_memory_talk_request_publishes_forced_memory_event():
     assert event.forced_source == "memory"
 
 
+def test_start_http_bridge_connects_capture_service_to_bridge(monkeypatch):
+    captured_kwargs = {}
+    bridge_instance = object()
+
+    def _fake_start_local_http_bridge(*_args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return bridge_instance
+
+    monkeypatch.setattr(main_mod, "start_local_http_bridge", _fake_start_local_http_bridge)
+
+    activity_capture_service = SimpleNamespace(ingest_browser_event=Mock())
+    app = SimpleNamespace(
+        config=SimpleNamespace(http_bridge=SimpleNamespace(enabled=True, port=18765)),
+        activity_capture_service=activity_capture_service,
+        chrome_audible_tabs_tracker=SimpleNamespace(update=Mock()),
+        http_bridge=None,
+    )
+
+    main_mod.App.start_http_bridge(app, asyncio.get_event_loop())
+
+    assert app.http_bridge is bridge_instance
+    assert captured_kwargs["ingest_browser_event"] is activity_capture_service.ingest_browser_event
+
+
+def test_start_activity_capture_service_does_not_start_when_initial_state_is_disabled(monkeypatch):
+    start_calls: list[object] = []
+
+    class _FakeCaptureService:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def start(self):
+            start_calls.append(self.kwargs["initial_state"])
+            return False
+
+    monkeypatch.setattr(main_mod, "ActivityCaptureService", _FakeCaptureService)
+
+    app = SimpleNamespace(
+        config=SimpleNamespace(
+            activity_capture=SimpleNamespace(
+                enabled=True,
+                initial_state="disabled",
+                poll_interval_seconds=2,
+                privacy_rules=[],
+            )
+        ),
+        activity_capture_service=None,
+    )
+
+    main_mod.App.start_activity_capture_service(app)
+
+    assert start_calls == ["disabled"]
+
+
 @pytest.mark.asyncio
 async def test_async_init_publishes_app_started_without_direct_startup_sync():
     hub = _CaptureHub()

@@ -41,7 +41,7 @@
 - [ ] `ActivitySession`
 - [ ] `DailyActivityLog`
 - [ ] `WeeklyActivityReview`
-- [ ] `Activity Capture Service`
+- [x] `Activity Capture Service`
 - [ ] `Chrome Extension -> Desktop -> Server` のイベント流れ
 
 ---
@@ -194,16 +194,16 @@
 
 ### 目的
 
-- [ ] `lily_desktop` を正式ホストとして `Activity Capture Service` を組み込む
+- [x] `lily_desktop` を正式ホストとして `Activity Capture Service` を組み込む
 - [ ] OS 側イベントと extension イベントを同じ内部イベント層へ統合する
 
 ### 実装対象
 
-- [ ] `Activity Capture Service` の土台
-- [ ] active window / idle / file context 取得の統合
-- [ ] `Local HTTP Bridge` を capture service の入力アダプタとして接続
+- [x] `Activity Capture Service` の土台
+- [x] active window / idle / file context 取得の統合
+- [x] `Local HTTP Bridge` を capture service の入力アダプタとして接続
 - [ ] privacy rule 適用とローカル一時キュー
-- [ ] デバイス単位の `収集中 / 一時停止 / 無効` 制御
+- [x] デバイス単位の `収集中 / 一時停止 / 無効` 制御
 - [ ] 収集機能のみを停止・再起動できる制御境界
 
 ### 先に書く failing test
@@ -212,8 +212,8 @@
 - [ ] idle 開始 / 終了のテスト
 - [ ] bridge から受けた browser event が正規化されるテスト
 - [ ] privacy rule によって除外されるテスト
-- [ ] `一時停止` 中は新規 `RawEvent` を生成しないテスト
-- [ ] `無効` 状態では収集が起動しないテスト
+- [x] `一時停止` 中は新規 `RawEvent` を生成しないテスト
+- [x] `無効` 状態では収集が起動しないテスト
 
 ### 実装メモ
 
@@ -227,7 +227,7 @@
 - [ ] desktop 側の主要イベントが `RawEvent` として統一形式で扱える
 - [ ] bridge 経由の browser event が capture service に統合される
 - [ ] privacy rule と一時キューが機能する
-- [ ] `収集中 / 一時停止 / 無効` のデバイス状態が機能する
+- [x] `収集中 / 一時停止 / 無効` のデバイス状態が機能する
 
 ### 自己レビュー項目
 

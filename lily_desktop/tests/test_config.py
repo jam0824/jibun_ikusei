@@ -185,6 +185,49 @@ def test_http_bridge_invalid_port_falls_back_to_default(tmp_path):
     assert config.http_bridge.port == DEFAULT_HTTP_BRIDGE_PORT
 
 
+def test_activity_capture_defaults_to_enabled_active_and_2_second_poll(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("", encoding="utf-8")
+
+    config = load_config(config_path)
+
+    assert config.activity_capture.enabled is True
+    assert config.activity_capture.initial_state == "active"
+    assert config.activity_capture.poll_interval_seconds == 2
+
+
+def test_activity_capture_uses_config_values(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "activity_capture:\n"
+        "  enabled: false\n"
+        "  initial_state: disabled\n"
+        "  poll_interval_seconds: 5\n"
+        "  privacy_rules:\n"
+        "    - id: rule_1\n"
+        "      type: domain\n"
+        "      value: mail.google.com\n"
+        "      mode: exclude\n"
+        "      enabled: true\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.activity_capture.enabled is False
+    assert config.activity_capture.initial_state == "disabled"
+    assert config.activity_capture.poll_interval_seconds == 5
+    assert config.activity_capture.privacy_rules == [
+        {
+            "id": "rule_1",
+            "type": "domain",
+            "value": "mail.google.com",
+            "mode": "exclude",
+            "enabled": True,
+        }
+    ]
+
+
 def test_voice_pause_during_tts_defaults_to_true(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text("", encoding="utf-8")
