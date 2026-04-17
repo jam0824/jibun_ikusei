@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from core.domain_events import (
+    ActionLogSyncRequested,
     AppStarted,
     CaptureSnapshotRequested,
     CaptureSummaryDue,
@@ -42,6 +43,13 @@ def register_background_event_handlers(
                 correlation_id=correlation_id,
             )
         )
+        if getattr(getattr(app.config, "activity_capture", None), "enabled", False):
+            event_hub.publish(
+                ActionLogSyncRequested(
+                    source="app.started",
+                    correlation_id=correlation_id,
+                )
+            )
 
     async def on_healthplanet_requested(event: HealthPlanetSyncRequested) -> None:
         await job_manager.submit(
@@ -64,6 +72,13 @@ def register_background_event_handlers(
             "desktop.level_watch",
             "single_flight_coalesce",
             app.run_level_watch_job,
+        )
+
+    async def on_action_log_sync_requested(_event: ActionLogSyncRequested) -> None:
+        await job_manager.submit(
+            "action_log.sync",
+            "single_flight_coalesce",
+            app.handle_action_log_sync_request,
         )
 
     async def on_chat_auto_talk_due(event: ChatAutoTalkDue) -> None:
@@ -97,6 +112,7 @@ def register_background_event_handlers(
     event_hub.subscribe(HealthPlanetSyncRequested, on_healthplanet_requested)
     event_hub.subscribe(FitbitSyncRequested, on_fitbit_requested)
     event_hub.subscribe(LevelWatchRequested, on_level_watch_requested)
+    event_hub.subscribe(ActionLogSyncRequested, on_action_log_sync_requested)
     event_hub.subscribe(ChatAutoTalkDue, on_chat_auto_talk_due)
     event_hub.subscribe(ChatFollowUpRequested, on_chat_follow_up)
     event_hub.subscribe(CaptureSnapshotRequested, on_capture_snapshot)

@@ -308,11 +308,23 @@ export function postActionLogRawEvents(input: { deviceId: string; events: RawEve
   })
 }
 
+export function getActionLogRawEvents(from: string, to: string) {
+  return request<RawEvent[]>(`/action-log/raw-events?from=${from}&to=${to}`)
+}
+
 export function putActionLogSessions(input: { deviceId: string; sessions: ActivitySession[] }) {
   return request<{ updated: number }>('/action-log/sessions', {
     method: 'PUT',
     body: JSON.stringify(input),
   })
+}
+
+export function getActionLogSessions(from: string, to: string) {
+  return request<ActivitySession[]>(`/action-log/sessions?from=${from}&to=${to}`)
+}
+
+export function getActionLogDailyActivityLogs(from: string, to: string) {
+  return request<DailyActivityLog[]>(`/action-log/daily?from=${from}&to=${to}`)
 }
 
 export function getActionLogDailyActivityLog(dateKey: string) {
@@ -328,6 +340,10 @@ export function putActionLogDailyActivityLog(log: DailyActivityLog) {
 
 export function getActionLogWeeklyActivityReview(weekKey: string) {
   return request<WeeklyActivityReview | null>(`/action-log/weekly/${weekKey}`)
+}
+
+export function getActionLogWeeklyActivityReviews(year: number) {
+  return request<WeeklyActivityReview[]>(`/action-log/weekly?year=${year}`)
 }
 
 export function putActionLogWeeklyActivityReview(review: WeeklyActivityReview) {

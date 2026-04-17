@@ -177,6 +177,60 @@ def test_start_activity_capture_service_does_not_start_when_initial_state_is_dis
     assert start_calls == ["disabled"]
 
 
+def test_start_action_log_sync_timer_uses_config_interval_when_enabled():
+    class _FakeTimer:
+        def __init__(self) -> None:
+            self.started_with: list[int] = []
+
+        def start(self, interval_ms: int) -> None:
+            self.started_with.append(interval_ms)
+
+        def stop(self) -> None:
+            return None
+
+    timer = _FakeTimer()
+    app = SimpleNamespace(
+        config=SimpleNamespace(
+            activity_capture=SimpleNamespace(
+                enabled=True,
+                sync_interval_seconds=30,
+            )
+        ),
+        _action_log_sync_timer=timer,
+    )
+
+    main_mod.App.start_action_log_sync_timer(app)
+
+    assert timer.started_with == [30000]
+
+
+def test_start_action_log_sync_timer_is_noop_when_activity_capture_disabled():
+    class _FakeTimer:
+        def __init__(self) -> None:
+            self.started_with: list[int] = []
+
+        def start(self, interval_ms: int) -> None:
+            self.started_with.append(interval_ms)
+
+        def stop(self) -> None:
+            return None
+
+    timer = _FakeTimer()
+    app = SimpleNamespace(
+        config=SimpleNamespace(
+            activity_capture=SimpleNamespace(
+                enabled=False,
+                sync_interval_seconds=30,
+            )
+        ),
+        _action_log_sync_timer=timer,
+    )
+
+    main_mod.App.start_action_log_sync_timer(app)
+
+    assert timer.started_with == []
+
+
 @pytest.mark.asyncio
 async def test_async_init_publishes_app_started_without_direct_startup_sync():
     hub = _CaptureHub()
@@ -196,6 +250,7 @@ async def test_async_init_publishes_app_started_without_direct_startup_sync():
         start_camera_system=Mock(),
         start_healthplanet_timer=Mock(),
         start_level_watch_timer=Mock(),
+        start_action_log_sync_timer=Mock(),
         start_healthplanet_sync=Mock(),
         voice_pipeline=None,
         tts_engine=None,
@@ -206,6 +261,7 @@ async def test_async_init_publishes_app_started_without_direct_startup_sync():
     app.auto_conversation.start.assert_called_once()
     app.start_healthplanet_timer.assert_called_once()
     app.start_level_watch_timer.assert_called_once()
+    app.start_action_log_sync_timer.assert_called_once()
     app.start_healthplanet_sync.assert_not_called()
     fitbit_sync.run.assert_not_awaited()
     assert len(hub.events) == 1

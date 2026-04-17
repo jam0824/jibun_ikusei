@@ -293,6 +293,7 @@ Chrome 拡張から、現在可聴状態にある HTTP(S) タブの full snapsho
 
 ## 11. 将来拡張方針
 - v1 は `user_message`、`system_message`、`quest_completed`、`chrome_audible_tabs` を対象とする
-- Chrome 拡張の `browser_page_changed` / `heartbeat` は Phase 3 以降、`payload={ tabId, url, domain, title }` と `metadata={ trigger, elapsedSeconds?, category?, isGrowth?, cacheKey? }` を受けて `Activity Capture Service` へ渡す正式イベントとして扱う。
+- Chrome 拡張の `browser_page_changed` / `heartbeat` は v0.1 で正式受理し、`payload={ tabId, url, domain, title }` と `metadata={ trigger, elapsedSeconds?, category?, isGrowth?, cacheKey? }` を受けて `Activity Capture Service` へ渡す。
+- `Activity Capture Service` の callback が未接続または停止中でも、Local HTTP Bridge 自体は `202 Accepted` を返して best-effort の no-op とする。
 - v1 では共有シークレット、重複排除、Quest / Completion の直接永続化は実装しない
 - 将来的にイベント種別を増やす場合も、まずは「構造化イベントを既存の会話入口へ変換する」方針を優先する

@@ -16,6 +16,7 @@ DEFAULT_HEALTHPLANET_SYNC_INTERVAL_MINUTES = 15
 DEFAULT_LEVEL_WATCH_INTERVAL_MINUTES = 10
 DEFAULT_HTTP_BRIDGE_PORT = 18765
 DEFAULT_ACTIVITY_CAPTURE_POLL_INTERVAL_SECONDS = 2
+DEFAULT_ACTIVITY_CAPTURE_SYNC_INTERVAL_SECONDS = 30
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_MEMORY_DIRECTORY = r"D:\codes\mixi2-api\generated_text"
 DEFAULT_AUTO_TALK_SKIP_AUDIBLE_DOMAINS = [
@@ -103,6 +104,16 @@ def normalize_activity_capture_poll_interval_seconds(value: object) -> int:
         return DEFAULT_ACTIVITY_CAPTURE_POLL_INTERVAL_SECONDS
     if seconds <= 0:
         return DEFAULT_ACTIVITY_CAPTURE_POLL_INTERVAL_SECONDS
+    return seconds
+
+
+def normalize_activity_capture_sync_interval_seconds(value: object) -> int:
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_ACTIVITY_CAPTURE_SYNC_INTERVAL_SECONDS
+    if seconds <= 0:
+        return DEFAULT_ACTIVITY_CAPTURE_SYNC_INTERVAL_SECONDS
     return seconds
 
 
@@ -339,6 +350,7 @@ class ActivityCaptureConfig:
     enabled: bool = True
     initial_state: str = "active"
     poll_interval_seconds: int = DEFAULT_ACTIVITY_CAPTURE_POLL_INTERVAL_SECONDS
+    sync_interval_seconds: int = DEFAULT_ACTIVITY_CAPTURE_SYNC_INTERVAL_SECONDS
     privacy_rules: list[dict] = field(default_factory=list)
 
 
@@ -413,6 +425,12 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
         activity_capture_raw.get(
             "poll_interval_seconds",
             DEFAULT_ACTIVITY_CAPTURE_POLL_INTERVAL_SECONDS,
+        )
+    )
+    activity_capture_raw["sync_interval_seconds"] = normalize_activity_capture_sync_interval_seconds(
+        activity_capture_raw.get(
+            "sync_interval_seconds",
+            DEFAULT_ACTIVITY_CAPTURE_SYNC_INTERVAL_SECONDS,
         )
     )
     activity_capture_raw["privacy_rules"] = normalize_activity_capture_privacy_rules(

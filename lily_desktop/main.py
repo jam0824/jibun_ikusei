@@ -28,6 +28,7 @@ from core.config import (
 )
 from core.desktop_context import format_context_log
 from core.domain_events import (
+    ActionLogSyncRequested,
     AppStarted,
     CaptureSnapshotRequested,
     CaptureSummaryDue,
@@ -126,6 +127,9 @@ class App:
         self._level_watch_timer = QTimer()
         self._level_watch_timer.setSingleShot(False)
         self._level_watch_timer.timeout.connect(self._on_level_watch_timer)
+        self._action_log_sync_timer = QTimer()
+        self._action_log_sync_timer.setSingleShot(False)
+        self._action_log_sync_timer.timeout.connect(self._on_action_log_sync_timer)
         self._healthplanet_timer = QTimer()
         self._healthplanet_timer.setSingleShot(False)
         self._healthplanet_timer.timeout.connect(self._on_healthplanet_timer)
@@ -587,6 +591,16 @@ class App:
         self.activity_capture_service.stop()
         self.activity_capture_service = None
 
+    def start_action_log_sync_timer(self) -> None:
+        if not self.config.activity_capture.enabled:
+            return
+        self._action_log_sync_timer.start(
+            self.config.activity_capture.sync_interval_seconds * 1000
+        )
+
+    def stop_action_log_sync_timer(self) -> None:
+        self._action_log_sync_timer.stop()
+
     def stop_camera_system(self) -> None:
         """カメラシステムを停止する"""
         self._camera_timer.stop()
@@ -600,6 +614,41 @@ class App:
     def _on_summary_timer(self) -> None:
         """30分間隔のサーバー要約"""
         asyncio.ensure_future(self._generate_and_send_summary())
+
+    def _on_action_log_sync_timer(self) -> None:
+        if getattr(self, "event_hub", None) is not None:
+            self.event_hub.publish(
+                ActionLogSyncRequested(source="action_log.sync.timer")
+            )
+            return
+        asyncio.ensure_future(self.handle_action_log_sync_request())
+
+    async def handle_action_log_sync_request(self) -> None:
+        if self.activity_capture_service is None:
+            return
+        if not getattr(self.auth, "is_configured", False):
+            logger.info("Action log sync skipped: Cognito not configured")
+            return
+
+        while True:
+            pending = self.activity_capture_service.snapshot_pending_raw_events(
+                limit=100
+            )
+            if not pending:
+                return
+
+            try:
+                await self.api_client.post_action_log_raw_events(
+                    {
+                        "deviceId": self.activity_capture_service.device_id,
+                        "events": [entry["event"] for entry in pending],
+                    }
+                )
+            except Exception:
+                logger.exception("Action log raw-event sync failed")
+                return
+
+            self.activity_capture_service.ack_pending_raw_events(pending)
 
     async def run_level_watch_job(self) -> None:
         if not getattr(self.auth, "is_configured", False):
@@ -1016,6 +1065,7 @@ async def async_init(app_instance: App) -> None:
     if app_instance.config.healthplanet.client_id:
         app_instance.start_healthplanet_timer()
     app_instance.start_level_watch_timer()
+    app_instance.start_action_log_sync_timer()
 
     if getattr(app_instance, "event_hub", None) is not None:
         app_instance.event_hub.publish(AppStarted(source="async_init"))
@@ -1073,6 +1123,7 @@ def main() -> None:
         if app_instance.tts_engine is not None:
             app_instance.tts_engine.clear_queue()
         app_instance.stop_http_bridge()
+        app_instance.stop_action_log_sync_timer()
         app_instance.stop_activity_capture_service()
         app_instance.stop_camera_system()
         app_instance.stop_level_watch_timer()

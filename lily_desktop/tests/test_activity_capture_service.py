@@ -211,3 +211,138 @@ def test_desktop_events_allow_empty_file_context_fields(tmp_path, monkeypatch):
     assert len(created) == 1
     assert "projectName" not in created[0]
     assert "fileName" not in created[0]
+
+
+def test_pending_snapshot_returns_oldest_unsent_events_first(tmp_path, monkeypatch):
+    monkeypatch.setattr("core.activity_capture_service._RAW_EVENT_LOG_DIR", tmp_path / "raw")
+    monkeypatch.setattr(
+        "core.activity_capture_service._SYNC_STATE_PATH",
+        tmp_path / "sync_state.json",
+    )
+    service = ActivityCaptureService(
+        device_id="device_1",
+        get_active_window_info=lambda: _make_window(),
+        get_idle_seconds=lambda: 0,
+    )
+
+    for minute in (0, 5, 10):
+        service.ingest_browser_event(
+            event_type="browser_page_changed",
+            source="chrome_extension",
+            occurred_at=datetime(2026, 4, 17, 9, minute, tzinfo=JST),
+            payload={
+                "tabId": minute + 1,
+                "url": f"https://example.com/{minute}",
+                "domain": "example.com",
+                "title": f"Page {minute}",
+            },
+            metadata={"trigger": "tab_activated"},
+        )
+
+    pending = service.snapshot_pending_raw_events(limit=2)
+
+    assert [entry["event"]["occurredAt"] for entry in pending] == [
+        "2026-04-17T09:00:00+09:00",
+        "2026-04-17T09:05:00+09:00",
+    ]
+    assert [entry["lineNumber"] for entry in pending] == [1, 2]
+
+
+def test_acknowledged_events_do_not_reappear_in_pending_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setattr("core.activity_capture_service._RAW_EVENT_LOG_DIR", tmp_path / "raw")
+    monkeypatch.setattr(
+        "core.activity_capture_service._SYNC_STATE_PATH",
+        tmp_path / "sync_state.json",
+    )
+    service = ActivityCaptureService(
+        device_id="device_1",
+        get_active_window_info=lambda: _make_window(),
+        get_idle_seconds=lambda: 0,
+    )
+
+    for minute in (0, 5):
+        service.ingest_browser_event(
+            event_type="browser_page_changed",
+            source="chrome_extension",
+            occurred_at=datetime(2026, 4, 17, 9, minute, tzinfo=JST),
+            payload={
+                "tabId": minute + 1,
+                "url": f"https://example.com/{minute}",
+                "domain": "example.com",
+                "title": f"Page {minute}",
+            },
+            metadata={"trigger": "tab_activated"},
+        )
+
+    pending = service.snapshot_pending_raw_events()
+    service.ack_pending_raw_events([pending[0]])
+
+    remaining = service.snapshot_pending_raw_events()
+
+    assert [entry["event"]["occurredAt"] for entry in remaining] == [
+        "2026-04-17T09:05:00+09:00"
+    ]
+
+
+def test_partial_ack_leaves_only_unacked_lines_pending(tmp_path, monkeypatch):
+    monkeypatch.setattr("core.activity_capture_service._RAW_EVENT_LOG_DIR", tmp_path / "raw")
+    monkeypatch.setattr(
+        "core.activity_capture_service._SYNC_STATE_PATH",
+        tmp_path / "sync_state.json",
+    )
+    service = ActivityCaptureService(
+        device_id="device_1",
+        get_active_window_info=lambda: _make_window(),
+        get_idle_seconds=lambda: 0,
+    )
+
+    for minute in (0, 5, 10):
+        service.ingest_browser_event(
+            event_type="heartbeat",
+            source="chrome_extension",
+            occurred_at=datetime(2026, 4, 17, 9, minute, tzinfo=JST),
+            payload={
+                "tabId": minute + 1,
+                "url": f"https://example.com/{minute}",
+                "domain": "example.com",
+                "title": f"Page {minute}",
+            },
+            metadata={"trigger": "flush", "elapsedSeconds": 30},
+        )
+
+    pending = service.snapshot_pending_raw_events()
+    service.ack_pending_raw_events(pending[:2])
+
+    remaining = service.snapshot_pending_raw_events()
+
+    assert [entry["event"]["occurredAt"] for entry in remaining] == [
+        "2026-04-17T09:10:00+09:00"
+    ]
+    assert remaining[0]["lineNumber"] == 3
+
+
+def test_paused_and_disabled_states_do_not_expose_pending_sync_snapshot(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr("core.activity_capture_service._RAW_EVENT_LOG_DIR", tmp_path / "raw")
+    monkeypatch.setattr(
+        "core.activity_capture_service._SYNC_STATE_PATH",
+        tmp_path / "sync_state.json",
+    )
+
+    paused_service = ActivityCaptureService(
+        device_id="device_1",
+        initial_state="paused",
+        get_active_window_info=lambda: _make_window(),
+        get_idle_seconds=lambda: 0,
+    )
+    disabled_service = ActivityCaptureService(
+        device_id="device_2",
+        initial_state="disabled",
+        get_active_window_info=lambda: _make_window(),
+        get_idle_seconds=lambda: 0,
+    )
+
+    assert paused_service.snapshot_pending_raw_events() == []
+    assert disabled_service.snapshot_pending_raw_events() == []

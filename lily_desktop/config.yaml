@@ -88,3 +88,8 @@ fitbit:
 http_bridge:
   enabled: true
   port: 18765
+activity_capture:
+  enabled: true
+  initial_state: active
+  poll_interval_seconds: 2
+  sync_interval_seconds: 30

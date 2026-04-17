@@ -284,6 +284,23 @@
 
 ---
 
+## Phase 3-4 完了メモ
+
+### Phase 3 完了
+- [x] `Activity Capture Service` が desktop 側の正式収集ホストとして動作する
+- [x] active window / idle / browser bridge event が同一 `RawEvent` 形式で JSONL spool される
+- [x] `snapshot_pending_raw_events` / `ack_pending_raw_events` と `sync_state.json` による durable spool が動く
+- [x] `active / paused / disabled` の停止境界がテストで担保されている
+- [x] `Local HTTP Bridge` が `browser_page_changed` / `heartbeat` を正式受理して capture service へ渡す
+
+### Phase 4 完了
+- [x] desktop 起動時 1 回 + 30 秒ごとの `ActionLogSyncRequested` が動く
+- [x] action-log sync job が `single_flight_coalesce` で動く
+- [x] `/action-log/raw-events`, `/action-log/sessions`, `/action-log/daily`, `/action-log/weekly`, `/action-log/devices`, `/action-log/privacy-rules` API が実装済み
+- [x] `GET /action-log/raw-events?from&to`, `GET /action-log/sessions?from&to`, `GET /action-log/daily?from&to`, `GET /action-log/weekly?year=YYYY` が実装済み
+- [x] `RawEvent` は `expiresAt` から TTL を保存し、同じ event id の再送は同じ key へ upsert される
+- [x] desktop / frontend / infra の関連テストと型チェックが通っている
+
 ## Phase 5: セッション化と local gemma4
 
 ### 目的

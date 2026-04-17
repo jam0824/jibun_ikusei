@@ -5,9 +5,13 @@ vi.mock('@/lib/auth', () => ({
 }))
 
 import {
+  getActionLogDailyActivityLogs,
   getActionLogDailyActivityLog,
   getActionLogDevices,
   getActionLogPrivacyRules,
+  getActionLogRawEvents,
+  getActionLogSessions,
+  getActionLogWeeklyActivityReviews,
   getActionLogWeeklyActivityReview,
   getActivityLogs,
   postActionLogRawEvents,
@@ -116,6 +120,9 @@ describe('api-client action-log stubs', () => {
   })
 
   it('uses the expected action-log read and write paths', async () => {
+    await getActionLogRawEvents('2026-04-01', '2026-04-17')
+    await getActionLogSessions('2026-04-01', '2026-04-17')
+    await getActionLogDailyActivityLogs('2026-04-01', '2026-04-17')
     await getActionLogDailyActivityLog('2026-04-17')
     await putActionLogDailyActivityLog({
       id: 'daily_1',
@@ -127,6 +134,7 @@ describe('api-client action-log stubs', () => {
       reviewQuestions: ['q1'],
       generatedAt: '2026-04-17T23:59:00+09:00',
     })
+    await getActionLogWeeklyActivityReviews(2026)
     await getActionLogWeeklyActivityReview('2026-W16')
     await putActionLogWeeklyActivityReview({
       id: 'weekly_1',
@@ -153,8 +161,12 @@ describe('api-client action-log stubs', () => {
     const calledPaths = fetchMock.mock.calls.map(([input]) => input)
     expect(calledPaths).toEqual(
       expect.arrayContaining([
+        expect.stringContaining('/action-log/raw-events?from=2026-04-01&to=2026-04-17'),
+        expect.stringContaining('/action-log/sessions?from=2026-04-01&to=2026-04-17'),
+        expect.stringContaining('/action-log/daily?from=2026-04-01&to=2026-04-17'),
         expect.stringContaining('/action-log/daily/2026-04-17'),
         expect.stringContaining('/action-log/daily/2026-04-17'),
+        expect.stringContaining('/action-log/weekly?year=2026'),
         expect.stringContaining('/action-log/weekly/2026-W16'),
         expect.stringContaining('/action-log/weekly/2026-W16'),
         expect.stringContaining('/action-log/devices'),

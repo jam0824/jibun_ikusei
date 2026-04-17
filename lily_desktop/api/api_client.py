@@ -113,6 +113,51 @@ class ApiClient:
             "GET", "/activity-logs", params={"from": from_date, "to": to_date}
         )
 
+    async def post_action_log_raw_events(self, payload: dict) -> dict:
+        return await self._request("POST", "/action-log/raw-events", json=payload)
+
+    async def get_action_log_raw_events(
+        self, from_date: str, to_date: str
+    ) -> list[dict]:
+        return await self._request(
+            "GET", "/action-log/raw-events", params={"from": from_date, "to": to_date}
+        )
+
+    async def get_action_log_sessions(
+        self, from_date: str, to_date: str
+    ) -> list[dict]:
+        return await self._request(
+            "GET", "/action-log/sessions", params={"from": from_date, "to": to_date}
+        )
+
+    async def get_action_log_daily_logs(
+        self, from_date: str, to_date: str
+    ) -> list[dict]:
+        return await self._request(
+            "GET", "/action-log/daily", params={"from": from_date, "to": to_date}
+        )
+
+    async def get_action_log_weekly_reviews(self, year: int) -> list[dict]:
+        return await self._request(
+            "GET", "/action-log/weekly", params={"year": str(year)}
+        )
+
+    async def get_action_log_devices(self) -> list[dict]:
+        return await self._request("GET", "/action-log/devices")
+
+    async def put_action_log_device(self, device_id: str, updates: dict) -> dict:
+        return await self._request(
+            "PUT", f"/action-log/devices/{device_id}", json=updates
+        )
+
+    async def get_action_log_privacy_rules(self) -> list[dict]:
+        return await self._request("GET", "/action-log/privacy-rules")
+
+    async def put_action_log_privacy_rules(self, rules: list[dict]) -> dict:
+        return await self._request(
+            "PUT", "/action-log/privacy-rules", json={"rules": rules}
+        )
+
     # ---- 栄養素 ----
     async def get_nutrition_range(self, from_date: str, to_date: str) -> dict:
         return await self._request(

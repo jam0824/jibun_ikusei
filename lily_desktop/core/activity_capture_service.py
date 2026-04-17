@@ -23,6 +23,7 @@ DEFAULT_IDLE_THRESHOLD_SECONDS = 300
 MAX_RECENT_EVENTS = 200
 _BASE_DIR = Path(__file__).resolve().parent.parent
 _RAW_EVENT_LOG_DIR = _BASE_DIR / "logs" / "action_logs" / "raw_events"
+_SYNC_STATE_PATH = _BASE_DIR / "logs" / "action_logs" / "sync_state.json"
 _PRIVACY_PRIORITY = {
     "window_title": 0,
     "domain": 1,
@@ -161,6 +162,49 @@ def _is_builtin_excluded_for_browser_event(domain: str, window_title: str) -> bo
     return False
 
 
+def _load_sync_state() -> dict[str, set[int]]:
+    if not _SYNC_STATE_PATH.exists():
+        return {}
+    try:
+        raw = json.loads(_SYNC_STATE_PATH.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        logger.exception("Failed to load action-log sync state")
+        return {}
+
+    files = raw.get("files", {}) if isinstance(raw, dict) else {}
+    if not isinstance(files, dict):
+        return {}
+
+    normalized: dict[str, set[int]] = {}
+    for file_name, entry in files.items():
+        if not isinstance(file_name, str) or not isinstance(entry, dict):
+            continue
+        acked_lines = entry.get("ackedLines", [])
+        if not isinstance(acked_lines, list):
+            continue
+        normalized[file_name] = {
+            int(line)
+            for line in acked_lines
+            if isinstance(line, int) and line > 0
+        }
+    return normalized
+
+
+def _save_sync_state(state: dict[str, set[int]]) -> None:
+    _SYNC_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "files": {
+            file_name: {"ackedLines": sorted(lines)}
+            for file_name, lines in sorted(state.items())
+            if lines
+        }
+    }
+    _SYNC_STATE_PATH.write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
 class ActivityCaptureService:
     def __init__(
         self,
@@ -189,6 +233,7 @@ class ActivityCaptureService:
         self._last_context_event_at: datetime | None = None
         self._idle_active = False
         self.is_running = False
+        self._sync_state = _load_sync_state()
 
     def start(self) -> bool:
         if self.capture_state == "disabled":
@@ -229,6 +274,62 @@ class ActivityCaptureService:
 
     def snapshot_recent_events(self) -> list[dict[str, Any]]:
         return [dict(event) for event in self._recent_events]
+
+    def snapshot_pending_raw_events(
+        self,
+        *,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        if self.capture_state != "active":
+            return []
+        if not _RAW_EVENT_LOG_DIR.exists():
+            return []
+
+        pending: list[dict[str, Any]] = []
+        max_items = limit if limit is not None and limit > 0 else None
+
+        for log_path in sorted(_RAW_EVENT_LOG_DIR.glob("*.jsonl")):
+            acked_lines = self._sync_state.get(log_path.name, set())
+            with open(log_path, encoding="utf-8") as handle:
+                for line_number, line in enumerate(handle, start=1):
+                    if line_number in acked_lines:
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        self._logger.exception(
+                            "Failed to decode action-log spool line: %s:%s",
+                            log_path,
+                            line_number,
+                        )
+                        continue
+                    pending.append(
+                        {
+                            "event": event,
+                            "fileName": log_path.name,
+                            "lineNumber": line_number,
+                        }
+                    )
+                    if max_items is not None and len(pending) >= max_items:
+                        return pending
+        return pending
+
+    def ack_pending_raw_events(self, entries: list[dict[str, Any]]) -> None:
+        if not entries:
+            return
+
+        updated = {key: set(value) for key, value in self._sync_state.items()}
+        for entry in entries:
+            file_name = entry.get("fileName")
+            line_number = entry.get("lineNumber")
+            if not isinstance(file_name, str):
+                continue
+            if not isinstance(line_number, int) or line_number <= 0:
+                continue
+            updated.setdefault(file_name, set()).add(line_number)
+
+        self._sync_state = updated
+        _save_sync_state(self._sync_state)
 
     def poll_once(self, *, now: datetime | None = None) -> list[dict[str, Any]]:
         current_time = _normalize_jst(now)
