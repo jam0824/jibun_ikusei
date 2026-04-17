@@ -17,6 +17,7 @@ from ai.tool_executor import ToolExecutor
 from api.api_client import ApiClient
 from api.auth import CognitoAuth
 from core.action_log_organizer import ActionLogOrganizer
+from core.action_log_summary_backfill_service import ActionLogSummaryBackfillService
 from core.activity_capture_service import ActivityCaptureService, default_device_id
 from core.background_event_runtime import register_background_event_handlers
 from core.camera import find_camera_index
@@ -30,6 +31,7 @@ from core.config import (
 from core.desktop_context import format_context_log
 from core.domain_events import (
     ActionLogOrganizeRequested,
+    ActionLogSummaryBackfillRequested,
     ActionLogSyncRequested,
     AppStarted,
     CaptureSnapshotRequested,
@@ -108,6 +110,7 @@ class App:
         self.level_watch = LevelWatchService()
         self.activity_capture_service: ActivityCaptureService | None = None
         self.action_log_organizer: ActionLogOrganizer | None = None
+        self.action_log_summary_backfill_service: ActionLogSummaryBackfillService | None = None
 
         # Fitbit 同期
         self.fitbit_sync: FitbitSync | None = None
@@ -665,6 +668,16 @@ class App:
         organizer = self._get_action_log_organizer()
         await organizer.organize_and_sync()
 
+    async def handle_action_log_summary_backfill_request(self) -> None:
+        if not self.config.activity_capture.enabled:
+            return
+        if not getattr(self.auth, "is_configured", False):
+            logger.info("Action log summary backfill skipped: Cognito not configured")
+            return
+
+        service = self._get_action_log_summary_backfill_service()
+        await service.backfill_missing_summaries()
+
     def _get_action_log_organizer(self) -> ActionLogOrganizer:
         if self.action_log_organizer is None:
             self.action_log_organizer = ActionLogOrganizer(
@@ -678,6 +691,17 @@ class App:
                 logger_instance=logger,
             )
         return self.action_log_organizer
+
+    def _get_action_log_summary_backfill_service(
+        self,
+    ) -> ActionLogSummaryBackfillService:
+        if self.action_log_summary_backfill_service is None:
+            self.action_log_summary_backfill_service = ActionLogSummaryBackfillService(
+                api_client=self.api_client,
+                openai_api_key=self.config.openai.api_key,
+                logger_instance=logger,
+            )
+        return self.action_log_summary_backfill_service
 
     async def run_level_watch_job(self) -> None:
         if not getattr(self.auth, "is_configured", False):

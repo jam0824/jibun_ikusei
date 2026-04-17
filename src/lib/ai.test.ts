@@ -1,7 +1,10 @@
 ﻿import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hydratePersistedState } from '@/domain/logic'
+import type { ActivitySession, OpenLoop } from '@/domain/action-log-types'
 import {
   buildLilyChatSystemPrompt,
+  generateDailyActivityLog,
+  generateWeeklyActivityReview,
   generateWeeklyReflection,
   generateLilyMessageWithProvider,
   generateTtsAudio,
@@ -9,6 +12,42 @@ import {
   sendLilyChatMessage,
   testProviderConnection,
 } from '@/lib/ai'
+
+function createActivitySession(id: string, overrides: Partial<ActivitySession> = {}): ActivitySession {
+  return {
+    id,
+    deviceId: 'device_main',
+    startedAt: '2026-04-17T09:00:00+09:00',
+    endedAt: '2026-04-17T09:45:00+09:00',
+    dateKey: '2026-04-17',
+    title: 'Chrome 拡張の調査',
+    primaryCategory: '学習',
+    activityKinds: ['調査'],
+    appNames: ['Chrome'],
+    domains: ['developer.chrome.com'],
+    projectNames: [],
+    summary: 'Chrome 拡張まわりの調査を進めていた。',
+    searchKeywords: ['Chrome拡張', 'developer.chrome.com'],
+    noteIds: [],
+    openLoopIds: ['open_loop_1'],
+    hidden: false,
+    ...overrides,
+  }
+}
+
+function createOpenLoop(id = 'open_loop_1', overrides: Partial<OpenLoop> = {}): OpenLoop {
+  return {
+    id,
+    createdAt: '2026-04-17T09:45:00+09:00',
+    updatedAt: '2026-04-17T09:45:00+09:00',
+    dateKey: '2026-04-17',
+    title: '権限設定の確認',
+    description: 'manifest の権限設定を次に確認する。',
+    status: 'open',
+    linkedSessionIds: ['session_1'],
+    ...overrides,
+  }
+}
 
 describe('ai adapter', () => {
   afterEach(() => {
@@ -248,6 +287,145 @@ describe('ai adapter', () => {
     expect(result.comment.length).toBeGreaterThan(0)
     expect(result.recommendations.length).toBeGreaterThan(0)
     expect(result.recommendations.length).toBeLessThanOrEqual(3)
+  })
+
+  it('generates DailyActivityLog with gpt-5.4 and observation-diary prompt', async () => {
+    const state = hydratePersistedState()
+    state.aiConfig.activeProvider = 'gemini'
+    state.aiConfig.providers.openai.apiKey = 'sk-test'
+    state.aiConfig.providers.openai.model = 'gpt-4.1-mini'
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: 'completed',
+          output: [
+            {
+              type: 'message',
+              content: [
+                {
+                  type: 'output_text',
+                  text: '{"summary":"リリィは、この日は拡張の調査に静かな集中が集まっていたと見ている。","mainThemes":["Chrome拡張","調査"],"reviewQuestions":["次に確認したい仕様はどこだったか。","調査のあとに着手したい一歩は何か。"]}',
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const result = await generateDailyActivityLog({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      dateKey: '2026-04-17',
+      sessions: [createActivitySession('session_1')],
+      openLoops: [createOpenLoop()],
+    })
+
+    expect(result.provider).toBe('openai')
+    expect(result.summary).toContain('リリィは')
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    expect(body.model).toBe('gpt-5.4')
+    expect(body.input[0].content[0].text).toContain('観察日記風')
+    expect(body.input[0].content[0].text).toContain('直接話しかける口調は禁止')
+  })
+
+  it('generates WeeklyActivityReview with gpt-5.4 and observation-diary prompt', async () => {
+    const state = hydratePersistedState()
+    state.aiConfig.activeProvider = 'gemini'
+    state.aiConfig.providers.openai.apiKey = 'sk-test'
+    state.aiConfig.providers.openai.model = 'gpt-4.1-mini'
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: 'completed',
+          output: [
+            {
+              type: 'message',
+              content: [
+                {
+                  type: 'output_text',
+                  text: '{"summary":"リリィは、この週には調査と実装の往復がゆっくりと深まっていたと見ている。","focusThemes":["Chrome拡張","開発"]}',
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const result = await generateWeeklyActivityReview({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      weekKey: '2026-W16',
+      sessions: [
+        createActivitySession('session_1'),
+        createActivitySession('session_2', {
+          id: 'session_2',
+          startedAt: '2026-04-18T10:00:00+09:00',
+          endedAt: '2026-04-18T10:30:00+09:00',
+          dateKey: '2026-04-18',
+          title: 'VS Code での実装',
+          primaryCategory: '仕事',
+          activityKinds: ['開発'],
+          appNames: ['Code'],
+          domains: [],
+          searchKeywords: ['VS Code', '開発'],
+          openLoopIds: [],
+        }),
+      ],
+      openLoops: [createOpenLoop()],
+      categoryDurations: { 学習: 45, 仕事: 30 },
+    })
+
+    expect(result.provider).toBe('openai')
+    expect(result.summary).toContain('リリィは')
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    expect(body.model).toBe('gpt-5.4')
+    expect(body.input[0].content[0].text).toContain('観察日記風')
+    expect(body.input[0].content[0].text).toContain('直接話しかける口調は禁止')
+  })
+
+  it('falls back to an observation-diary daily log when OpenAI is unavailable', async () => {
+    const state = hydratePersistedState()
+    state.settings.aiEnabled = false
+
+    const result = await generateDailyActivityLog({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      dateKey: '2026-04-17',
+      sessions: [createActivitySession('session_1')],
+      openLoops: [createOpenLoop()],
+    })
+
+    expect(result.provider).toBe('template')
+    expect(result.summary).toContain('リリィ')
+    expect(result.summary).not.toContain('あなた')
+    expect(result.reviewQuestions.length).toBeGreaterThan(0)
+  })
+
+  it('falls back to an observation-diary weekly review when OpenAI is unavailable', async () => {
+    const state = hydratePersistedState()
+    state.settings.aiEnabled = false
+
+    const result = await generateWeeklyActivityReview({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      weekKey: '2026-W16',
+      sessions: [createActivitySession('session_1')],
+      openLoops: [createOpenLoop()],
+      categoryDurations: { 学習: 45 },
+    })
+
+    expect(result.provider).toBe('template')
+    expect(result.summary).toContain('リリィ')
+    expect(result.summary).not.toContain('あなた')
+    expect(result.focusThemes.length).toBeGreaterThan(0)
   })
 })
 

@@ -65,6 +65,11 @@ class ActionLogOrganizeRequested(DomainEvent):
 
 
 @dataclass(slots=True, kw_only=True)
+class ActionLogSummaryBackfillRequested(DomainEvent):
+    pass
+
+
+@dataclass(slots=True, kw_only=True)
 class ChatAutoTalkDue(DomainEvent):
     forced_source: str | None = None
 

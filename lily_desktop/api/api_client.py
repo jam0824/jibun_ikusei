@@ -140,9 +140,25 @@ class ApiClient:
             "GET", "/action-log/daily", params={"from": from_date, "to": to_date}
         )
 
+    async def get_action_log_daily_log(self, date_key: str) -> dict | None:
+        return await self._request("GET", f"/action-log/daily/{date_key}")
+
+    async def put_action_log_daily_log(self, log: dict) -> dict:
+        return await self._request(
+            "PUT", f"/action-log/daily/{log['dateKey']}", json=log
+        )
+
     async def get_action_log_weekly_reviews(self, year: int) -> list[dict]:
         return await self._request(
             "GET", "/action-log/weekly", params={"year": str(year)}
+        )
+
+    async def get_action_log_weekly_review(self, week_key: str) -> dict | None:
+        return await self._request("GET", f"/action-log/weekly/{week_key}")
+
+    async def put_action_log_weekly_review(self, review: dict) -> dict:
+        return await self._request(
+            "PUT", f"/action-log/weekly/{review['weekKey']}", json=review
         )
 
     async def get_action_log_devices(self) -> list[dict]:

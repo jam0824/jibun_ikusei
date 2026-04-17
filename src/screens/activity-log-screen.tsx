@@ -11,7 +11,8 @@ import {
   type ActivityLogViewMode,
   type ActivitySearchResult,
   type ActivityWeekViewData,
-  buildMonthDateRange,
+  ensurePreviousDayDailyActivityLog,
+  ensurePreviousWeekReviewForWeb,
   fetchActivityCalendarMonth,
   fetchActivityDayView,
   fetchActivityReviewWeek,
@@ -27,6 +28,7 @@ import {
   searchActivityLogs,
   shiftMonthKey,
 } from '@/lib/action-log-view'
+import { useAppStore } from '@/store/app-store'
 
 type ActivityLogVariant = 'today' | 'day' | 'calendar' | 'search' | 'review-year' | 'review-week'
 
@@ -39,12 +41,7 @@ function createDateKeyFromLocalDate(date: Date) {
 
 function getLast30DaysRange() {
   const toDate = new Date()
-  const fromDate = new Date(
-    toDate.getFullYear(),
-    toDate.getMonth(),
-    toDate.getDate() - 29,
-  )
-
+  const fromDate = new Date(toDate.getFullYear(), toDate.getMonth(), toDate.getDate() - 29)
   return {
     from: createDateKeyFromLocalDate(fromDate),
     to: createDateKeyFromLocalDate(toDate),
@@ -86,13 +83,7 @@ function LoadingCard({ label }: { label: string }) {
   )
 }
 
-function ErrorCard({
-  title,
-  message,
-}: {
-  title: string
-  message: string
-}) {
+function ErrorCard({ title, message }: { title: string; message: string }) {
   return (
     <Card className="border-rose-200 bg-rose-50">
       <CardContent className="space-y-2 p-5">
@@ -109,7 +100,7 @@ function ManualNotePlaceholder() {
       <CardContent className="space-y-2">
         <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">手動メモ</div>
         <div className="text-sm text-slate-600">
-          手動メモの追加と保存は後続フェーズで実装します。Phase 6 では表示枠だけを用意しています。
+          手動メモの追加と保存は後続フェーズで実装します。Phase 6 では表示枠だけを残しています。
         </div>
       </CardContent>
     </Card>
@@ -123,7 +114,7 @@ function DailySummaryCard({ day }: { day: ActivityDayViewData }) {
         <CardContent className="space-y-3">
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">DailyActivityLog</div>
           <div className="text-lg font-bold text-slate-900">その日のまとめ</div>
-          <div className="text-sm text-slate-500">まだその日のまとめは生成されていません。</div>
+          <div className="text-sm text-slate-500">まだこの日のまとめは生成されていません。</div>
         </CardContent>
       </Card>
     )
@@ -223,13 +214,19 @@ function SessionsOrEventsCard({
   )
 }
 
-function OpenLoopsCard({ title, openLoops }: { title?: string; openLoops: ActivityDayViewData['openLoops'] | ActivityWeekViewData['openLoops'] }) {
+function OpenLoopsCard({
+  title,
+  openLoops,
+}: {
+  title?: string
+  openLoops: ActivityDayViewData['openLoops'] | ActivityWeekViewData['openLoops']
+}) {
   return (
     <Card>
       <CardContent className="space-y-4">
         <div>
           <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">OpenLoop</div>
-          <div className="mt-1 text-lg font-bold text-slate-900">{title ?? '気になっていること'}</div>
+          <div className="mt-1 text-lg font-bold text-slate-900">{title ?? '途中になっていること'}</div>
         </div>
         {openLoops.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
@@ -262,6 +259,8 @@ function TodayOrDayView({
   variant: 'today' | 'day'
   dateKey: string
 }) {
+  const aiConfig = useAppStore((state) => state.aiConfig)
+  const settings = useAppStore((state) => state.settings)
   const [searchParams, setSearchParams] = useSearchParams()
   const viewMode = normalizeViewMode(searchParams.get('view'))
   const [day, setDay] = useState<ActivityDayViewData | null>(null)
@@ -273,7 +272,12 @@ function TodayOrDayView({
     setIsLoading(true)
     setError(undefined)
 
-    void fetchActivityDayView(dateKey)
+    const load =
+      variant === 'today'
+        ? fetchActivityDayView(dateKey)
+        : ensurePreviousDayDailyActivityLog({ aiConfig, settings, dateKey })
+
+    void load
       .then((nextDay) => {
         if (active) {
           setDay(nextDay)
@@ -293,18 +297,22 @@ function TodayOrDayView({
     return () => {
       active = false
     }
-  }, [dateKey])
+  }, [aiConfig, dateKey, settings, variant])
 
   return (
     <Screen
-      title={variant === 'today' ? '行動ログ' : '日別ログ'}
-      subtitle={variant === 'today' ? '今日の流れを session/event 単位で見返します。' : '指定日の行動ログを見返します。'}
+      title={variant === 'today' ? '今日の行動ログ' : '日別行動ログ'}
+      subtitle={
+        variant === 'today'
+          ? '当日の流れを session / event で見返します。'
+          : '指定した日の行動ログを見返します。'
+      }
     >
       <div className="space-y-4 pb-6">
         <RecordsSectionTabs active="activity" />
         <ActivityLogNav />
         <h2 className="text-xl font-bold text-slate-900">
-          {variant === 'today' ? '今日の行動ログ' : '日別の行動ログ'}
+          {variant === 'today' ? '今日の行動ログ' : '日別行動ログ'}
         </h2>
         <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -367,7 +375,7 @@ function CalendarView() {
   }, [monthKey])
 
   return (
-    <Screen title="行動ログカレンダー" subtitle="1 か月単位で DailyActivityLog を見返します。">
+    <Screen title="行動ログカレンダー" subtitle="1か月表示で DailyActivityLog を見返します。">
       <div className="space-y-4 pb-6">
         <RecordsSectionTabs active="activity" />
         <ActivityLogNav />
@@ -381,29 +389,31 @@ function CalendarView() {
             <Button
               variant="outline"
               size="icon"
-              aria-label="前月"
+              aria-label="Previous month"
               onClick={() => setSearchParams({ month: shiftMonthKey(monthKey, -1) })}
             >
               <span aria-hidden="true">&lt;</span>
             </Button>
             <Input
               type="month"
-              aria-label="対象月ピッカー"
+              aria-label="Month picker"
               className="w-[11rem]"
               value={monthKey}
-              onChange={(event) => setSearchParams({ month: normalizeMonthKey(event.target.value || getCurrentMonthKeyJst()) })}
+              onChange={(event) =>
+                setSearchParams({ month: normalizeMonthKey(event.target.value || getCurrentMonthKeyJst()) })
+              }
             />
             <Button
               variant="outline"
               size="icon"
-              aria-label="次月"
+              aria-label="Next month"
               onClick={() => setSearchParams({ month: shiftMonthKey(monthKey, 1) })}
             >
               <span aria-hidden="true">&gt;</span>
             </Button>
           </div>
         </div>
-        {isLoading ? <LoadingCard label="月間ログを読み込んでいます..." /> : null}
+        {isLoading ? <LoadingCard label="月別ログを読み込んでいます..." /> : null}
         {error ? <ErrorCard title="カレンダーを表示できませんでした" message={error} /> : null}
         {!isLoading && !error ? (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -411,7 +421,7 @@ function CalendarView() {
               <Card key={day.dateKey}>
                 <button
                   type="button"
-                  aria-label={`${day.dateKey} の行動ログを見る`}
+                  aria-label={`${day.dateKey} details`}
                   className="w-full text-left transition hover:bg-slate-50"
                   onClick={() => navigate(`/records/activity/day/${day.dateKey}`)}
                 >
@@ -442,6 +452,8 @@ function CalendarView() {
 }
 
 function ReviewYearView() {
+  const aiConfig = useAppStore((state) => state.aiConfig)
+  const settings = useAppStore((state) => state.settings)
   const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
   const year = normalizeYear(searchParams.get('year'))
@@ -454,7 +466,13 @@ function ReviewYearView() {
     setIsLoading(true)
     setError(undefined)
 
-    void fetchActivityReviewYear(year)
+    void ensurePreviousWeekReviewForWeb({
+      aiConfig,
+      settings,
+      routeScope: 'year',
+      year,
+    })
+      .then(() => fetchActivityReviewYear(year))
       .then((nextReviews) => {
         if (active) {
           setReviews(nextReviews)
@@ -474,10 +492,10 @@ function ReviewYearView() {
     return () => {
       active = false
     }
-  }, [year])
+  }, [aiConfig, settings, year])
 
   return (
-    <Screen title="週次行動レビュー" subtitle="1 年分の週次レビューを一覧で見返します。">
+    <Screen title="週次行動レビュー" subtitle="1年分の週次レビューを一覧で見返します。">
       <div className="space-y-4 pb-6">
         <RecordsSectionTabs active="activity" />
         <ActivityLogNav year={year} />
@@ -488,17 +506,27 @@ function ReviewYearView() {
             <div className="mt-1 text-lg font-bold text-slate-900">対象年: {year}</div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="icon" aria-label="前年" onClick={() => setSearchParams({ year: String(year - 1) })}>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Previous year"
+              onClick={() => setSearchParams({ year: String(year - 1) })}
+            >
               <span aria-hidden="true">&lt;</span>
             </Button>
             <Input
               type="number"
-              aria-label="対象年ピッカー"
+              aria-label="Year picker"
               className="w-[8rem]"
               value={String(year)}
               onChange={(event) => setSearchParams({ year: String(normalizeYear(event.target.value)) })}
             />
-            <Button variant="outline" size="icon" aria-label="次年" onClick={() => setSearchParams({ year: String(year + 1) })}>
+            <Button
+              variant="outline"
+              size="icon"
+              aria-label="Next year"
+              onClick={() => setSearchParams({ year: String(year + 1) })}
+            >
               <span aria-hidden="true">&gt;</span>
             </Button>
           </div>
@@ -509,7 +537,9 @@ function ReviewYearView() {
           <div className="space-y-3">
             {reviews.length === 0 ? (
               <Card>
-                <CardContent className="p-5 text-sm text-slate-500">この年の週次レビューはまだありません。</CardContent>
+                <CardContent className="p-5 text-sm text-slate-500">
+                  この年の週次レビューはまだありません。
+                </CardContent>
               </Card>
             ) : (
               reviews.map((review) => (
@@ -523,7 +553,7 @@ function ReviewYearView() {
                       <Button
                         variant="outline"
                         size="sm"
-                        aria-label="詳細を見る"
+                        aria-label={`Open ${review.weekKey}`}
                         onClick={() => navigate(`/records/activity/review/week?weekKey=${review.weekKey}`)}
                       >
                         詳細を見る
@@ -548,6 +578,8 @@ function ReviewYearView() {
 }
 
 function ReviewWeekView({ weekKey }: { weekKey: string }) {
+  const aiConfig = useAppStore((state) => state.aiConfig)
+  const settings = useAppStore((state) => state.settings)
   const [week, setWeek] = useState<ActivityWeekViewData | null>(null)
   const [error, setError] = useState<string>()
   const [isLoading, setIsLoading] = useState(true)
@@ -557,7 +589,13 @@ function ReviewWeekView({ weekKey }: { weekKey: string }) {
     setIsLoading(true)
     setError(undefined)
 
-    void fetchActivityReviewWeek(weekKey)
+    void ensurePreviousWeekReviewForWeb({
+      aiConfig,
+      settings,
+      routeScope: 'week',
+      weekKey,
+    })
+      .then(() => fetchActivityReviewWeek(weekKey))
       .then((nextWeek) => {
         if (active) {
           setWeek(nextWeek)
@@ -565,7 +603,7 @@ function ReviewWeekView({ weekKey }: { weekKey: string }) {
       })
       .catch((cause) => {
         if (active) {
-          setError(cause instanceof Error ? cause.message : '週詳細の取得に失敗しました。')
+          setError(cause instanceof Error ? cause.message : '週次レビューの取得に失敗しました。')
         }
       })
       .finally(() => {
@@ -577,7 +615,7 @@ function ReviewWeekView({ weekKey }: { weekKey: string }) {
     return () => {
       active = false
     }
-  }, [weekKey])
+  }, [aiConfig, settings, weekKey])
 
   return (
     <Screen title="週次行動レビュー詳細" subtitle="指定した週のふりかえりを表示します。">
@@ -594,8 +632,8 @@ function ReviewWeekView({ weekKey }: { weekKey: string }) {
             <Sparkles className="h-5 w-5 text-violet-500" />
           </CardContent>
         </Card>
-        {isLoading ? <LoadingCard label="週詳細を読み込んでいます..." /> : null}
-        {error ? <ErrorCard title="週詳細を表示できませんでした" message={error} /> : null}
+        {isLoading ? <LoadingCard label="週次レビューを読み込んでいます..." /> : null}
+        {error ? <ErrorCard title="週次レビューを表示できませんでした" message={error} /> : null}
         {!isLoading && !error ? (
           <>
             <Card>
@@ -654,7 +692,7 @@ function SearchView() {
       })
       .catch((cause) => {
         if (active) {
-          setError(cause instanceof Error ? cause.message : '検索用ログの取得に失敗しました。')
+          setError(cause instanceof Error ? cause.message : '検索ログの取得に失敗しました。')
         }
       })
       .finally(() => {
@@ -711,9 +749,9 @@ function SearchView() {
                   value={keyword}
                   onChange={(event) => setKeyword(event.target.value)}
                   placeholder="キーワードで検索"
-                  aria-label="キーワードで検索"
+                  aria-label="Search keyword"
                 />
-                <Button variant="outline" size="icon" aria-label="検索">
+                <Button variant="outline" size="icon" aria-label="Search action">
                   <Search className="h-4 w-4" />
                 </Button>
               </div>
@@ -721,11 +759,11 @@ function SearchView() {
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="space-y-2">
                 <span className="text-sm font-semibold text-slate-700">開始日</span>
-                <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} aria-label="開始日" />
+                <Input type="date" value={from} onChange={(event) => setFrom(event.target.value)} aria-label="From date" />
               </label>
               <label className="space-y-2">
                 <span className="text-sm font-semibold text-slate-700">終了日</span>
-                <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} aria-label="終了日" />
+                <Input type="date" value={to} onChange={(event) => setTo(event.target.value)} aria-label="To date" />
               </label>
             </div>
           </CardContent>
@@ -738,11 +776,11 @@ function SearchView() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm font-semibold text-slate-900">ActivitySession</div>
-                  <Badge tone="soft">{filteredResults.sessions.length} 件</Badge>
+                  <Badge tone="soft">{filteredResults.sessions.length}件</Badge>
                 </div>
                 {filteredResults.sessions.length === 0 ? (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                    該当する session はありません。
+                    条件に合う session はありません。
                   </div>
                 ) : (
                   <div className="space-y-3">
@@ -765,11 +803,11 @@ function SearchView() {
               <CardContent className="space-y-4">
                 <div className="flex items-center justify-between gap-3">
                   <div className="text-sm font-semibold text-slate-900">OpenLoop</div>
-                  <Badge tone="soft">{filteredResults.openLoops.length} 件</Badge>
+                  <Badge tone="soft">{filteredResults.openLoops.length}件</Badge>
                 </div>
                 {filteredResults.openLoops.length === 0 ? (
                   <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                    該当する OpenLoop はありません。
+                    条件に合う OpenLoop はありません。
                   </div>
                 ) : (
                   <div className="space-y-3">

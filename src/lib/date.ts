@@ -22,6 +22,18 @@ export function nowIso() {
   return new Date().toISOString()
 }
 
+export function toJstIso(value: string | Date = new Date()) {
+  const date = parseDate(value)
+  const jst = new Date(date.getTime() + 9 * 60 * 60 * 1000)
+  const year = jst.getUTCFullYear()
+  const month = String(jst.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(jst.getUTCDate()).padStart(2, '0')
+  const hours = String(jst.getUTCHours()).padStart(2, '0')
+  const minutes = String(jst.getUTCMinutes()).padStart(2, '0')
+  const seconds = String(jst.getUTCSeconds()).padStart(2, '0')
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+09:00`
+}
+
 export function parseDate(value: string | Date) {
   return value instanceof Date ? value : parseISO(value)
 }

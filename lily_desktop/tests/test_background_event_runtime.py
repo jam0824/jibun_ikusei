@@ -8,6 +8,7 @@ import pytest
 from core.background_event_runtime import register_background_event_handlers
 from core.domain_events import (
     ActionLogOrganizeRequested,
+    ActionLogSummaryBackfillRequested,
     ActionLogSyncRequested,
     AppStarted,
     CaptureSnapshotRequested,
@@ -75,6 +76,9 @@ class _FakeApp:
         self.action_log_organize_calls = 0
         self.action_log_organize_started = asyncio.Event()
         self.action_log_organize_release = asyncio.Event()
+        self.action_log_summary_backfill_calls = 0
+        self.action_log_summary_backfill_started = asyncio.Event()
+        self.action_log_summary_backfill_release = asyncio.Event()
 
     async def handle_healthplanet_sync_request(self, *, interactive_auth: bool) -> None:
         self.healthplanet_calls.append(interactive_auth)
@@ -129,6 +133,12 @@ class _FakeApp:
         if self.action_log_organize_calls == 1:
             await self.action_log_organize_release.wait()
 
+    async def handle_action_log_summary_backfill_request(self) -> None:
+        self.action_log_summary_backfill_calls += 1
+        self.action_log_summary_backfill_started.set()
+        if self.action_log_summary_backfill_calls == 1:
+            await self.action_log_summary_backfill_release.wait()
+
 
 @pytest.mark.asyncio
 async def test_app_started_publishes_startup_sync_requests():
@@ -143,6 +153,7 @@ async def test_app_started_publishes_startup_sync_requests():
     level_watch_event = asyncio.Event()
     action_log_sync_event = asyncio.Event()
     action_log_organize_event = asyncio.Event()
+    action_log_summary_backfill_event = asyncio.Event()
 
     async def on_health(_event: HealthPlanetSyncRequested) -> None:
         seen.append("health")
@@ -164,11 +175,18 @@ async def test_app_started_publishes_startup_sync_requests():
         seen.append("action_log_organize")
         action_log_organize_event.set()
 
+    async def on_action_log_summary_backfill(
+        _event: ActionLogSummaryBackfillRequested,
+    ) -> None:
+        seen.append("action_log_summary_backfill")
+        action_log_summary_backfill_event.set()
+
     hub.subscribe(HealthPlanetSyncRequested, on_health)
     hub.subscribe(FitbitSyncRequested, on_fitbit)
     hub.subscribe(LevelWatchRequested, on_level_watch)
     hub.subscribe(ActionLogSyncRequested, on_action_log_sync)
     hub.subscribe(ActionLogOrganizeRequested, on_action_log_organize)
+    hub.subscribe(ActionLogSummaryBackfillRequested, on_action_log_summary_backfill)
 
     hub.publish(AppStarted(source="startup"))
 
@@ -176,7 +194,8 @@ async def test_app_started_publishes_startup_sync_requests():
     await asyncio.wait_for(fitbit_event.wait(), timeout=1)
     await asyncio.wait_for(level_watch_event.wait(), timeout=1)
     await asyncio.wait_for(action_log_sync_event.wait(), timeout=1)
-    await asyncio.wait_for(action_log_organize_event.wait(), timeout=1)
+    assert action_log_organize_event.is_set() is False
+    assert action_log_summary_backfill_event.is_set() is False
 
     app.capture_release.set()
     await asyncio.wait_for(app.healthplanet_started.wait(), timeout=1)
@@ -185,15 +204,27 @@ async def test_app_started_publishes_startup_sync_requests():
     await asyncio.wait_for(app.level_watch_started.wait(), timeout=1)
     app.action_log_sync_release.set()
     await asyncio.wait_for(app.action_log_sync_started.wait(), timeout=1)
+    await asyncio.wait_for(action_log_organize_event.wait(), timeout=1)
     app.action_log_organize_release.set()
     await asyncio.wait_for(app.action_log_organize_started.wait(), timeout=1)
+    await asyncio.wait_for(action_log_summary_backfill_event.wait(), timeout=1)
+    app.action_log_summary_backfill_release.set()
+    await asyncio.wait_for(app.action_log_summary_backfill_started.wait(), timeout=1)
 
-    assert seen == ["health", "fitbit", "level_watch", "action_log_sync", "action_log_organize"]
+    assert seen == [
+        "health",
+        "fitbit",
+        "level_watch",
+        "action_log_sync",
+        "action_log_organize",
+        "action_log_summary_backfill",
+    ]
     assert app.healthplanet_calls == [True]
     assert app.fitbit_calls == 1
     assert app.level_watch_calls == 1
     assert app.action_log_sync_calls == 1
     assert app.action_log_organize_calls == 1
+    assert app.action_log_summary_backfill_calls == 1
 
 
 @pytest.mark.asyncio
@@ -403,3 +434,23 @@ async def test_action_log_organize_requests_are_coalesced():
         await asyncio.sleep(0.01)
 
     assert app.action_log_organize_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_action_log_summary_backfill_requests_are_coalesced():
+    app = _FakeApp()
+    hub = DomainEventHub()
+    manager = JobManager()
+    register_background_event_handlers(app, hub, manager)
+
+    hub.publish(ActionLogSummaryBackfillRequested(source="startup"))
+    await asyncio.wait_for(app.action_log_summary_backfill_started.wait(), timeout=1)
+    hub.publish(ActionLogSummaryBackfillRequested(source="manual"))
+
+    app.action_log_summary_backfill_release.set()
+    for _ in range(50):
+        if app.action_log_summary_backfill_calls == 2:
+            break
+        await asyncio.sleep(0.01)
+
+    assert app.action_log_summary_backfill_calls == 2

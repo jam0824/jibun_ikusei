@@ -54,7 +54,32 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
     await client.get_action_log_raw_events("2026-04-01", "2026-04-17")
     await client.get_action_log_sessions("2026-04-01", "2026-04-17")
     await client.get_action_log_daily_logs("2026-04-01", "2026-04-17")
+    await client.get_action_log_daily_log("2026-04-16")
+    await client.put_action_log_daily_log(
+        {
+            "id": "daily_2026-04-16",
+            "dateKey": "2026-04-16",
+            "summary": "daily summary",
+            "mainThemes": ["Chrome拡張"],
+            "noteIds": [],
+            "openLoopIds": ["loop_1"],
+            "reviewQuestions": ["次に何を確認したいか。"],
+            "generatedAt": "2026-04-17T08:00:00+09:00",
+        }
+    )
     await client.get_action_log_weekly_reviews(2026)
+    await client.get_action_log_weekly_review("2026-W15")
+    await client.put_action_log_weekly_review(
+        {
+            "id": "weekly_2026-W15",
+            "weekKey": "2026-W15",
+            "summary": "weekly summary",
+            "categoryDurations": {"学習": 45},
+            "focusThemes": ["Chrome拡張"],
+            "openLoopIds": ["loop_1"],
+            "generatedAt": "2026-04-17T08:00:00+09:00",
+        }
+    )
     await client.get_action_log_devices()
     await client.put_action_log_device("device_1", {"name": "main-pc"})
     await client.get_action_log_privacy_rules()
@@ -146,10 +171,39 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
         "/action-log/daily",
         params={"from": "2026-04-01", "to": "2026-04-17"},
     )
+    client._request.assert_any_await("GET", "/action-log/daily/2026-04-16")
+    client._request.assert_any_await(
+        "PUT",
+        "/action-log/daily/2026-04-16",
+        json={
+            "id": "daily_2026-04-16",
+            "dateKey": "2026-04-16",
+            "summary": "daily summary",
+            "mainThemes": ["Chrome拡張"],
+            "noteIds": [],
+            "openLoopIds": ["loop_1"],
+            "reviewQuestions": ["次に何を確認したいか。"],
+            "generatedAt": "2026-04-17T08:00:00+09:00",
+        },
+    )
     client._request.assert_any_await(
         "GET",
         "/action-log/weekly",
         params={"year": "2026"},
+    )
+    client._request.assert_any_await("GET", "/action-log/weekly/2026-W15")
+    client._request.assert_any_await(
+        "PUT",
+        "/action-log/weekly/2026-W15",
+        json={
+            "id": "weekly_2026-W15",
+            "weekKey": "2026-W15",
+            "summary": "weekly summary",
+            "categoryDurations": {"学習": 45},
+            "focusThemes": ["Chrome拡張"],
+            "openLoopIds": ["loop_1"],
+            "generatedAt": "2026-04-17T08:00:00+09:00",
+        },
     )
     client._request.assert_any_await("GET", "/action-log/devices")
     client._request.assert_any_await(

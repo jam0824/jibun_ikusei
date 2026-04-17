@@ -22,7 +22,7 @@
 - [ ] 各フェーズ完了時に必ず自己レビューを実施する
 - [ ] Chrome のページ滞在時間の正本は Chrome Extension とし、desktop 側で別実装の再計測をしない
 - [ ] 行動ログの閲覧 UI は PWA を正本とし、`lily_desktop` は収集と URL 起動のハブに徹する
-- [ ] 通常の整理系 AI は local `gemma4`、日次・週次まとめは `gpt-5.4` を使う
+- [x] 通常の整理系 AI は local `gemma4`、日次・週次まとめは `gpt-5.4` を使う
 - [ ] `RawEvent` はサーバー TTL 前提、`ActivitySession` 以上は長期保持前提で進める
 - [ ] `Phase 0: Mock` 完了後は必ず停止し、ユーザー確認が終わるまで次フェーズに進まない
 
@@ -39,8 +39,8 @@
 
 - [ ] `RawEvent`
 - [ ] `ActivitySession`
-- [ ] `DailyActivityLog`
-- [ ] `WeeklyActivityReview`
+- [x] `DailyActivityLog`
+- [x] `WeeklyActivityReview`
 - [x] `Activity Capture Service`
 - [ ] `Chrome Extension -> Desktop -> Server` のイベント流れ
 
@@ -417,50 +417,65 @@
 
 ### 目的
 
-- [ ] `DailyActivityLog` と `WeeklyActivityReview` の生成を本実装する
-- [ ] 日次・週次まとめを `gpt-5.4` へ接続する
+- [x] `DailyActivityLog` と `WeeklyActivityReview` の生成を本実装する
+- [x] 日次・週次まとめを `gpt-5.4` へ接続する
 
 ### 実装対象
 
-- [ ] 当日画面初回オープン時の `DailyActivityLog` 生成
-- [ ] 週次レビュー生成
-- [ ] `gpt-5.4` 失敗時のテンプレート fallback
-- [ ] `ActivitySession` ベースの整形済み入力生成
-- [ ] リリィがユーザーの観察日記を書いたような文体ガイドを prompt / fallback へ組み込む
+- [x] `/records/activity/today` では当日 `DailyActivityLog` を生成しない
+- [x] `/records/activity/day/:dateKey` で JST 前日だけ `DailyActivityLog` を生成する
+- [x] Web 側は JST 月曜日の週次画面で前週 `WeeklyActivityReview` だけを生成する
+- [x] `lily_desktop` 起動時に前日 `DailyActivityLog` を補完する
+- [x] `lily_desktop` 起動時に前週 `WeeklyActivityReview` を補完する
+- [x] `gpt-5.4` 失敗時のテンプレート fallback
+- [x] `ActivitySession` ベースの整形済み入力生成
+- [x] リリィがユーザーの観察日記を書いたような文体ガイドを prompt / fallback へ組み込む
 
 ### 先に書く failing test
 
-- [ ] 当日画面初回表示で日次まとめが生成されるテスト
-- [ ] PC / スマホのどちらから開いても同じ生成条件になるテスト
-- [ ] 週次レビュー生成テスト
-- [ ] `gpt-5.4` 失敗時にテンプレート fallback するテスト
-- [ ] 日次まとめ prompt がリリィ観察日記トーンを要求するテスト
-- [ ] 週次まとめ prompt がリリィ観察日記トーンを要求するテスト
-- [ ] fallback 文も観察日記風の地の文になるテスト
+- [x] `/records/activity/today` では `DailyActivityLog` を生成しないテスト
+- [x] `/records/activity/day/:yesterday` で missing daily が生成されるテスト
+- [x] `/records/activity/day/:older` では missing daily でも生成しないテスト
+- [x] 月曜日の `/records/activity/review/year` で前週 missing weekly だけ生成するテスト
+- [x] 月曜日の `/records/activity/review/week` で前週 missing weekly だけ生成するテスト
+- [x] Web 側では前週以外の週を生成しないテスト
+- [x] `lily_desktop` 起動時に missing な前日 daily を生成するテスト
+- [x] `lily_desktop` 起動時に missing な前週 weekly を生成するテスト
+- [x] 既存の前日 daily / 前週 weekly を再生成しないテスト
+- [x] `gpt-5.4` 失敗時にテンプレート fallback するテスト
+- [x] 日次まとめ prompt がリリィ観察日記トーンを要求するテスト
+- [x] 週次まとめ prompt がリリィ観察日記トーンを要求するテスト
+- [x] fallback 文も観察日記風の地の文になるテスト
 
 ### 実装メモ
 
-- [ ] raw event 全文やスクリーンショット本体は `gpt-5.4` に送らない
-- [ ] `DailyActivityLog` は未生成時のみ作る
-- [ ] local `gemma4` と責務を混ぜない
-- [ ] 直接話しかけるチャット口調ではなく、リリィがそっと見守って書いた観察日記風の地の文を正本にする
-- [ ] 提案や励ましは補足に留め、本文は観察記述を主にする
+- [x] raw event 全文やスクリーンショット本体は `gpt-5.4` に送らない
+- [x] `/records/activity/today` は read-only にし、日次まとめ PUT を行わない
+- [x] `DailyActivityLog` は JST 前日だけ未生成時に作る
+- [x] Web 側の `WeeklyActivityReview` は JST 月曜日の前週対象だけ未生成時に作る
+- [x] desktop 側 summary backfill は raw sync -> organizer -> summary backfill の順で動かす
+- [x] local `gemma4` と責務を混ぜない
+- [x] 直接話しかけるチャット口調ではなく、リリィがそっと見守って書いた観察日記風の地の文を正本にする
+- [x] 提案や励ましは補足に留め、本文は観察記述を主にする
 
 ### 完了条件
 
-- [ ] 日次・週次まとめが `gpt-5.4` で生成される
-- [ ] 失敗時の fallback がある
-- [ ] PC / スマホの閲覧起点で挙動が揃っている
-- [ ] 日次・週次まとめの文体がリリィ観察日記トーンで揃っている
+- [x] 日次・週次まとめが `gpt-5.4` で生成される
+- [x] 失敗時の fallback がある
+- [x] `/records/activity/today` では当日まとめを生成しない
+- [x] Web 側は前日 day 画面と月曜日の前週週次画面だけで補完する
+- [x] desktop 起動時に前日 / 前週が未生成なら補完する
+- [x] PC / スマホの Web 閲覧起点で挙動が揃っている
+- [x] 日次・週次まとめの文体がリリィ観察日記トーンで揃っている
 
 ### 自己レビュー項目
 
-- [ ] spec と実装のズレがないか
-- [ ] JST 前提を壊していないか
-- [ ] privacy 境界を破っていないか
-- [ ] 既存の責務分離を壊していないか
-- [ ] 不要な重複計測や二重保存がないか
-- [ ] テストが対象範囲を十分にカバーしているか
+- [x] spec と実装のズレがないか
+- [x] JST 前提を壊していないか
+- [x] privacy 境界を破っていないか
+- [x] 既存の責務分離を壊していないか
+- [x] 不要な重複計測や二重保存がないか
+- [x] テストが対象範囲を十分にカバーしているか
 
 ---
 
