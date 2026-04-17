@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { CalendarDays, ChevronLeft, ChevronRight, Globe, Heart, History, RotateCcw, ScrollText, Settings2, Utensils } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { CompletionResolutionCard } from '@/components/completion-resolution-card'
+import { RecordsSectionTabs } from '@/components/records-navigation'
 import {
   getFilteredActiveCompletions,
   getQuestCompletionRanking,
@@ -16,6 +17,7 @@ import type { MealType, NutrientEntry, NutrientLabel } from '@/domain/types'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent } from '@/components/ui'
 import { formatDateTime, isUndoable } from '@/lib/date'
+import { writeLastRecordsRoute } from '@/lib/records-route-state'
 import { useAppStore } from '@/store/app-store'
 import { BrowsingTimeView } from '@/screens/browsing-time-view'
 
@@ -407,10 +409,15 @@ const subtitles: Record<RecordsTab, Record<string, string>> = {
 
 export function RecordsScreen() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const state = useAppStore()
   const [activeTab, setActiveTab] = useState<RecordsTab>('quests')
-  const activeFilter = parseRecordFilter(searchParams.get('filter'))
+  const activeFilter = parseRecordFilter(searchParams.get('range') ?? searchParams.get('filter'))
+
+  useEffect(() => {
+    writeLastRecordsRoute(location.pathname, location.search)
+  }, [location.pathname, location.search])
 
   const completionCounts = useMemo(
     () => ({
@@ -455,6 +462,8 @@ export function RecordsScreen() {
         </Button>
       }
     >
+      <RecordsSectionTabs active="quests" questHref={`/records/quests?range=${activeFilter}`} />
+
       {/* Tab switcher */}
       <div className="scrollbar-hide mb-4 flex gap-2 overflow-x-auto pb-1">
         {(
@@ -499,7 +508,7 @@ export function RecordsScreen() {
                   aria-label={`${option.label}のクリア回数を表示`}
                   aria-pressed={isActive}
                   className="text-left transition"
-                  onClick={() => setSearchParams({ filter: option.key })}
+                  onClick={() => setSearchParams({ range: option.key })}
                 >
                   <Card
                     className={`h-full ${

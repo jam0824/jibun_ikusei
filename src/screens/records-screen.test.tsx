@@ -140,12 +140,12 @@ function LocationDisplay() {
   return <div data-testid="location">{`${location.pathname}${location.search}`}</div>
 }
 
-function renderRecords(initialEntry = '/records') {
+function renderRecords(initialEntry = '/records/quests') {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <LocationDisplay />
       <Routes>
-        <Route path="/records" element={<RecordsScreen />} />
+        <Route path="/records/quests" element={<RecordsScreen />} />
         <Route path="/weekly-reflection" element={<div>weekly reflection route</div>} />
       </Routes>
     </MemoryRouter>,
@@ -158,7 +158,7 @@ function renderHomeWithRecords() {
       <LocationDisplay />
       <Routes>
         <Route path="/" element={<HomeScreen />} />
-        <Route path="/records" element={<RecordsScreen />} />
+        <Route path="/records/quests" element={<RecordsScreen />} />
         <Route path="/weekly-reflection" element={<div>weekly reflection route</div>} />
       </Routes>
     </MemoryRouter>,
@@ -196,7 +196,7 @@ describe('records screen filters', () => {
   })
 
   it('defaults to the today filter when opened without a filter query', () => {
-    renderRecords('/records')
+    renderRecords('/records/quests')
 
     expect(
       screen.getByRole('button', { name: '今日のクリア回数を表示' }),
@@ -207,7 +207,7 @@ describe('records screen filters', () => {
   })
 
   it('uses the filter query to decide which completions to show', () => {
-    renderRecords('/records?filter=week')
+    renderRecords('/records/quests?range=week')
 
     expect(
       screen.getByRole('button', { name: '今週のクリア回数を表示' }),
@@ -218,11 +218,11 @@ describe('records screen filters', () => {
   })
 
   it('updates both the URL and the list when a filter card is tapped', async () => {
-    renderRecords('/records?filter=today')
+    renderRecords('/records/quests?range=today')
 
     fireEvent.click(screen.getByRole('button', { name: 'すべてのクリア回数を表示' }))
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/records?filter=all')
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/quests?range=all')
     expect(
       screen.getByRole('button', { name: 'すべてのクリア回数を表示' }),
     ).toHaveAttribute('aria-pressed', 'true')
@@ -236,7 +236,7 @@ describe('records screen filters', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '今日のクリア回数を記録で見る' }))
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/records?filter=today')
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/quests?range=today')
     expect(
       screen.getByRole('button', { name: '今日のクリア回数を表示' }),
     ).toHaveAttribute('aria-pressed', 'true')
@@ -262,7 +262,7 @@ describe('records screen filters', () => {
       ],
     })
 
-    renderRecords('/records?filter=week')
+    renderRecords('/records/quests?range=week')
 
     expect(screen.getByText('今週のクリア回数上位10位')).toBeInTheDocument()
     expect(screen.getByText('今週 2回')).toBeInTheDocument()
@@ -287,7 +287,7 @@ describe('records screen filters', () => {
       ],
     })
 
-    renderRecords('/records?filter=all')
+    renderRecords('/records/quests?range=all')
 
     expect(screen.getByText('累計クリア回数上位10位')).toBeInTheDocument()
     expect(screen.getByText('累計 3回')).toBeInTheDocument()
@@ -295,7 +295,7 @@ describe('records screen filters', () => {
   })
 
   it('does not show quest rankings for the today filter', () => {
-    renderRecords('/records?filter=today')
+    renderRecords('/records/quests?range=today')
 
     expect(screen.queryByText('今週のクリア回数上位10位')).not.toBeInTheDocument()
     expect(screen.queryByText('累計クリア回数上位10位')).not.toBeInTheDocument()
@@ -344,7 +344,7 @@ describe('weekly reflection navigation', () => {
       ],
     })
 
-    renderRecords('/records?filter=week')
+    renderRecords('/records/quests?range=week')
 
     fireEvent.click(screen.getByRole('button', { name: '先週のふりかえりを確認' }))
 
@@ -410,7 +410,7 @@ describe('records screen nutrition view', () => {
       fetchNutrition,
     }))
 
-    renderRecords('/records')
+    renderRecords('/records/quests')
     fireEvent.click(screen.getByRole('button', { name: '栄養' }))
 
     expect(await screen.findByText('表示元: 最新登録データ（昼）')).toBeInTheDocument()

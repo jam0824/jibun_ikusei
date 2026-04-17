@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { HashRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { ClearEffectScreen } from '@/screens/clear-effect-screen'
 import { HomeScreen } from '@/screens/home-screen'
 import { LilyChatScreen } from '@/screens/lily-chat-screen'
@@ -15,9 +15,26 @@ import { SkillsScreen } from '@/screens/skills-screen'
 import { StatusScreen } from '@/screens/status-screen'
 import { WeeklyReflectionScreen } from '@/screens/weekly-reflection-screen'
 import { ScrollToTopOnRouteChange } from '@/components/scroll-to-top-on-route-change'
-import { ActivityLogMockScreen } from '@/screens/activity-log-mock-screen'
+import { ActivityLogScreen } from '@/screens/activity-log-screen'
+import { getDefaultRecordsRoute, readLastRecordsRoute } from '@/lib/records-route-state'
 import { useAppStore } from '@/store/app-store'
 import { isLoggedIn } from '@/lib/auth'
+
+function RecordsRouteHub() {
+  const location = useLocation()
+  const target = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    const legacyRange = params.get('range') ?? params.get('filter')
+
+    if (legacyRange === 'today' || legacyRange === 'week' || legacyRange === 'all') {
+      return `/records/quests?range=${legacyRange}`
+    }
+
+    return readLastRecordsRoute() || getDefaultRecordsRoute()
+  }, [location.search])
+
+  return <Navigate to={target} replace />
+}
 
 export function AppShellRoutes() {
   return (
@@ -27,13 +44,16 @@ export function AppShellRoutes() {
       <Route path="/quests" element={<QuestListScreen />} />
       <Route path="/quests/new" element={<QuestFormScreen />} />
       <Route path="/skills" element={<SkillsScreen />} />
-      <Route path="/records" element={<RecordsScreen />} />
-      <Route path="/records/activity/today" element={<ActivityLogMockScreen variant="today" />} />
-      <Route path="/records/activity/day/:dateKey" element={<ActivityLogMockScreen variant="day" />} />
-      <Route path="/records/activity/calendar" element={<ActivityLogMockScreen variant="calendar" />} />
-      <Route path="/records/activity/search" element={<ActivityLogMockScreen variant="search" />} />
-      <Route path="/records/activity/review/year" element={<ActivityLogMockScreen variant="review-year" />} />
-      <Route path="/records/activity/review/week" element={<ActivityLogMockScreen variant="review-week" />} />
+      <Route path="/records" element={<Outlet />}>
+        <Route index element={<RecordsRouteHub />} />
+        <Route path="quests" element={<RecordsScreen />} />
+        <Route path="activity/today" element={<ActivityLogScreen variant="today" />} />
+        <Route path="activity/day/:dateKey" element={<ActivityLogScreen variant="day" />} />
+        <Route path="activity/calendar" element={<ActivityLogScreen variant="calendar" />} />
+        <Route path="activity/search" element={<ActivityLogScreen variant="search" />} />
+        <Route path="activity/review/year" element={<ActivityLogScreen variant="review-year" />} />
+        <Route path="activity/review/week" element={<ActivityLogScreen variant="review-week" />} />
+      </Route>
       <Route path="/weekly-reflection" element={<WeeklyReflectionScreen />} />
       <Route path="/lily" element={<LilyChatScreen />} />
       <Route path="/settings" element={<SettingsScreen />} />

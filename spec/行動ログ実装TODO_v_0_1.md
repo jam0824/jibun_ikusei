@@ -331,82 +331,86 @@
 ---
 
 ## Phase 6: PWA 本実装
-
 ### 目的
-
-- [ ] モック画面を本実装へ差し替え、行動ログ閲覧体験を完成させる
-- [ ] route ごとの役割を PWA 側で安定させる
+- [x] `mock` 画面を本実装へ置き換え、PWA 上で行動ログを読める状態にする
+- [x] `/records` を route hub にして、最後に見ていた `records` 配下 route を復元できるようにする
 
 ### 実装対象
 
-- [ ] `/records/activity/today`
-- [ ] `/records/activity/day/:dateKey`
-- [ ] `/records/activity/calendar?month=YYYY-MM`
-- [ ] `/records/activity/review/year?year=YYYY`
-- [ ] `/records/activity/search`
-- [ ] `/records/activity/review/week?weekKey=YYYY-Www`
-- [ ] `records` 内導線と desktop deep link の整合
-- [ ] `event / session` view query の反映
-- [ ] `calendar` の `month` query 反映
-- [ ] `calendar` の `前月` / `次月` / `年月ピッカー`
-- [ ] `review/year` の `year` query 反映
-- [ ] `review/year` の `前年` / `次年` / `年ピッカー`
-- [ ] `review/year` から `review/week` 詳細への遷移
-- [ ] `records` 配下 route の復元と既定 route 制御
-- [ ] `DailyActivityLog` の手動メモ表示と追加
+- [x] `/records` route hub
+- [x] `/records/quests?range=today|week|all`
+- [x] `/records/activity/today?view=session|event`
+- [x] `/records/activity/day/:dateKey?view=session|event`
+- [x] `/records/activity/calendar?month=YYYY-MM`
+- [x] `/records/activity/search`
+- [x] `/records/activity/review/year?year=YYYY`
+- [x] `/records/activity/review/week?weekKey=YYYY-Www`
+- [x] `records` 配下 route の localStorage 復元
+- [x] `event / session` view query の保持
+- [x] `calendar` の `month` query 保持
+- [x] `calendar` の `前月` / `次月` / `年月ピッカー`
+- [x] `review/year` の `year` query 保持
+- [x] `review/year` の `前年` / `次年` / `年ピッカー`
+- [x] `review/year` から `review/week` 詳細への遷移
+- [x] `RecordsScreen` を `/records/quests` 配下へ移設
+- [x] `DailyActivityLog` を timeline より先に表示
+- [x] `ManualNote` の表示枠だけ残す
+- [ ] `ManualNote` の追加・保存
 
 ### 先に書く failing test
 
-- [ ] 各 route のデータ表示テスト
-- [ ] event view / session view 切り替えテスト
-- [ ] `month` 未指定時に JST 基準の当月を表示するカレンダーテスト
-- [ ] `month=YYYY-MM` 指定時に対象月を表示するカレンダーテスト
-- [ ] `前月` / `次月` 操作で `month` query が更新されるテスト
-- [ ] `年月ピッカー` 変更で `month` query が更新されるテスト
-- [ ] `year` 未指定時に JST 基準の当年または直近の利用可能年を表示する週次レビュー一覧テスト
-- [ ] `year=YYYY` 指定時に対象年を表示する週次レビュー一覧テスト
-- [ ] `前年` / `次年` 操作で `year` query が更新されるテスト
-- [ ] `年ピッカー` 変更で `year` query が更新されるテスト
-- [ ] 年一覧の週カードから `review/week?weekKey=YYYY-Www` へ遷移するテスト
-- [ ] `weekKey=YYYY-Www` 指定時に対象週を表示するテスト
-- [ ] 検索条件の反映テスト
-- [ ] desktop からの URL 着地テスト
-- [ ] `/records` から最後に見ていた `records` 配下 route を復元するテスト
-- [ ] 初回または復元不能時は `/records/quests?range=today` を開くテスト
-- [ ] 手動メモの追加 / 表示テスト
+- [x] `/records` が最後に見た child route を復元する
+- [x] 初回または復元不能時に `/records/quests?range=today` を開く
+- [x] `/records/quests?range=week|all|today` で既存の記録画面が表示される
+- [x] `today` が JST 当日を使う
+- [x] `day/:dateKey` が指定日を表示する
+- [x] `view=session|event` で表示が切り替わる
+- [x] `DailyActivityLog` が timeline より先に表示される
+- [x] `month` 未指定時に JST 当月を表示する
+- [x] `month=YYYY-MM` 指定時に対象月を表示する
+- [x] `前月` / `次月` / `年月ピッカー` で `month` query が更新される
+- [x] 日付セル押下で `day/:dateKey` へ遷移する
+- [x] `year` 未指定時に JST 当年を表示する
+- [x] `year=YYYY` 指定時に対象年を表示する
+- [x] `前年` / `次年` / `年ピッカー` で `year` query が更新される
+- [x] 年一覧から `review/week?weekKey=YYYY-Www` へ遷移する
+- [x] `review/week` が指定週の詳細を表示する
+- [x] 期間とキーワードで `ActivitySession` / `OpenLoop` が client-side filter される
+- [x] 空結果時の empty state が出る
+- [x] `home-screen` からの `records` 導線が壊れていない
+- [x] `weekly-reflection-screen` からの `records` 導線が壊れていない
 
 ### 実装メモ
 
-- [ ] PWA を唯一の正式 UI として育てる
-- [ ] PC とスマホで同じ route を使えるようにする
-- [ ] UI 層で本来の storage 境界を崩さない
-- [ ] カレンダーは 1 画面 1 か月分表示を正本にする
-- [ ] `month` query がなくても JST 基準の当月に着地できるようにする
-- [ ] 週次レビューの主入口は 1 画面 1 年分の一覧表示を正本にする
-- [ ] `year` query がなくても JST 基準の当年または直近の利用可能年に着地できるようにする
-- [ ] `review/week` は個別週の詳細 route として扱う
-- [ ] 手動操作は `ActivitySession / DailyActivityLog / ManualNote` の責務を越えないようにする
-- [ ] v0.1 の手動補正は非表示・手動メモに留める
+- [x] PWA を唯一の正式 UI として扱う
+- [x] `records` の復元先は `localStorage` の UI 専用キーで持つ
+- [x] quest 記録は既存の `RecordsScreen` を維持したまま `/records/quests` に寄せる
+- [x] 行動ログ画面は action-log API の実データを使って描画する
+- [x] カレンダーは 1 か月単位表示を正本にする
+- [x] 週次レビュー一覧は 1 年単位表示を正本にする
+- [x] `review/week` は週詳細 route として扱う
+- [x] 最小検索は `ActivitySession` と `OpenLoop` の client-side filter に留める
+- [x] Phase 6 では `ManualNote` の保存 UI は実装しない
 
 ### 完了条件
 
-- [ ] 主要 route が本データで表示される
-- [ ] PC / スマホの両方で主要閲覧導線が成立する
-- [ ] desktop deep link と PWA 導線が一致している
-- [ ] カレンダーが 1 か月単位で安定表示され、前月 / 次月 / 年月ピッカーで移動できる
-- [ ] 週次レビュー一覧が 1 年単位で安定表示され、前年 / 次年 / 年ピッカーで移動できる
-- [ ] 年一覧から週詳細へ安定して遷移できる
-- [ ] 手動メモの導線が成立する
+- [x] 主 route が `mock` ではなく action-log API の実データで表示される
+- [x] `/records` の復元導線が動く
+- [x] PC / スマホの両方で route ベースの閲覧が成立する
+- [x] deep link URL と PWA 内導線が一致している
+- [x] カレンダーが 1 画面 1 か月で表示され、前月 / 次月 / 年月ピッカーで移動できる
+- [x] 週次レビュー一覧が 1 画面 1 年で表示され、前年 / 次年 / 年ピッカーで移動できる
+- [x] 年一覧から週詳細へ遷移できる
+- [x] 手動メモ未実装でも UI が壊れず、表示枠だけ残る
 
 ### 自己レビュー項目
 
-- [ ] spec と実装のズレがないか
-- [ ] JST 前提を壊していないか
-- [ ] privacy 境界を破っていないか
-- [ ] 既存の責務分離を壊していないか
-- [ ] 不要な重複計測や二重保存がないか
-- [ ] テストが対象範囲を十分にカバーしているか
-
+- [x] spec と実装のズレがないか
+- [x] JST 前提を壊していないか
+- [x] privacy 境界を破っていないか
+- [x] 既存責務分離を壊していないか
+- [x] 不要な重複計測や二重保存がないか
+- [x] テストが対象範囲を十分にカバーしているか
 ---
 
 ## Phase 7: gpt-5.4 日次・週次まとめ
