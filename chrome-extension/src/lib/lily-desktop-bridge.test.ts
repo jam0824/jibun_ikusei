@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   LILY_DESKTOP_BRIDGE_URL,
+  sendBrowserHeartbeatToLilyDesktop,
+  sendBrowserPageChangedToLilyDesktop,
   sendChromeAudibleTabsToLilyDesktop,
   sendBrowsingSystemMessageToLilyDesktop,
 } from '@ext/lib/lily-desktop-bridge'
@@ -151,6 +153,25 @@ describe('lily-desktop-bridge', () => {
     expect(ok).toBe(false)
   })
 
+  it('returns false when the bridge responds with a non-ok status', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: false }), { status: 400 }),
+    )
+
+    const ok = await sendBrowserPageChangedToLilyDesktop({
+      tabId: 99,
+      url: 'https://example.com/page',
+      domain: 'example.com',
+      title: 'Example',
+      trigger: 'tab_activated',
+      category: null,
+      isGrowth: null,
+      cacheKey: null,
+    })
+
+    expect(ok).toBe(false)
+  })
+
   it('returns false when the bridge request times out', async () => {
     vi.useFakeTimers()
     vi.spyOn(globalThis, 'fetch').mockImplementation((_url, init) => new Promise((_resolve, reject) => {
@@ -203,6 +224,93 @@ describe('lily-desktop-bridge', () => {
           { tabId: 2, domain: 'netflix.com' },
         ],
       },
+    })
+  })
+
+  it('sends a browser_page_changed event with JST occurredAt and browser metadata', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 202 }),
+    )
+
+    const ok = await sendBrowserPageChangedToLilyDesktop({
+      tabId: 10,
+      url: 'https://developer.mozilla.org/docs/Web',
+      domain: 'developer.mozilla.org',
+      title: 'MDN Web Docs',
+      trigger: 'tab_activated',
+      category: '学習',
+      isGrowth: true,
+      cacheKey: 'developer.mozilla.org:/docs/Web',
+    })
+
+    expect(ok).toBe(true)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe(LILY_DESKTOP_BRIDGE_URL)
+
+    const body = JSON.parse(String(init.body)) as {
+      eventType: string
+      source: string
+      eventId: string
+      occurredAt: string
+      payload: { tabId: number; url: string; domain: string; title: string | null }
+      metadata: Record<string, unknown>
+    }
+
+    expect(body).toMatchObject({
+      eventType: 'browser_page_changed',
+      source: 'chrome_extension',
+      eventId: '00000000-0000-4000-8000-000000000000',
+      payload: {
+        tabId: 10,
+        url: 'https://developer.mozilla.org/docs/Web',
+        domain: 'developer.mozilla.org',
+        title: 'MDN Web Docs',
+      },
+      metadata: {
+        trigger: 'tab_activated',
+        category: '学習',
+        isGrowth: true,
+        cacheKey: 'developer.mozilla.org:/docs/Web',
+      },
+    })
+    expect(body.occurredAt).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\+09:00$/)
+  })
+
+  it('sends a heartbeat event with elapsedSeconds metadata', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 202 }),
+    )
+
+    const ok = await sendBrowserHeartbeatToLilyDesktop({
+      tabId: 22,
+      url: 'https://react.dev/learn',
+      domain: 'react.dev',
+      title: null,
+      elapsedSeconds: 30,
+      trigger: 'flush',
+      category: null,
+      isGrowth: null,
+      cacheKey: null,
+    })
+
+    expect(ok).toBe(true)
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    const body = JSON.parse(String(init.body)) as {
+      eventType: string
+      occurredAt: string
+      payload: { title: string | null }
+      metadata: Record<string, unknown>
+    }
+
+    expect(body.eventType).toBe('heartbeat')
+    expect(body.occurredAt).toMatch(/\+09:00$/)
+    expect(body.payload.title).toBeNull()
+    expect(body.metadata).toMatchObject({
+      elapsedSeconds: 30,
+      trigger: 'flush',
+      category: null,
+      isGrowth: null,
+      cacheKey: null,
     })
   })
 })
