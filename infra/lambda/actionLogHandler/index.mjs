@@ -221,7 +221,20 @@ export const handler = async (event) => {
         return response(400, { error: "sessions array required" });
       }
 
-      const dateKeys = [...new Set(sessions.map((session) => session.dateKey).filter(Boolean))];
+      const explicitDateKeys =
+        body.dateKeys === undefined
+          ? undefined
+          : Array.isArray(body.dateKeys)
+            ? body.dateKeys.filter(Boolean)
+            : null;
+      if (explicitDateKeys === null) {
+        return response(400, { error: "dateKeys must be an array when provided" });
+      }
+
+      const dateKeys =
+        explicitDateKeys === undefined
+          ? [...new Set(sessions.map((session) => session.dateKey).filter(Boolean))]
+          : [...new Set(explicitDateKeys)];
       for (const dateKey of dateKeys) {
         const existing = await queryBeginsWith({
           pk,

@@ -171,6 +171,48 @@ describe('actionLogHandler', () => {
     expect(getBody).toEqual([putBody.sessions[0]])
   })
 
+  it('PUT /action-log/sessions uses explicit dateKeys to clear dates even when no sessions remain', async () => {
+    const commands = []
+    mockSend.mockImplementation((command) => {
+      commands.push(command)
+      if (command.constructor.name === 'QueryCommand') {
+        return Promise.resolve({
+          Items: [
+            {
+              PK: 'user#test-user-123',
+              SK: 'ACTION_LOG#SESSION#2026-04-16#2026-04-16T08:00:00+09:00#old_session',
+            },
+          ],
+        })
+      }
+      return Promise.resolve({})
+    })
+
+    const { statusCode, body } = parseResponse(
+      await handler(
+        makeEvent('PUT /action-log/sessions', {
+          body: {
+            deviceId: 'device_1',
+            dateKeys: ['2026-04-16'],
+            sessions: [],
+          },
+        }),
+      ),
+    )
+
+    expect(statusCode).toBe(200)
+    expect(body.updated).toBe(0)
+    expect(
+      commands.some(
+        (command) =>
+          command.constructor.name === 'QueryCommand' &&
+          command.input.ExpressionAttributeValues[':prefix'] === 'ACTION_LOG#SESSION#2026-04-16#',
+      ),
+    ).toBe(true)
+    expect(commands.some((command) => command.constructor.name === 'DeleteCommand')).toBe(true)
+    expect(commands.some((command) => command.constructor.name === 'PutCommand')).toBe(false)
+  })
+
   it('daily routes support exact get/put and range get', async () => {
     const daily = {
       id: 'daily_1',

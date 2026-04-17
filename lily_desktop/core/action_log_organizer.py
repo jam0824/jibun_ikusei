@@ -56,6 +56,15 @@ def _date_key(value: datetime | str) -> str:
     return _normalize_jst(value).strftime("%Y-%m-%d")
 
 
+def _managed_date_keys(reference: datetime) -> list[str]:
+    return sorted(
+        {
+            reference.strftime("%Y-%m-%d"),
+            (reference - timedelta(days=1)).strftime("%Y-%m-%d"),
+        }
+    )
+
+
 def _first_seen(values: list[str]) -> list[str]:
     seen: set[str] = set()
     ordered: list[str] = []
@@ -108,6 +117,28 @@ def _last_non_empty(current_events: list[dict[str, Any]], key: str) -> str:
 def _open_loop_id(device_id: str, date_key: str, title: str) -> str:
     digest = sha1(f"{device_id}|{date_key}|{_normalize_title(title)}".encode("utf-8")).hexdigest()
     return f"loop_{digest[:16]}"
+
+
+def _normalized_session_context(values: Any) -> tuple[str, ...]:
+    if not isinstance(values, list):
+        return ()
+    normalized = {
+        str(value).strip().lower()
+        for value in values
+        if str(value).strip()
+    }
+    return tuple(sorted(normalized))
+
+
+def _session_hidden_match_key(session: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        str(session.get("deviceId") or "").strip(),
+        str(session.get("dateKey") or "").strip(),
+        str(session.get("startedAt") or "").strip(),
+        _normalized_session_context(session.get("appNames")),
+        _normalized_session_context(session.get("domains")),
+        _normalized_session_context(session.get("projectNames")),
+    )
 
 
 class ActionLogOrganizer:
@@ -254,24 +285,26 @@ class ActionLogOrganizer:
         }
 
     async def organize_and_sync(self, *, now: datetime | None = None) -> None:
-        raw_events = self.load_recent_raw_events(now=now)
-        if not raw_events:
-            return
-
-        candidates = self.build_candidate_sessions(raw_events)
-        if not candidates:
-            return
-
         reference = _normalize_jst(now)
-        from_date = (reference - timedelta(days=1)).strftime("%Y-%m-%d")
-        to_date = reference.strftime("%Y-%m-%d")
+        managed_date_keys = _managed_date_keys(reference)
+        raw_events = self.load_recent_raw_events(now=reference)
+        candidates = self.build_candidate_sessions(raw_events)
+        from_date = managed_date_keys[0]
+        to_date = managed_date_keys[-1]
         existing_sessions = await self.api_client.get_action_log_sessions(from_date, to_date)
-        existing_hidden = {
+        existing_hidden_by_id = {
             str(session.get("id")): bool(session.get("hidden", False))
             for session in existing_sessions
         }
+        existing_hidden_by_match_key: dict[tuple[Any, ...], bool] = {}
+        for session in existing_sessions:
+            match_key = _session_hidden_match_key(session)
+            existing_hidden_by_match_key[match_key] = (
+                existing_hidden_by_match_key.get(match_key, False)
+                or bool(session.get("hidden", False))
+            )
 
-        llm_results = await self._organize_with_llm(candidates)
+        llm_results = await self._organize_with_llm(candidates) if candidates else {}
         sessions: list[dict[str, Any]] = []
         open_loops: list[dict[str, Any]] = []
         organized_at = reference.isoformat(timespec="seconds")
@@ -283,6 +316,16 @@ class ActionLogOrganizer:
                 updated_at=organized_at,
             )
             open_loops.extend(session_open_loops)
+            candidate_match_key = _session_hidden_match_key(
+                {
+                    "deviceId": self.device_id,
+                    "dateKey": candidate["dateKey"],
+                    "startedAt": candidate["startedAt"],
+                    "appNames": candidate["appNames"],
+                    "domains": candidate["domains"],
+                    "projectNames": candidate["projectNames"],
+                }
+            )
             sessions.append(
                 {
                     "id": candidate["id"],
@@ -300,19 +343,24 @@ class ActionLogOrganizer:
                     "searchKeywords": list(enriched["searchKeywords"]),
                     "noteIds": [],
                     "openLoopIds": [loop["id"] for loop in session_open_loops],
-                    "hidden": existing_hidden.get(candidate["id"], False),
+                    "hidden": (
+                        existing_hidden_by_id[candidate["id"]]
+                        if candidate["id"] in existing_hidden_by_id
+                        else existing_hidden_by_match_key.get(candidate_match_key, False)
+                    ),
                 }
             )
 
         await self.api_client.put_action_log_sessions(
             {
                 "deviceId": self.device_id,
+                "dateKeys": managed_date_keys,
                 "sessions": sessions,
             }
         )
         await self.api_client.put_action_log_open_loops(
             {
-                "dateKeys": sorted({candidate["dateKey"] for candidate in candidates}),
+                "dateKeys": managed_date_keys,
                 "openLoops": open_loops,
             }
         )

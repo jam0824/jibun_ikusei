@@ -298,6 +298,130 @@ async def test_organize_and_sync_reads_only_today_and_yesterday_and_preserves_hi
 
 
 @pytest.mark.asyncio
+async def test_organize_and_sync_preserves_hidden_when_candidate_id_changes(tmp_path):
+    log_dir = tmp_path / "raw_events"
+    occurred_at = datetime(2026, 4, 17, 9, 0, tzinfo=JST)
+    first_event = _event(
+        "raw_1",
+        occurred_at,
+        app_name="Code.exe",
+        window_title="main.py - VS Code",
+        project_name="self-growth-app",
+        file_name="main.py",
+    )
+    _write_spool(log_dir, "2026-04-17", [first_event])
+    api_client = _FakeApiClient()
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=log_dir,
+    )
+
+    await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    first_payload = api_client.put_sessions_calls[0]
+    assert len(first_payload["sessions"]) == 1
+    first_session = first_payload["sessions"][0]
+
+    api_client.existing_sessions = [{**first_session, "hidden": True}]
+    api_client.put_sessions_calls.clear()
+    api_client.put_open_loops_calls.clear()
+    _write_spool(
+        log_dir,
+        "2026-04-17",
+        [
+            first_event,
+            _event(
+                "raw_2",
+                occurred_at + timedelta(minutes=1),
+                event_type="heartbeat",
+                app_name="Code.exe",
+                window_title="main.py - VS Code",
+                project_name="self-growth-app",
+                file_name="main.py",
+            ),
+        ],
+    )
+
+    await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    second_payload = api_client.put_sessions_calls[0]
+    assert len(second_payload["sessions"]) == 1
+    assert second_payload["sessions"][0]["id"] != first_session["id"]
+    assert second_payload["sessions"][0]["hidden"] is True
+
+
+@pytest.mark.asyncio
+async def test_organize_and_sync_full_replaces_today_and_yesterday_even_when_one_day_is_empty(tmp_path):
+    log_dir = tmp_path / "raw_events"
+    _write_spool(
+        log_dir,
+        "2026-04-17",
+        [
+            _event(
+                "today_raw",
+                datetime(2026, 4, 17, 9, 0, tzinfo=JST),
+                app_name="Code.exe",
+                window_title="main.py - VS Code",
+                project_name="self-growth-app",
+                file_name="main.py",
+            )
+        ],
+    )
+    api_client = _FakeApiClient()
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=log_dir,
+    )
+
+    await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    assert api_client.put_sessions_calls == [
+        {
+            "deviceId": "device_1",
+            "dateKeys": ["2026-04-16", "2026-04-17"],
+            "sessions": api_client.put_sessions_calls[0]["sessions"],
+        }
+    ]
+    assert [session["dateKey"] for session in api_client.put_sessions_calls[0]["sessions"]] == [
+        "2026-04-17"
+    ]
+    assert api_client.put_open_loops_calls == [
+        {
+            "dateKeys": ["2026-04-16", "2026-04-17"],
+            "openLoops": [],
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_organize_and_sync_full_replaces_today_and_yesterday_even_without_candidates(tmp_path):
+    api_client = _FakeApiClient()
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=tmp_path / "raw_events",
+    )
+
+    await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    assert api_client.put_sessions_calls == [
+        {
+            "deviceId": "device_1",
+            "dateKeys": ["2026-04-16", "2026-04-17"],
+            "sessions": [],
+        }
+    ]
+    assert api_client.put_open_loops_calls == [
+        {
+            "dateKeys": ["2026-04-16", "2026-04-17"],
+            "openLoops": [],
+        }
+    ]
+
+
+@pytest.mark.asyncio
 async def test_organizer_uses_ollama_batch_and_saves_open_loops(tmp_path, monkeypatch):
     log_dir = tmp_path / "raw_events"
     _write_spool(
@@ -393,7 +517,7 @@ async def test_organizer_uses_ollama_batch_and_saves_open_loops(tmp_path, monkey
         "Chrome拡張",
         "developer.chrome.com",
     ]
-    assert api_client.put_open_loops_calls[0]["dateKeys"] == ["2026-04-17"]
+    assert api_client.put_open_loops_calls[0]["dateKeys"] == ["2026-04-16", "2026-04-17"]
     assert api_client.put_open_loops_calls[0]["openLoops"][0]["title"] == "Chrome拡張の未解決メモ"
 
 

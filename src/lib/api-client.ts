@@ -314,7 +314,11 @@ export function getActionLogRawEvents(from: string, to: string) {
   return request<RawEvent[]>(`/action-log/raw-events?from=${from}&to=${to}`)
 }
 
-export function putActionLogSessions(input: { deviceId: string; sessions: ActivitySession[] }) {
+export function putActionLogSessions(input: {
+  deviceId: string
+  dateKeys?: string[]
+  sessions: ActivitySession[]
+}) {
   return request<{ updated: number }>('/action-log/sessions', {
     method: 'PUT',
     body: JSON.stringify(input),

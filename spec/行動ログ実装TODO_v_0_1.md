@@ -576,6 +576,9 @@
 - [x] `hidden=true` session は既定の一覧と Lily 会話コンテキストから除外し、明示的に含めたときだけ表示する
 - [x] export は client-side bundle とし、`rawEvents / sessions / dailyLogs / weeklyReviews / openLoops / meta` を含める
 - [x] delete は action-log entity だけを対象にし、quests / completions / messages などは対象外のまま維持する
+- [x] `getDayKey()` / `getWeekKey()` は host timezone に依存させず JST 固定で算出する
+- [x] organizer 再実行で session id が変わっても hidden session を再流入させない
+- [x] `PUT /action-log/sessions` は `dateKeys` 指定で empty date を full-replace できる
 
 ### 完了条件
 

@@ -79,6 +79,7 @@ describe('api-client action-log stubs', () => {
   it('puts sessions to /action-log/sessions with a wrapper body', async () => {
     await putActionLogSessions({
       deviceId: 'device_1',
+      dateKeys: ['2026-04-16', '2026-04-17'],
       sessions: [
         {
           id: 'session_1',
@@ -105,6 +106,7 @@ describe('api-client action-log stubs', () => {
     expect(init?.method).toBe('PUT')
     expect(JSON.parse(String(init?.body))).toEqual({
       deviceId: 'device_1',
+      dateKeys: ['2026-04-16', '2026-04-17'],
       sessions: [
         {
           id: 'session_1',

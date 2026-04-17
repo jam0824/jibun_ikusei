@@ -29,6 +29,7 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
     await client.put_action_log_sessions(
         {
             "deviceId": "device_1",
+            "dateKeys": ["2026-04-16", "2026-04-17"],
             "sessions": [
                 {
                     "id": "session_1",
@@ -141,6 +142,7 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
         "/action-log/sessions",
         json={
             "deviceId": "device_1",
+            "dateKeys": ["2026-04-16", "2026-04-17"],
             "sessions": [
                 {
                     "id": "session_1",
