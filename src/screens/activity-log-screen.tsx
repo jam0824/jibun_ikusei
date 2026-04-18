@@ -37,6 +37,7 @@ import {
 import { useAppStore } from '@/store/app-store'
 
 type ActivityLogVariant = 'today' | 'day' | 'calendar' | 'search' | 'review-year' | 'review-week'
+const TIMELINE_PAGE_SIZE = 50
 
 function createDateKeyFromLocalDate(date: Date) {
   const year = date.getFullYear()
@@ -287,18 +288,51 @@ function SessionListItem({
   )
 }
 
+function TimelineCountAndMore({
+  visibleCount,
+  totalCount,
+  onLoadMore,
+}: {
+  visibleCount: number
+  totalCount: number
+  onLoadMore: () => void
+}) {
+  return (
+    <div className="flex flex-col gap-3 border-t border-slate-100 pt-2 sm:flex-row sm:items-center sm:justify-between">
+      <div className="text-xs font-medium text-slate-500">
+        表示中: {visibleCount} / {totalCount}件
+      </div>
+      {visibleCount < totalCount ? (
+        <Button variant="outline" size="sm" onClick={onLoadMore}>
+          さらに50件表示
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 function SessionsOrEventsCard({
   day,
   viewMode,
   includeHidden,
+  sessionVisibleCount,
+  eventVisibleCount,
+  onLoadMoreSessions,
+  onLoadMoreEvents,
   onToggleSessionHidden,
 }: {
   day: ActivityDayViewData
   viewMode: ActivityLogViewMode
   includeHidden: boolean
+  sessionVisibleCount: number
+  eventVisibleCount: number
+  onLoadMoreSessions: () => void
+  onLoadMoreEvents: () => void
   onToggleSessionHidden?: (sessionId: string, dateKey: string, hidden: boolean) => void
 }) {
   const visibleSessions = day.sessions.filter((session) => includeHidden || !session.hidden)
+  const displayedSessions = visibleSessions.slice(0, sessionVisibleCount)
+  const displayedEvents = day.rawEvents.slice(0, eventVisibleCount)
 
   return (
     <Card>
@@ -322,8 +356,12 @@ function SessionsOrEventsCard({
             </div>
           ) : (
             <div className="space-y-3">
-              {day.rawEvents.map((event) => (
-                <div key={event.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
+              {displayedEvents.map((event) => (
+                <div
+                  key={event.id}
+                  data-testid={`activity-event-${event.id}`}
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                >
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <div className="text-sm font-semibold text-slate-900">
@@ -340,6 +378,11 @@ function SessionsOrEventsCard({
                   </div>
                 </div>
               ))}
+              <TimelineCountAndMore
+                visibleCount={displayedEvents.length}
+                totalCount={day.rawEvents.length}
+                onLoadMore={onLoadMoreEvents}
+              />
             </div>
           )
         ) : visibleSessions.length === 0 ? (
@@ -348,7 +391,7 @@ function SessionsOrEventsCard({
           </div>
         ) : (
           <div className="space-y-3">
-            {visibleSessions.map((session) => (
+            {displayedSessions.map((session) => (
               <SessionListItem
                 key={session.id}
                 session={session}
@@ -359,6 +402,11 @@ function SessionsOrEventsCard({
                 showClockIcon
               />
             ))}
+            <TimelineCountAndMore
+              visibleCount={displayedSessions.length}
+              totalCount={visibleSessions.length}
+              onLoadMore={onLoadMoreSessions}
+            />
           </div>
         )}
       </CardContent>
@@ -379,6 +427,8 @@ function TodayOrDayView({
   const viewMode = normalizeViewMode(searchParams.get('view'))
   const [day, setDay] = useState<ActivityDayViewData | null>(null)
   const [includeHiddenSessions, setIncludeHiddenSessions] = useState(false)
+  const [sessionVisibleCount, setSessionVisibleCount] = useState(TIMELINE_PAGE_SIZE)
+  const [eventVisibleCount, setEventVisibleCount] = useState(TIMELINE_PAGE_SIZE)
   const [error, setError] = useState<string>()
   const [isLoading, setIsLoading] = useState(true)
 
@@ -396,6 +446,8 @@ function TodayOrDayView({
       .then((nextDay) => {
         if (active) {
           setDay(nextDay)
+          setSessionVisibleCount(TIMELINE_PAGE_SIZE)
+          setEventVisibleCount(TIMELINE_PAGE_SIZE)
         }
       })
       .catch((cause) => {
@@ -413,6 +465,18 @@ function TodayOrDayView({
       active = false
     }
   }, [aiConfig, dateKey, settings, variant])
+
+  useEffect(() => {
+    if (viewMode === 'session') {
+      setSessionVisibleCount(TIMELINE_PAGE_SIZE)
+      return
+    }
+    setEventVisibleCount(TIMELINE_PAGE_SIZE)
+  }, [viewMode])
+
+  useEffect(() => {
+    setSessionVisibleCount(TIMELINE_PAGE_SIZE)
+  }, [includeHiddenSessions])
 
   const handleToggleSessionHidden = async (
     sessionId: string,
@@ -485,6 +549,12 @@ function TodayOrDayView({
               day={day}
               viewMode={viewMode}
               includeHidden={includeHiddenSessions}
+              sessionVisibleCount={sessionVisibleCount}
+              eventVisibleCount={eventVisibleCount}
+              onLoadMoreSessions={() =>
+                setSessionVisibleCount((current) => current + TIMELINE_PAGE_SIZE)
+              }
+              onLoadMoreEvents={() => setEventVisibleCount((current) => current + TIMELINE_PAGE_SIZE)}
               onToggleSessionHidden={handleToggleSessionHidden}
             />
             <OpenLoopsCard openLoops={day.openLoops} />
