@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from ai.openai_client import StructuredJsonResult
 from core.action_log_organizer import ActionLogOrganizer
 
 
@@ -20,6 +21,16 @@ def _processing_ollama():
         provider="ollama",
         base_url="http://127.0.0.1:11434",
         model="gemma4:e4b",
+        max_completion_tokens=400,
+    )
+
+
+def _processing_openai():
+    return SimpleNamespace(
+        enabled=True,
+        provider="openai",
+        base_url="http://127.0.0.1:11434",
+        model="gpt-5-nano",
         max_completion_tokens=400,
     )
 
@@ -144,3 +155,74 @@ async def test_organizer_logs_raw_response_when_json_parse_fails(tmp_path, monke
     assert "Action-log organizer LLM enrichment failed" in caplog.text
     assert '{"sessions":[{"sessionId":"broken","title":"unterminated"}' in caplog.text
     assert api_client.put_sessions_calls[0]["sessions"][0]["title"]
+
+
+@pytest.mark.asyncio
+async def test_organizer_logs_budget_exhaustion_and_fallback_count(
+    tmp_path, monkeypatch, caplog
+):
+    log_dir = tmp_path / "raw_events"
+    base_time = datetime(2026, 4, 17, 9, 0, tzinfo=JST)
+    events = [
+        _event(
+            f"raw_{index}",
+            base_time + timedelta(minutes=index * 10),
+            app_name=f"App{index}.exe",
+            window_title=f"Window {index}",
+            domain=f"example{index}.com",
+        )
+        for index in range(9)
+    ]
+    _write_spool(log_dir, "2026-04-17", events)
+    api_client = _FakeApiClient()
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=log_dir,
+        processing_config=_processing_openai(),
+        openai_api_key="test-key",
+    )
+    monotonic_values = [0.0, 0.0, 61.0]
+
+    def _fake_monotonic():
+        if monotonic_values:
+            return monotonic_values.pop(0)
+        return 61.0
+
+    async def _fake_request_openai_json_with_usage(**kwargs):
+        session_ids = []
+        for date_entry in kwargs["input_payload"].get("dateSessions", []):
+            for session in date_entry.get("sessions", []):
+                session_id = str(session.get("sessionId") or "").strip()
+                if session_id:
+                    session_ids.append(session_id)
+        return StructuredJsonResult(
+            output={
+                "sessions": [
+                    {
+                        "sessionId": session_id,
+                        "title": f"AI title {index + 1}",
+                        "primaryCategory": "その他",
+                        "activityKinds": ["active_window_changed"],
+                        "summary": f"AI summary {index + 1}",
+                        "searchKeywords": [f"kw-{index + 1}"],
+                        "openLoops": [],
+                    }
+                    for index, session_id in enumerate(session_ids)
+                ]
+            },
+            usage=None,
+        )
+
+    monkeypatch.setattr(
+        "core.action_log_organizer.request_openai_json_with_usage",
+        _fake_request_openai_json_with_usage,
+    )
+    monkeypatch.setattr("core.action_log_organizer.time.monotonic", _fake_monotonic)
+
+    with caplog.at_level("INFO"):
+        await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    assert "Action-log organizer OpenAI budget exhausted" in caplog.text
+    assert "fallback_count=1" in caplog.text
+    assert "budget_exhausted=True" in caplog.text
