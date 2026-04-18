@@ -1,13 +1,5 @@
 import { useMemo, useState } from 'react'
-import {
-  ChevronRight,
-  MessageCircle,
-  Play,
-  Plus,
-  Settings2,
-  Target,
-  Trophy,
-} from 'lucide-react'
+import { MessageCircle, Play, Plus, Settings2 } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 import {
@@ -33,7 +25,6 @@ export function HomeScreen() {
     skills,
     assistantMessages,
     meta,
-    settings,
     completeQuest,
     playAssistantMessage,
   } = useAppStore(
@@ -44,7 +35,6 @@ export function HomeScreen() {
       skills: state.skills,
       assistantMessages: state.assistantMessages,
       meta: state.meta,
-      settings: state.settings,
       completeQuest: state.completeQuest,
       playAssistantMessage: state.playAssistantMessage,
     })),
@@ -53,14 +43,12 @@ export function HomeScreen() {
 
   const levelInfo = useMemo(() => getLevelFromXp(user.totalXp, 100), [user.totalXp])
   const todayCompletions = useMemo(() => getTodayActiveCompletions(completions), [completions])
-
   const todayXp = todayCompletions.reduce(
     (sum, completion) => sum + completion.userXpAwarded,
     0,
   )
   const topSkills = skills.filter((skill) => skill.status === 'active').slice(0, 3)
   const recommendedQuests = getRecommendedQuests(quests, completions)
-
   const latestMessage = useMemo(
     () =>
       [...assistantMessages].sort(
@@ -88,7 +76,7 @@ export function HomeScreen() {
     return (
       <Screen
         title="ホーム"
-        subtitle="今日の進捗とクエストをまとめて確認できます。"
+        subtitle="今日の進捗と次の一手をここから確認できます。"
         action={
           <Button size="icon" onClick={() => navigate('/settings')}>
             <Settings2 className="h-5 w-5" />
@@ -112,25 +100,21 @@ export function HomeScreen() {
   return (
     <Screen
       title="ホーム"
-      subtitle="今日の進捗とクエストをまとめて確認できます。"
+      subtitle="今日やることと今日の記録をまとめて見られます。"
       action={
         <Button size="icon" onClick={() => navigate('/settings')}>
           <Settings2 className="h-5 w-5" />
         </Button>
       }
     >
-      <button
-        type="button"
-        aria-label="ステータス画面を開く"
-        className="w-full text-left"
-        onClick={() => navigate('/status')}
-      >
-        <Card className="overflow-hidden border-0 bg-slate-900 text-white shadow-xl shadow-slate-200 transition hover:shadow-2xl hover:shadow-slate-200/70">
+      <section>
+        <SectionHeader title="今日のサマリー" />
+        <Card className="overflow-hidden border-0 bg-slate-900 text-white shadow-xl shadow-slate-200">
           <CardContent className="p-5">
             <div className="mb-4 flex items-start justify-between gap-3">
               <div>
                 <div className="text-[11px] uppercase tracking-[0.22em] text-white/55">
-                  User Level
+                  Today
                 </div>
                 <div className="mt-2 text-4xl font-black tracking-tight">Lv.{levelInfo.level}</div>
                 <div className="mt-1 text-sm text-white/70">
@@ -138,67 +122,33 @@ export function HomeScreen() {
                 </div>
               </div>
               <div className="rounded-2xl bg-white/10 px-3 py-2 text-right">
-                <div className="text-[10px] text-white/55">Total XP</div>
-                <div className="text-xl font-semibold">{user.totalXp}</div>
+                <div className="text-[10px] text-white/55">Today XP</div>
+                <div className="text-xl font-semibold">
+                  {todayXp >= 0 ? '+' : ''}
+                  {todayXp}
+                </div>
               </div>
             </div>
             <Progress value={levelInfo.progress} className="h-2 bg-white/10" />
-            <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
-              <div className="rounded-2xl bg-white/10 px-2 py-3">
-                <div className="text-white/60">今日のXP</div>
-                <div className="mt-1 text-lg font-semibold">{todayXp >= 0 ? '+' : ''}{todayXp}</div>
-              </div>
-              <div className="rounded-2xl bg-white/10 px-2 py-3">
-                <div className="text-white/60">クリア回数</div>
+            <div className="mt-4 grid grid-cols-2 gap-2 text-center text-xs">
+              <button
+                type="button"
+                aria-label="今日のクリア回数を記録で見る"
+                className="rounded-2xl bg-white/10 px-2 py-3 text-left transition hover:bg-white/15"
+                onClick={() => navigate('/records/growth?range=today')}
+              >
+                <div className="text-white/60">今日のクリア</div>
                 <div className="mt-1 text-lg font-semibold">{todayCompletions.length}回</div>
-              </div>
+              </button>
               <div className="rounded-2xl bg-white/10 px-2 py-3">
-                <div className="text-white/60">音声</div>
-                <div className="mt-1 text-lg font-semibold">
-                  {settings.lilyAutoPlay === 'off' ? 'OFF' : 'ON'}
+                <div className="text-white/60">伸びているスキル</div>
+                <div className="mt-1 text-sm font-semibold">
+                  {topSkills[0]?.name ?? 'まだなし'}
                 </div>
               </div>
-            </div>
-            <div className="mt-4 flex items-center justify-end text-xs font-semibold text-violet-200">
-              ステータスを見る
             </div>
           </CardContent>
         </Card>
-      </button>
-
-      <section className="mt-5">
-        <SectionHeader title="今日のサマリー" />
-        <div className="grid grid-cols-3 gap-3">
-          <button
-            type="button"
-            aria-label="今日のクリア回数を記録で見る"
-            className="text-left transition"
-            onClick={() => navigate('/records/quests?range=today')}
-          >
-            <Card className="h-full hover:border-violet-200 hover:bg-violet-50/40">
-              <CardContent className="p-4">
-                <div className="text-xs text-slate-500">今日のクリア</div>
-                <div className="mt-1 text-xl font-black text-slate-900">
-                  {todayCompletions.length}回
-                </div>
-              </CardContent>
-            </Card>
-          </button>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-xs text-slate-500">獲得XP</div>
-              <div className="mt-1 text-xl font-black text-slate-900">+{todayXp}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="p-4">
-              <div className="text-xs text-slate-500">伸びているスキル</div>
-              <div className="mt-1 text-sm font-semibold text-slate-900">
-                {topSkills[0]?.name ?? 'まだなし'}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
       </section>
 
       {weeklyReflectionStatus.available && weeklyReflectionStatus.unread ? (
@@ -218,7 +168,7 @@ export function HomeScreen() {
                 size="sm"
                 className="whitespace-nowrap"
                 aria-label="先週のふりかえりを確認"
-                onClick={() => navigate('/weekly-reflection')}
+                onClick={() => navigate('/records/review/weekly')}
               >
                 確認
               </Button>
@@ -232,7 +182,11 @@ export function HomeScreen() {
         <Card className="border-violet-100 bg-white">
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <img src={`${import.meta.env.BASE_URL}lily/face.png`} alt="リリィ" className="h-13 w-13 shrink-0 rounded-2xl object-cover" />
+              <img
+                src={`${import.meta.env.BASE_URL}lily/face.png`}
+                alt="リリィ"
+                className="h-13 w-13 shrink-0 rounded-2xl object-cover"
+              />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
                   <div className="text-sm font-semibold text-slate-900">最新コメント</div>
@@ -274,12 +228,12 @@ export function HomeScreen() {
         </Card>
       </section>
 
-      <section className="mt-5">
+      <section className="mt-5 pb-6">
         <SectionHeader
           title="今日のクエスト"
           action={
-            <Button variant="ghost" size="sm" onClick={() => navigate('/quests')}>
-              すべて見る
+            <Button variant="ghost" size="sm" onClick={() => navigate('/records')}>
+              成長記録を見る
             </Button>
           }
         />
@@ -322,55 +276,6 @@ export function HomeScreen() {
             )
           })}
         </div>
-      </section>
-
-      <section className="mt-5">
-        <SectionHeader title="クイックアクション" />
-        <div className="grid grid-cols-3 gap-3">
-          <button
-            type="button"
-            className="rounded-2xl bg-violet-600 px-3 py-4 text-left text-white shadow-sm"
-            onClick={() => navigate('/quests/new')}
-          >
-            <Plus className="mb-3 h-5 w-5" />
-            <div className="text-sm font-semibold">クエスト追加</div>
-          </button>
-          <button
-            type="button"
-            className="rounded-2xl border border-slate-200 bg-white px-3 py-4 text-left text-slate-700 shadow-sm"
-            onClick={() => navigate('/skills')}
-          >
-            <Target className="mb-3 h-5 w-5" />
-            <div className="text-sm font-semibold">スキルを見る</div>
-          </button>
-          <button
-            type="button"
-            className="rounded-2xl border border-slate-200 bg-white px-3 py-4 text-left text-slate-700 shadow-sm"
-            onClick={() => navigate('/records')}
-          >
-            <Trophy className="mb-3 h-5 w-5" />
-            <div className="text-sm font-semibold">記録を見る</div>
-          </button>
-        </div>
-      </section>
-
-      <section className="mt-5 pb-6">
-        <Card>
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
-              <Trophy className="h-5 w-5" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-semibold text-slate-900">今日のハイライト</div>
-              <div className="mt-1 text-sm text-slate-600">
-                {topSkills.length > 0
-                  ? `${topSkills[0].name}が一番伸びています。この調子で積み上げていきましょう。`
-                  : 'クエストを進めると、今日のハイライトがここに表示されます。'}
-              </div>
-            </div>
-            <ChevronRight className="h-4 w-4 text-slate-400" />
-          </CardContent>
-        </Card>
       </section>
 
       {activeQuest ? (

@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { HashRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { ClearEffectScreen } from '@/screens/clear-effect-screen'
+import { GrowthScreen } from '@/screens/growth-screen'
 import { HomeScreen } from '@/screens/home-screen'
+import { BrowsingLogScreen, HealthLogScreen, NutritionLogScreen } from '@/screens/life-log-screens'
 import { LilyChatScreen } from '@/screens/lily-chat-screen'
 import { LoginScreen } from '@/screens/login-screen'
 import { MealAnalyzeScreen } from '@/screens/meal-analyze-screen'
@@ -9,14 +11,12 @@ import { MealConfirmScreen } from '@/screens/meal-confirm-screen'
 import { MealRegisterScreen } from '@/screens/meal-register-screen'
 import { QuestFormScreen } from '@/screens/quest-form-screen'
 import { QuestListScreen } from '@/screens/quest-list-screen'
+import { RecordsHubScreen } from '@/screens/records-hub-screen'
 import { RecordsScreen } from '@/screens/records-screen'
 import { SettingsScreen } from '@/screens/settings-screen'
-import { SkillsScreen } from '@/screens/skills-screen'
-import { StatusScreen } from '@/screens/status-screen'
 import { WeeklyReflectionScreen } from '@/screens/weekly-reflection-screen'
 import { ScrollToTopOnRouteChange } from '@/components/scroll-to-top-on-route-change'
 import { ActivityLogScreen } from '@/screens/activity-log-screen'
-import { getDefaultRecordsRoute, readLastRecordsRoute } from '@/lib/records-route-state'
 import { useAppStore } from '@/store/app-store'
 import { isLoggedIn } from '@/lib/auth'
 
@@ -53,17 +53,43 @@ function resolveLoginReturnTarget(hashValue: string): string {
   return normalizeLoginReturnTarget(returnTo)
 }
 
-function RecordsRouteHub() {
+function LegacyGrowthRecordsRedirect() {
   const location = useLocation()
   const target = useMemo(() => {
     const params = new URLSearchParams(location.search)
     const legacyRange = params.get('range') ?? params.get('filter')
 
     if (legacyRange === 'today' || legacyRange === 'week' || legacyRange === 'all') {
-      return `/records/quests?range=${legacyRange}`
+      return `/records/growth?range=${legacyRange}`
     }
 
-    return readLastRecordsRoute() || getDefaultRecordsRoute()
+    return '/records/growth'
+  }, [location.search])
+
+  return <Navigate to={target} replace />
+}
+
+function LegacyLifeBrowsingRedirect() {
+  const location = useLocation()
+  const target = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    const next = new URLSearchParams()
+    const period = params.get('period')
+    const date = params.get('date')
+
+    if (period === 'day' || period === 'week' || period === 'month' || period === 'all') {
+      next.set('period', period)
+    }
+
+    if (date) {
+      next.set('date', date)
+    }
+
+    if (!next.has('period')) {
+      next.set('period', 'day')
+    }
+
+    return `/records/life/browsing?${next.toString()}`
   }, [location.search])
 
   return <Navigate to={target} replace />
@@ -73,21 +99,28 @@ export function AppShellRoutes() {
   return (
     <Routes>
       <Route path="/" element={<HomeScreen />} />
-      <Route path="/status" element={<StatusScreen />} />
       <Route path="/quests" element={<QuestListScreen />} />
       <Route path="/quests/new" element={<QuestFormScreen />} />
-      <Route path="/skills" element={<SkillsScreen />} />
+      <Route path="/growth" element={<GrowthScreen />} />
       <Route path="/records" element={<Outlet />}>
-        <Route index element={<RecordsRouteHub />} />
-        <Route path="quests" element={<RecordsScreen />} />
+        <Route index element={<RecordsHubScreen />} />
+        <Route path="growth" element={<RecordsScreen />} />
         <Route path="activity/today" element={<ActivityLogScreen variant="today" />} />
         <Route path="activity/day/:dateKey" element={<ActivityLogScreen variant="day" />} />
         <Route path="activity/calendar" element={<ActivityLogScreen variant="calendar" />} />
         <Route path="activity/search" element={<ActivityLogScreen variant="search" />} />
+        <Route path="activity/browsing" element={<LegacyLifeBrowsingRedirect />} />
         <Route path="activity/review/year" element={<ActivityLogScreen variant="review-year" />} />
         <Route path="activity/review/week" element={<ActivityLogScreen variant="review-week" />} />
+        <Route path="life/nutrition" element={<NutritionLogScreen />} />
+        <Route path="life/health" element={<HealthLogScreen />} />
+        <Route path="life/browsing" element={<BrowsingLogScreen />} />
+        <Route path="review/weekly" element={<WeeklyReflectionScreen />} />
       </Route>
-      <Route path="/weekly-reflection" element={<WeeklyReflectionScreen />} />
+      <Route path="/status" element={<Navigate to="/growth" replace />} />
+      <Route path="/skills" element={<Navigate to="/growth" replace />} />
+      <Route path="/weekly-reflection" element={<Navigate to="/records/review/weekly" replace />} />
+      <Route path="/records/quests" element={<LegacyGrowthRecordsRedirect />} />
       <Route path="/lily" element={<LilyChatScreen />} />
       <Route path="/settings" element={<SettingsScreen />} />
       <Route path="/clear/:completionId" element={<ClearEffectScreen />} />

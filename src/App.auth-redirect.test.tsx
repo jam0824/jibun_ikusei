@@ -23,6 +23,10 @@ vi.mock('@/screens/home-screen', () => ({
   HomeScreen: () => <div>home</div>,
 }))
 
+vi.mock('@/screens/growth-screen', () => ({
+  GrowthScreen: () => <div>growth</div>,
+}))
+
 describe('App auth redirect', () => {
   beforeEach(() => {
     vi.clearAllMocks()
@@ -36,7 +40,7 @@ describe('App auth redirect', () => {
   })
 
   it('returns to the original deep link after login succeeds', async () => {
-    window.location.hash = '#/records/activity/search'
+    window.location.hash = '#/growth'
 
     render(<App />)
 
@@ -58,7 +62,7 @@ describe('App auth redirect', () => {
       await Promise.resolve()
     })
 
-    expect(window.location.hash).toBe('#/records/activity/search')
+    expect(window.location.hash).toBe('#/growth')
     expect(initializeMock).toHaveBeenCalled()
   })
 

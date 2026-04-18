@@ -1,12 +1,12 @@
 import { CalendarDays, Clock3, Search, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ActivityLogNav, RecordsSectionTabs } from '@/components/records-navigation'
 import type { ActivitySession, RawEvent } from '@/domain/action-log-types'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Switch } from '@/components/ui'
 import { formatDateTime } from '@/lib/date'
-import { writeLastRecordsRoute } from '@/lib/records-route-state'
+import { BrowsingTimeView } from '@/screens/browsing-time-view'
 import {
   buildCompactSessionBlocks,
   type CompactSessionBlock,
@@ -41,7 +41,7 @@ import {
 } from '@/lib/action-log-view'
 import { useAppStore } from '@/store/app-store'
 
-type ActivityLogVariant = 'today' | 'day' | 'calendar' | 'search' | 'review-year' | 'review-week'
+type ActivityLogVariant = 'today' | 'day' | 'calendar' | 'search' | 'browsing' | 'review-year' | 'review-week'
 
 type TimelinePageState<T> = {
   items: T[]
@@ -1434,14 +1434,22 @@ function SearchView() {
   )
 }
 
+function BrowsingView() {
+  return (
+    <Screen title="閲覧集計" subtitle="Web 閲覧時間を期間ごとに確認できます。">
+      <div className="space-y-4 pb-6">
+        <RecordsSectionTabs active="activity" />
+        <ActivityLogNav />
+        <h2 className="text-xl font-bold text-slate-900">閲覧集計</h2>
+        <BrowsingTimeView />
+      </div>
+    </Screen>
+  )
+}
+
 export function ActivityLogScreen({ variant }: { variant: ActivityLogVariant }) {
   const params = useParams()
   const [searchParams] = useSearchParams()
-  const location = useLocation()
-
-  useEffect(() => {
-    writeLastRecordsRoute(location.pathname, location.search)
-  }, [location.pathname, location.search])
 
   if (variant === 'today') {
     return <TodayOrDayView variant="today" dateKey={getTodayDateKeyJst()} />
@@ -1457,6 +1465,10 @@ export function ActivityLogScreen({ variant }: { variant: ActivityLogVariant }) 
 
   if (variant === 'search') {
     return <SearchView />
+  }
+
+  if (variant === 'browsing') {
+    return <BrowsingView />
   }
 
   if (variant === 'review-year') {

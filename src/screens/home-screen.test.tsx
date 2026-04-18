@@ -119,14 +119,27 @@ describe('home screen records navigation', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '今日のクリア回数を記録で見る' }))
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/records/quests?range=today')
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/growth?range=today')
   })
 
   it('opens the records hub from the quick action button', () => {
     renderHome()
 
-    fireEvent.click(screen.getByRole('button', { name: '記録を見る' }))
+    fireEvent.click(screen.getByRole('button', { name: '成長記録を見る' }))
 
     expect(screen.getByTestId('location')).toHaveTextContent('/records')
+  })
+
+  it('does not expose the old status entry point from the home screen', () => {
+    renderHome()
+
+    expect(screen.queryByRole('button', { name: 'ステータス画面を開く' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'スキルを見る' })).not.toBeInTheDocument()
+  })
+
+  it('does not show the voice setting tile in today summary', () => {
+    renderHome()
+
+    expect(screen.queryByText('音声')).not.toBeInTheDocument()
   })
 })

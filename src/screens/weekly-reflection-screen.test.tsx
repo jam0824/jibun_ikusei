@@ -39,10 +39,11 @@ function resetStore(partial: Partial<PersistedAppState>) {
 
 function renderWeeklyReflection() {
   return render(
-    <MemoryRouter initialEntries={['/weekly-reflection']}>
+    <MemoryRouter initialEntries={['/records/review/weekly']}>
       <LocationDisplay />
       <Routes>
-        <Route path="/weekly-reflection" element={<WeeklyReflectionScreen />} />
+        <Route path="/records/review/weekly" element={<WeeklyReflectionScreen />} />
+        <Route path="/records/growth" element={<div>growth route</div>} />
       </Routes>
     </MemoryRouter>,
   )
@@ -259,6 +260,6 @@ describe('weekly reflection screen', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '記録' }))
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/records/quests?range=week')
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/growth?range=week')
   })
 })

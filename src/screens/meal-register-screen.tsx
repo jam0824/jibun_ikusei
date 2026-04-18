@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronRight, ListTodo, Utensils } from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { Screen } from '@/components/layout'
@@ -35,8 +35,26 @@ export function MealRegisterScreen() {
   )
 
   useEffect(() => {
-    setIsLoading(true)
-    fetchNutrition(date).finally(() => setIsLoading(false))
+    let cancelled = false
+
+    queueMicrotask(() => {
+      if (cancelled) {
+        return
+      }
+
+      setIsLoading(true)
+      fetchNutrition(date)
+        .catch(() => undefined)
+        .finally(() => {
+          if (!cancelled) {
+            setIsLoading(false)
+          }
+        })
+    })
+
+    return () => {
+      cancelled = true
+    }
   }, [date, fetchNutrition])
 
   const dayData = nutritionCache[date]
@@ -47,25 +65,6 @@ export function MealRegisterScreen() {
 
   return (
     <Screen title="食事登録" subtitle="栄養素を記録する">
-      {/* タブバー */}
-      <div className="mb-4 flex gap-1 rounded-2xl border border-slate-200 bg-slate-100 p-1">
-        <button
-          type="button"
-          onClick={() => navigate('/quests/new')}
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition text-slate-500 hover:text-slate-700"
-        >
-          <ListTodo className="h-3.5 w-3.5" />
-          クエスト追加
-        </button>
-        <button
-          type="button"
-          className="flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition bg-white text-slate-900 shadow-sm"
-        >
-          <Utensils className="h-3.5 w-3.5" />
-          食事登録
-        </button>
-      </div>
-
       {/* 日付選択 */}
       <div className="mb-5">
         <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">登録日</div>

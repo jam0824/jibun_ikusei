@@ -1,13 +1,15 @@
 import { type ReactNode, useEffect, useMemo, useState } from 'react'
-import { Globe, Heart, Settings2, Sparkles, Utensils } from 'lucide-react'
+import { Globe, Heart, Merge, Settings2, Sparkles, Utensils } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { QuestCompleteModal } from '@/components/quest-complete-modal'
 import { QuestCard } from '@/components/quest-card'
+import { SkillDetailSheet } from '@/components/skill-detail-sheet'
 import { Screen, SectionHeader } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Progress } from '@/components/ui'
-import { getQuestAvailability, getStatusView, getWeeklyReflectionStatus } from '@/domain/logic'
+import { getQuestAvailability, getSevenDaySkillGain, getStatusView, getWeeklyReflectionStatus } from '@/domain/logic'
 import { resolveDayNutrition } from '@/domain/nutrition-logic'
+import type { Skill } from '@/domain/types'
 import type { BrowsingTimeData, FitbitSummary, NutritionDayResult } from '@/lib/api-client'
 import { getBrowsingTimes } from '@/lib/api-client'
 import { formatDateTime, getDayKey } from '@/lib/date'
@@ -102,7 +104,7 @@ function SupplementCard({
   )
 }
 
-export function StatusScreen() {
+export function GrowthScreen() {
   const navigate = useNavigate()
   const todayKey = useMemo(() => getDayKey(new Date()), [])
   const {
@@ -130,7 +132,13 @@ export function StatusScreen() {
   )
 
   const state = useAppStore()
+  const [activeSkill, setActiveSkill] = useState<Skill>()
+  const [mergeError, setMergeError] = useState<string>()
   const statusView = useMemo(() => getStatusView(state), [state])
+  const activeSkills = useMemo(
+    () => state.skills.filter((skill) => skill.status === 'active'),
+    [state.skills],
+  )
   const weeklyReflectionStatus = useMemo(
     () => getWeeklyReflectionStatus({ quests, completions, skills, meta }),
     [completions, meta, quests, skills],
@@ -154,48 +162,54 @@ export function StatusScreen() {
   useEffect(() => {
     let cancelled = false
 
-    setNutritionState({ loading: true, error: false })
-    fetchNutrition(todayKey)
-      .then((data) => {
-        if (!cancelled) {
-          setNutritionState({ loading: false, error: false, data })
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setNutritionState({ loading: false, error: true })
-        }
-      })
+    queueMicrotask(() => {
+      if (cancelled) {
+        return
+      }
 
-    setHealthState({ loading: true, error: false })
-    fetchFitbit(todayKey)
-      .then((data) => {
-        if (!cancelled) {
-          setHealthState({ loading: false, error: false, data })
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setHealthState({ loading: false, error: true })
-        }
-      })
+      setNutritionState({ loading: true, error: false })
+      fetchNutrition(todayKey)
+        .then((data) => {
+          if (!cancelled) {
+            setNutritionState({ loading: false, error: false, data })
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setNutritionState({ loading: false, error: true })
+          }
+        })
 
-    setBrowsingState({ loading: true, error: false })
-    getBrowsingTimes(todayKey, todayKey)
-      .then((data) => {
-        if (!cancelled) {
-          setBrowsingState({
-            loading: false,
-            error: false,
-            data: summarizeBrowsing(data),
-          })
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setBrowsingState({ loading: false, error: true })
-        }
-      })
+      setHealthState({ loading: true, error: false })
+      fetchFitbit(todayKey)
+        .then((data) => {
+          if (!cancelled) {
+            setHealthState({ loading: false, error: false, data })
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setHealthState({ loading: false, error: true })
+          }
+        })
+
+      setBrowsingState({ loading: true, error: false })
+      getBrowsingTimes(todayKey, todayKey)
+        .then((data) => {
+          if (!cancelled) {
+            setBrowsingState({
+              loading: false,
+              error: false,
+              data: summarizeBrowsing(data),
+            })
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setBrowsingState({ loading: false, error: true })
+          }
+        })
+    })
 
     return () => {
       cancelled = true
@@ -256,8 +270,8 @@ export function StatusScreen() {
 
   return (
     <Screen
-      title="ステータス"
-      subtitle="今の自分の流れを一覧で確認できます。"
+      title="成長"
+      subtitle="今の伸び方と次の一手をまとめて確認できます。"
       action={
         <Button size="icon" onClick={() => navigate('/settings')}>
           <Settings2 className="h-5 w-5" />
@@ -353,6 +367,73 @@ export function StatusScreen() {
       </section>
 
       <section className="mt-5">
+        <SectionHeader title="スキル一覧" />
+        {activeSkills.length === 0 ? (
+          <Card>
+            <CardContent className="p-4 text-sm text-slate-500">
+              まだスキルが育っていません。クエストを進めるとここに表示されます。
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            {activeSkills.map((skill) => {
+              const progress = (skill.totalXp % 50) * 2
+              const weekGain = getSevenDaySkillGain(state, skill.id)
+
+              return (
+                <button
+                  key={skill.id}
+                  type="button"
+                  onClick={() => setActiveSkill(skill)}
+                  className="text-left"
+                >
+                  <Card className="h-full">
+                    <CardContent className="p-4">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-slate-900">{skill.name}</div>
+                          <div className="text-xs text-slate-500">{skill.category}</div>
+                        </div>
+                        <Badge>Lv.{skill.level}</Badge>
+                      </div>
+                      <Progress value={progress} />
+                      <div className="mt-3 flex items-center justify-between text-xs text-slate-500">
+                        <span>{skill.totalXp}XP</span>
+                        <span>直近7日 +{weekGain}XP</span>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </section>
+
+      {mergeError ? (
+        <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {mergeError}
+        </div>
+      ) : null}
+
+      <section className="mt-5">
+        <Card className="border-violet-100 bg-violet-50">
+          <CardContent className="flex items-start gap-3 p-4">
+            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-100 text-violet-700">
+              <Sparkles className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-semibold text-violet-950">スキル統合</div>
+              <div className="mt-1 text-sm text-violet-800">
+                似たスキルが増えてきたら統合できます。完了ログや辞書の参照先もまとめて引き継ぎます。
+              </div>
+            </div>
+            <Merge className="h-5 w-5 text-violet-600" />
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="mt-5">
         <SectionHeader title="今日のコンディション" />
         <div className="grid grid-cols-2 gap-3">
           <Card>
@@ -432,7 +513,7 @@ export function StatusScreen() {
                   良かった流れを見直して、次の一手を整えよう。
                 </div>
               </div>
-              <Button size="sm" onClick={() => navigate('/weekly-reflection')}>
+              <Button size="sm" onClick={() => navigate('/records/review/weekly')}>
                 確認
               </Button>
             </CardContent>
@@ -485,6 +566,23 @@ export function StatusScreen() {
         )}
       </section>
 
+      {activeSkill ? (
+        <SkillDetailSheet
+          skill={activeSkill}
+          state={state}
+          onClose={() => setActiveSkill(undefined)}
+          onMerge={(targetSkillId) => {
+            const result = useAppStore.getState().mergeSkills(activeSkill.id, targetSkillId)
+            if (!result.ok) {
+              setMergeError(result.reason)
+              return
+            }
+            setMergeError(undefined)
+            setActiveSkill(undefined)
+          }}
+        />
+      ) : null}
+
       {activeQuest ? (
         <QuestCompleteModal
           quest={activeQuest}
@@ -504,3 +602,5 @@ export function StatusScreen() {
     </Screen>
   )
 }
+
+export const StatusScreen = GrowthScreen

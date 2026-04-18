@@ -76,7 +76,6 @@ function renderQuestForm(initialEntry = '/quests/new') {
       <Routes>
         <Route path="/quests/new" element={<QuestFormScreen />} />
         <Route path="/quests" element={<div>quest list</div>} />
-        <Route path="/meal" element={<div>meal</div>} />
       </Routes>
     </MemoryRouter>,
   )
@@ -85,6 +84,12 @@ function renderQuestForm(initialEntry = '/quests/new') {
 describe('quest form daily setting', () => {
   beforeEach(() => {
     resetStore({})
+  })
+
+  it('does not render the old meal-register tab switcher on the quest form', () => {
+    renderQuestForm()
+
+    expect(screen.queryByRole('button', { name: '食事登録' })).not.toBeInTheDocument()
   })
 
   it('shows the daily setting only for repeatable quests', () => {

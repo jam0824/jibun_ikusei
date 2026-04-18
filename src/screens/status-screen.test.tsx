@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen } from '@testing-library/react'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import { act, render, screen } from '@testing-library/react'
+import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { hydratePersistedState } from '@/domain/logic'
 import type {
   NutrientEntry,
@@ -11,8 +11,7 @@ import type {
   QuestCompletion,
   Skill,
 } from '@/domain/types'
-import { HomeScreen } from '@/screens/home-screen'
-import { StatusScreen } from '@/screens/status-screen'
+import { GrowthScreen } from '@/screens/growth-screen'
 import { useAppStore } from '@/store/app-store'
 import * as api from '@/lib/api-client'
 
@@ -163,34 +162,17 @@ function resetStore(partial: Partial<PersistedAppState>) {
   }))
 }
 
-function LocationDisplay() {
-  const location = useLocation()
-  return <div data-testid="location">{`${location.pathname}${location.search}`}</div>
-}
-
-function renderHomeWithStatus() {
+function renderGrowth() {
   return render(
-    <MemoryRouter initialEntries={['/']}>
-      <LocationDisplay />
+    <MemoryRouter initialEntries={['/growth']}>
       <Routes>
-        <Route path="/" element={<HomeScreen />} />
-        <Route path="/status" element={<StatusScreen />} />
+        <Route path="/growth" element={<GrowthScreen />} />
       </Routes>
     </MemoryRouter>,
   )
 }
 
-function renderStatus() {
-  return render(
-    <MemoryRouter initialEntries={['/status']}>
-      <Routes>
-        <Route path="/status" element={<StatusScreen />} />
-      </Routes>
-    </MemoryRouter>,
-  )
-}
-
-describe('status screen', () => {
+describe('growth screen', () => {
   beforeEach(() => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-04-12T12:00:00+09:00'))
@@ -209,27 +191,7 @@ describe('status screen', () => {
     vi.restoreAllMocks()
   })
 
-  it('navigates to the status screen when the home level card is clicked', async () => {
-    resetStore({
-      quests: [createQuest('quest_read', '読書する', '学習', { fixedSkillId: 'skill_reading' })],
-      skills: [createSkill('skill_reading', '読書', '学習')],
-      completions: [
-        createCompletion('completion_read', 'quest_read', 'skill_reading', '2026-04-12T08:00:00+09:00', 5),
-      ],
-    })
-
-    renderHomeWithStatus()
-
-    fireEvent.click(screen.getByRole('button', { name: 'ステータス画面を開く' }))
-
-    await act(async () => {
-      await vi.runAllTimersAsync()
-    })
-
-    expect(screen.getByTestId('location')).toHaveTextContent('/status')
-  })
-
-  it('renders the status summary, recent growth, and at most three recommended quests', async () => {
+  it('renders the growth summary, skill list, and at most three recommended quests', async () => {
     resetStore({
       quests: [
         createQuest('quest_read', '読書する', '学習', { fixedSkillId: 'skill_reading', pinned: true, xpReward: 20 }),
@@ -270,14 +232,18 @@ describe('status screen', () => {
       ],
     })
 
-    renderStatus()
+    renderGrowth()
     await act(async () => {
       await vi.runAllTimersAsync()
     })
 
+    expect(screen.getByText('今の伸び方と次の一手をまとめて確認できます。')).toBeInTheDocument()
     expect(screen.getByText('知識 × 実務型')).toBeInTheDocument()
     expect(screen.getByText('知識と実務がいい流れで伸びています。')).toBeInTheDocument()
     expect(screen.getByText('最近の伸び')).toBeInTheDocument()
+    expect(screen.getByText('スキル一覧')).toBeInTheDocument()
+    expect(screen.getAllByText('読書').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('調査').length).toBeGreaterThan(0)
     expect(screen.getByText('その他の成長')).toBeInTheDocument()
     expect(screen.getByText('次の一手')).toBeInTheDocument()
     expect(screen.getByText('読書する')).toBeInTheDocument()
@@ -351,7 +317,7 @@ describe('status screen', () => {
       ],
     })
 
-    renderStatus()
+    renderGrowth()
     await act(async () => {
       await vi.runAllTimersAsync()
     })
@@ -388,7 +354,7 @@ describe('status screen', () => {
       ],
     })
 
-    renderStatus()
+    renderGrowth()
     await act(async () => {
       await vi.runAllTimersAsync()
     })

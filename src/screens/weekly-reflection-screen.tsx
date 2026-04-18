@@ -97,7 +97,7 @@ export function WeeklyReflectionScreen() {
         title="週次ふりかえり"
         subtitle="先週の流れをまとめています。"
         action={
-          <RecordsActionButton onClick={() => navigate('/records/quests?range=week')} />
+          <RecordsActionButton onClick={() => navigate('/records/growth?range=week')} />
         }
       >
         <Card>
@@ -115,7 +115,7 @@ export function WeeklyReflectionScreen() {
         title="週次ふりかえり"
         subtitle="先週の流れをまとめます。"
         action={
-          <RecordsActionButton onClick={() => navigate('/records/quests?range=week')} />
+          <RecordsActionButton onClick={() => navigate('/records/growth?range=week')} />
         }
       >
         <Card>
@@ -132,7 +132,7 @@ export function WeeklyReflectionScreen() {
       title="週次ふりかえり"
       subtitle="先週の良かった流れを見つけて、来週を少しだけ整えます。"
       action={
-        <RecordsActionButton onClick={() => navigate('/records/quests?range=week')} />
+        <RecordsActionButton onClick={() => navigate('/records/growth?range=week')} />
       }
     >
       <Card>
