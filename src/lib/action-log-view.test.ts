@@ -30,6 +30,7 @@ vi.mock('@/lib/ai', () => ({
 import * as api from '@/lib/api-client'
 import * as ai from '@/lib/ai'
 import {
+  buildCompactSessionBlocks,
   canDeleteActionLogRange,
   ensurePreviousDayDailyActivityLog,
   ensurePreviousWeekReviewForWeb,
@@ -259,6 +260,139 @@ describe('action log view orchestration', () => {
 
     expect(result.sessions.map((session) => session.id)).toEqual(['session_new', 'session_old'])
     expect(result.rawEvents.map((event) => event.id)).toEqual(['event_new', 'event_old'])
+  })
+
+  it('compacts short alternating YouTube and Codex sessions into two blocks', async () => {
+    const blocks = buildCompactSessionBlocks([
+      createSession('youtube_1', {
+        startedAt: '2026-04-16T14:19:00+09:00',
+        endedAt: '2026-04-16T14:19:20+09:00',
+        title: 'YouTube page',
+        summary: undefined,
+        primaryCategory: '娯楽',
+        activityKinds: ['視聴'],
+        appNames: ['chrome.exe'],
+        domains: ['youtube.com'],
+      }),
+      createSession('codex_1', {
+        startedAt: '2026-04-16T14:18:40+09:00',
+        endedAt: '2026-04-16T14:18:55+09:00',
+        title: 'Codex task',
+        summary: undefined,
+        primaryCategory: '仕事',
+        activityKinds: ['開発'],
+        appNames: ['Codex.exe'],
+        domains: [],
+      }),
+      createSession('youtube_2', {
+        startedAt: '2026-04-16T14:18:10+09:00',
+        endedAt: '2026-04-16T14:18:30+09:00',
+        title: 'Ancient Egypt video',
+        summary: undefined,
+        primaryCategory: '娯楽',
+        activityKinds: ['視聴'],
+        appNames: ['chrome.exe'],
+        domains: ['youtube.com'],
+      }),
+      createSession('codex_2', {
+        startedAt: '2026-04-16T14:17:50+09:00',
+        endedAt: '2026-04-16T14:18:00+09:00',
+        title: 'Codex note',
+        summary: undefined,
+        primaryCategory: '仕事',
+        activityKinds: ['開発'],
+        appNames: ['Codex.exe'],
+        domains: [],
+      }),
+    ])
+
+    expect(blocks).toHaveLength(2)
+    expect(blocks.map((block) => block.kind)).toEqual(['compact', 'compact'])
+    expect(blocks.map((block) => block.primaryText)).toEqual(['YouTubeで動画を視聴', 'Codexでコード作業'])
+    expect(blocks[0]).toMatchObject({
+      sessionIds: ['youtube_1', 'youtube_2'],
+      sessionCount: 2,
+      startedAt: '2026-04-16T14:18:10+09:00',
+      endedAt: '2026-04-16T14:19:20+09:00',
+    })
+    expect(blocks[1]).toMatchObject({
+      sessionIds: ['codex_1', 'codex_2'],
+      sessionCount: 2,
+      startedAt: '2026-04-16T14:17:50+09:00',
+      endedAt: '2026-04-16T14:18:55+09:00',
+    })
+  })
+
+  it('keeps a different domain as a single block inside the same burst', async () => {
+    const blocks = buildCompactSessionBlocks([
+      createSession('youtube_1', {
+        startedAt: '2026-04-16T14:19:00+09:00',
+        endedAt: '2026-04-16T14:19:15+09:00',
+        title: 'YouTube page',
+        summary: undefined,
+        activityKinds: ['視聴'],
+        appNames: ['chrome.exe'],
+        domains: ['youtube.com'],
+      }),
+      createSession('github_1', {
+        startedAt: '2026-04-16T14:18:40+09:00',
+        endedAt: '2026-04-16T14:18:55+09:00',
+        title: 'PR page',
+        summary: undefined,
+        activityKinds: ['調査'],
+        appNames: ['chrome.exe'],
+        domains: ['github.com'],
+      }),
+      createSession('youtube_2', {
+        startedAt: '2026-04-16T14:18:10+09:00',
+        endedAt: '2026-04-16T14:18:25+09:00',
+        title: 'YouTube video',
+        summary: undefined,
+        activityKinds: ['視聴'],
+        appNames: ['chrome.exe'],
+        domains: ['youtube.com'],
+      }),
+    ])
+
+    expect(blocks).toHaveLength(2)
+    expect(blocks.map((block) => block.kind)).toEqual(['compact', 'single'])
+    expect(blocks[0].primaryText).toBe('YouTubeで動画を視聴')
+    expect(blocks[1].representativeSession.id).toBe('github_1')
+  })
+
+  it('does not compact sessions when the gap exceeds five minutes', async () => {
+    const blocks = buildCompactSessionBlocks([
+      createSession('codex_1', {
+        startedAt: '2026-04-16T14:19:00+09:00',
+        endedAt: '2026-04-16T14:19:20+09:00',
+        title: 'Codex task 1',
+        summary: undefined,
+        activityKinds: ['開発'],
+        appNames: ['Codex.exe'],
+        domains: [],
+      }),
+      createSession('codex_2', {
+        startedAt: '2026-04-16T14:12:00+09:00',
+        endedAt: '2026-04-16T14:12:20+09:00',
+        title: 'Codex task 2',
+        summary: undefined,
+        activityKinds: ['開発'],
+        appNames: ['Codex.exe'],
+        domains: [],
+      }),
+      createSession('codex_3', {
+        startedAt: '2026-04-16T14:05:00+09:00',
+        endedAt: '2026-04-16T14:05:20+09:00',
+        title: 'Codex task 3',
+        summary: undefined,
+        activityKinds: ['開発'],
+        appNames: ['Codex.exe'],
+        domains: [],
+      }),
+    ])
+
+    expect(blocks).toHaveLength(3)
+    expect(blocks.every((block) => block.kind === 'single')).toBe(true)
   })
 
   it('shows only open open loops in day views and daily log generation input', async () => {

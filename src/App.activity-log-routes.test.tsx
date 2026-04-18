@@ -190,7 +190,7 @@ function createSessionBatch(
 ) {
   return Array.from({ length: total }, (_, index) => {
     const sequence = (options?.startIndex ?? 0) + index
-    const totalMinutes = 23 * 60 + 59 - sequence
+    const totalMinutes = 23 * 60 + 59 - sequence * 10
     const startedHour = String(Math.floor(totalMinutes / 60)).padStart(2, '0')
     const startedMinute = String(totalMinutes % 60).padStart(2, '0')
     const sessionNumber = String(sequence + 1).padStart(3, '0')
@@ -203,6 +203,71 @@ function createSessionBatch(
       ...options?.overrides,
     })
   })
+}
+
+function createCompactableSessionBurst() {
+  return [
+    createSession('youtube_1', {
+      startedAt: '2026-04-17T14:19:00+09:00',
+      endedAt: '2026-04-17T14:19:15+09:00',
+      title: 'YouTube page 1',
+      summary: undefined,
+      primaryCategory: '娯楽',
+      activityKinds: ['視聴'],
+      appNames: ['chrome.exe'],
+      domains: ['youtube.com'],
+    }),
+    createSession('codex_1', {
+      startedAt: '2026-04-17T14:18:45+09:00',
+      endedAt: '2026-04-17T14:18:58+09:00',
+      title: 'Codex work 1',
+      summary: undefined,
+      primaryCategory: '仕事',
+      activityKinds: ['開発'],
+      appNames: ['Codex.exe'],
+      domains: [],
+    }),
+    createSession('youtube_2', {
+      startedAt: '2026-04-17T14:18:20+09:00',
+      endedAt: '2026-04-17T14:18:35+09:00',
+      title: 'YouTube page 2',
+      summary: undefined,
+      primaryCategory: '娯楽',
+      activityKinds: ['視聴'],
+      appNames: ['chrome.exe'],
+      domains: ['youtube.com'],
+    }),
+    createSession('codex_2', {
+      startedAt: '2026-04-17T14:18:00+09:00',
+      endedAt: '2026-04-17T14:18:10+09:00',
+      title: 'Codex work 2',
+      summary: undefined,
+      primaryCategory: '仕事',
+      activityKinds: ['開発'],
+      appNames: ['Codex.exe'],
+      domains: [],
+    }),
+    createSession('youtube_3', {
+      startedAt: '2026-04-17T14:17:35+09:00',
+      endedAt: '2026-04-17T14:17:50+09:00',
+      title: 'YouTube page 3',
+      summary: undefined,
+      primaryCategory: '娯楽',
+      activityKinds: ['視聴'],
+      appNames: ['chrome.exe'],
+      domains: ['youtube.com'],
+    }),
+    createSession('codex_3', {
+      startedAt: '2026-04-17T14:17:10+09:00',
+      endedAt: '2026-04-17T14:17:25+09:00',
+      title: 'Codex work 3',
+      summary: undefined,
+      primaryCategory: '仕事',
+      activityKinds: ['開発'],
+      appNames: ['Codex.exe'],
+      domains: [],
+    }),
+  ]
 }
 
 function createRawEventBatch(total: number, startIndex = 0) {
@@ -377,6 +442,19 @@ describe('activity log routes', () => {
     expect(within(targetRow).getByText('対象日: 2026-04-17')).toBeInTheDocument()
     expect(within(targetRow).getByRole('button', { name: 'session' })).toBeInTheDocument()
     expect(within(targetRow).getByRole('button', { name: 'event' })).toBeInTheDocument()
+  })
+
+  it('compacts short alternating YouTube and Codex sessions into two cards on day views', async () => {
+    vi.mocked(api.getActionLogSessions).mockResolvedValue(createCompactableSessionBurst())
+
+    renderApp('/records/activity/day/2026-04-17')
+    await settleApp()
+
+    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(2)
+    expect(screen.getByText('YouTubeで動画を視聴')).toBeInTheDocument()
+    expect(screen.getByText('Codexでコード作業')).toBeInTheDocument()
+    expect(screen.getAllByText('3件')).toHaveLength(2)
+    expect(screen.getByText('表示中: 2 / 2件')).toBeInTheDocument()
   })
 
   it('does not render hide buttons on today session cards', async () => {

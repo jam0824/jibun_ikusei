@@ -54,6 +54,19 @@ export interface ActivitySearchResult {
   openLoops: OpenLoop[]
 }
 
+export interface CompactSessionBlock {
+  id: string
+  kind: 'single' | 'compact'
+  startedAt: string
+  endedAt: string
+  sessionIds: string[]
+  sessionCount: number
+  representativeSession: ActivitySession
+  primaryText: string
+  secondaryText: string
+  metaText: string
+}
+
 export interface ActivitySearchParams {
   from: string
   to: string
@@ -290,6 +303,254 @@ function sortRawEventsNewestFirst(rawEvents: RawEvent[]) {
 
 function sortOpenLoopsNewestFirst(openLoops: OpenLoop[]) {
   return [...openLoops].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
+}
+
+const SESSION_COMPACT_ADJACENT_GAP_MS = 60 * 1000
+const SESSION_COMPACT_BURST_SPAN_MS = 3 * 60 * 1000
+
+function normalizeExecutableName(appName: string | undefined) {
+  const base = (appName ?? '').trim().replace(/\.exe$/i, '')
+  const lower = base.toLowerCase()
+  if (!lower) {
+    return ''
+  }
+  if (lower === 'youtube') return 'YouTube'
+  if (lower === 'github') return 'GitHub'
+  if (lower === 'codex') return 'Codex'
+  if (lower === 'chrome') return 'Chrome'
+  if (lower === 'code') return 'Code'
+  return base.charAt(0).toUpperCase() + base.slice(1)
+}
+
+function normalizeDomainLabel(domain: string | undefined) {
+  const normalized = (domain ?? '').trim().toLowerCase()
+  if (!normalized) {
+    return ''
+  }
+  if (normalized === 'youtube.com' || normalized.endsWith('.youtube.com')) {
+    return 'YouTube'
+  }
+  if (normalized === 'github.com' || normalized.endsWith('.github.com')) {
+    return 'GitHub'
+  }
+  return normalized
+}
+
+function buildSingleBlockPrimaryText(session: ActivitySession) {
+  return session.summary?.trim() || session.title
+}
+
+function buildSingleBlockSecondaryText(session: ActivitySession) {
+  if (session.summary?.trim()) {
+    return session.title
+  }
+
+  return [session.primaryCategory, session.appNames.join(', '), session.domains.join(', ')]
+    .filter(Boolean)
+    .join(' / ')
+}
+
+function buildSingleBlockMetaText(session: ActivitySession) {
+  if (!session.summary?.trim()) {
+    return ''
+  }
+
+  return [session.primaryCategory, session.appNames.join(', ')].filter(Boolean).join(' / ')
+}
+
+function getCompactCanonicalKey(session: ActivitySession) {
+  const firstDomain = session.domains[0]?.trim().toLowerCase()
+  if (firstDomain) {
+    return `domain:${firstDomain}`
+  }
+  const firstApp = session.appNames[0]?.trim().toLowerCase()
+  if (firstApp) {
+    return `app:${firstApp}`
+  }
+  return `session:${session.id}`
+}
+
+function getCompactGroupKind(session: ActivitySession) {
+  return session.domains[0]?.trim() ? 'domain' : 'app'
+}
+
+function getCompactDisplayLabel(session: ActivitySession) {
+  const domainLabel = normalizeDomainLabel(session.domains[0])
+  if (domainLabel) {
+    return domainLabel
+  }
+  return normalizeExecutableName(session.appNames[0]) || '作業'
+}
+
+function getCompactActivityLabel(
+  session: ActivitySession,
+  groupKind: 'domain' | 'app',
+  label: string,
+) {
+  const rawKind = session.activityKinds[0]?.trim() ?? ''
+  if (label === 'YouTube') {
+    return '動画を視聴'
+  }
+  if (groupKind === 'app') {
+    if (rawKind === '開発') {
+      return 'コード作業'
+    }
+    return rawKind || '作業'
+  }
+  if (rawKind === '視聴') {
+    return '動画を視聴'
+  }
+  return rawKind || '閲覧'
+}
+
+function buildCompactPrimaryText(
+  session: ActivitySession,
+  groupKind: 'domain' | 'app',
+) {
+  const label = getCompactDisplayLabel(session)
+  const activityLabel = getCompactActivityLabel(session, groupKind, label)
+  if (groupKind === 'domain' && activityLabel === '閲覧') {
+    return `${label}を閲覧`
+  }
+  return `${label}で${activityLabel}`
+}
+
+function buildCompactSecondaryText(session: ActivitySession, primaryText: string) {
+  const title = session.title.trim()
+  if (title && title !== primaryText) {
+    return title
+  }
+  const summary = session.summary?.trim() ?? ''
+  if (summary && summary !== primaryText) {
+    return summary
+  }
+  return ''
+}
+
+function buildCompactMetaText(session: ActivitySession, groupKind: 'domain' | 'app') {
+  const source =
+    groupKind === 'domain'
+      ? normalizeExecutableName(session.appNames[0]) || getCompactDisplayLabel(session)
+      : getCompactDisplayLabel(session)
+  return [session.primaryCategory, source].filter(Boolean).join(' / ')
+}
+
+function selectRepresentativeSession(sessions: ActivitySession[]) {
+  return [...sessions].sort((left, right) => {
+    const leftLength = Math.max(left.summary?.trim().length ?? 0, left.title.trim().length)
+    const rightLength = Math.max(right.summary?.trim().length ?? 0, right.title.trim().length)
+    return (
+      rightLength - leftLength ||
+      right.endedAt.localeCompare(left.endedAt) ||
+      right.startedAt.localeCompare(left.startedAt)
+    )
+  })[0]
+}
+
+function buildSingleCompactBlock(session: ActivitySession): CompactSessionBlock {
+  return {
+    id: session.id,
+    kind: 'single',
+    startedAt: session.startedAt,
+    endedAt: session.endedAt,
+    sessionIds: [session.id],
+    sessionCount: 1,
+    representativeSession: session,
+    primaryText: buildSingleBlockPrimaryText(session),
+    secondaryText: buildSingleBlockSecondaryText(session),
+    metaText: buildSingleBlockMetaText(session),
+  }
+}
+
+function buildCompactBlock(sessions: ActivitySession[]): CompactSessionBlock {
+  const orderedSessions = [...sessions].sort((left, right) => right.startedAt.localeCompare(left.startedAt))
+  const representativeSession = selectRepresentativeSession(orderedSessions)
+  const groupKind = getCompactGroupKind(representativeSession)
+  const primaryText = buildCompactPrimaryText(representativeSession, groupKind)
+  const startedAt = [...orderedSessions]
+    .map((session) => session.startedAt)
+    .sort((left, right) => left.localeCompare(right))[0]
+  const endedAt = [...orderedSessions]
+    .map((session) => session.endedAt)
+    .sort((left, right) => right.localeCompare(left))[0]
+  const canonicalKey = getCompactCanonicalKey(representativeSession).replace(/[^a-z0-9:._-]/gi, '_')
+
+  return {
+    id: `${canonicalKey}_${orderedSessions[0]?.id ?? representativeSession.id}_${orderedSessions.length}`,
+    kind: 'compact',
+    startedAt,
+    endedAt,
+    sessionIds: orderedSessions.map((session) => session.id),
+    sessionCount: orderedSessions.length,
+    representativeSession,
+    primaryText,
+    secondaryText: buildCompactSecondaryText(representativeSession, primaryText),
+    metaText: buildCompactMetaText(representativeSession, groupKind),
+  }
+}
+
+function buildCompactBursts(sessions: ActivitySession[]) {
+  const chronological = [...sessions].sort((left, right) => left.startedAt.localeCompare(right.startedAt))
+  const bursts: ActivitySession[][] = []
+  let currentBurst: ActivitySession[] = []
+
+  for (const session of chronological) {
+    if (currentBurst.length === 0) {
+      currentBurst = [session]
+      continue
+    }
+
+    const previous = currentBurst[currentBurst.length - 1]
+    const gapMs = Math.max(0, parseDate(session.startedAt).getTime() - parseDate(previous.endedAt).getTime())
+    const burstStartMs = parseDate(currentBurst[0].startedAt).getTime()
+    const nextBurstEndMs = parseDate(session.endedAt).getTime()
+
+    if (
+      gapMs <= SESSION_COMPACT_ADJACENT_GAP_MS &&
+      nextBurstEndMs - burstStartMs <= SESSION_COMPACT_BURST_SPAN_MS
+    ) {
+      currentBurst.push(session)
+      continue
+    }
+
+    bursts.push(currentBurst)
+    currentBurst = [session]
+  }
+
+  if (currentBurst.length > 0) {
+    bursts.push(currentBurst)
+  }
+
+  return bursts
+}
+
+export function buildCompactSessionBlocks(sessions: ActivitySession[]): CompactSessionBlock[] {
+  const blocks = buildCompactBursts(sessions).flatMap((burst) => {
+    if (burst.length < 3) {
+      return burst.map((session) => buildSingleCompactBlock(session))
+    }
+
+    const groupedByKey = new Map<string, ActivitySession[]>()
+    burst.forEach((session) => {
+      const key = getCompactCanonicalKey(session)
+      const existing = groupedByKey.get(key)
+      if (existing) {
+        existing.push(session)
+      } else {
+        groupedByKey.set(key, [session])
+      }
+    })
+
+    const groupedBlocks = [...groupedByKey.values()].map((groupedSessions) =>
+      groupedSessions.length >= 2
+        ? buildCompactBlock(groupedSessions)
+        : buildSingleCompactBlock(groupedSessions[0]),
+    )
+
+    return groupedBlocks.sort((left, right) => right.endedAt.localeCompare(left.endedAt))
+  })
+
+  return blocks.sort((left, right) => right.endedAt.localeCompare(left.endedAt))
 }
 
 function buildUsageSummaries(
