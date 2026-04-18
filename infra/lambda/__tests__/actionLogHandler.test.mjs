@@ -149,8 +149,31 @@ describe('actionLogHandler', () => {
 
     expect(statusCode).toBe(200)
     expect(responseBody.updated).toBe(1)
-    expect(commands.some((command) => command.constructor.name === 'DeleteCommand')).toBe(true)
-    expect(commands.some((command) => command.constructor.name === 'PutCommand')).toBe(true)
+    const batchCommands = commands.filter((command) => command.constructor.name === 'BatchWriteCommand')
+    expect(batchCommands).toHaveLength(2)
+    expect(batchCommands[0].input.RequestItems['test-table']).toEqual([
+      {
+        DeleteRequest: {
+          Key: {
+            PK: 'user#test-user-123',
+            SK: 'ACTION_LOG#SESSION#2026-04-17#2026-04-17T08:00:00+09:00#old_session',
+          },
+        },
+      },
+    ])
+    expect(batchCommands[1].input.RequestItems['test-table']).toEqual([
+      {
+        PutRequest: {
+          Item: {
+            PK: 'user#test-user-123',
+            SK: 'ACTION_LOG#SESSION#2026-04-17#2026-04-17T09:00:00+09:00#session_1',
+            ...putBody.sessions[0],
+          },
+        },
+      },
+    ])
+    expect(commands.some((command) => command.constructor.name === 'DeleteCommand')).toBe(false)
+    expect(commands.some((command) => command.constructor.name === 'PutCommand')).toBe(false)
 
     mockSend.mockReset()
     mockSend.mockResolvedValueOnce({
@@ -169,6 +192,71 @@ describe('actionLogHandler', () => {
 
     expect(getStatus).toBe(200)
     expect(getBody).toEqual([putBody.sessions[0]])
+  })
+
+  it('PUT /action-log/sessions batches delete and put requests in chunks of 25', async () => {
+    const commands = []
+    const existingItems = Array.from({ length: 30 }, (_, index) => ({
+      PK: 'user#test-user-123',
+      SK: `ACTION_LOG#SESSION#2026-04-17#2026-04-17T08:${String(index).padStart(2, '0')}:00+09:00#old_session_${index}`,
+    }))
+    const sessions = Array.from({ length: 30 }, (_, index) => ({
+      id: `session_${index}`,
+      deviceId: 'device_1',
+      startedAt: `2026-04-17T09:${String(index).padStart(2, '0')}:00+09:00`,
+      endedAt: `2026-04-17T10:${String(index).padStart(2, '0')}:00+09:00`,
+      dateKey: '2026-04-17',
+      title: `session ${index}`,
+      primaryCategory: '学習',
+      activityKinds: ['research'],
+      appNames: ['Chrome'],
+      domains: ['example.com'],
+      projectNames: [],
+      searchKeywords: [`keyword-${index}`],
+      noteIds: [],
+      openLoopIds: [],
+      hidden: false,
+    }))
+
+    mockSend.mockImplementation((command) => {
+      commands.push(command)
+      if (command.constructor.name === 'QueryCommand') {
+        return Promise.resolve({ Items: existingItems })
+      }
+      return Promise.resolve({})
+    })
+
+    const { statusCode, body } = parseResponse(
+      await handler(
+        makeEvent('PUT /action-log/sessions', {
+          body: {
+            deviceId: 'device_1',
+            sessions,
+          },
+        }),
+      ),
+    )
+
+    expect(statusCode).toBe(200)
+    expect(body.updated).toBe(30)
+    const batchCommands = commands.filter((command) => command.constructor.name === 'BatchWriteCommand')
+    expect(batchCommands).toHaveLength(4)
+    expect(batchCommands.map((command) => command.input.RequestItems['test-table'].length)).toEqual([
+      25,
+      5,
+      25,
+      5,
+    ])
+    expect(
+      batchCommands
+        .slice(0, 2)
+        .every((command) => command.input.RequestItems['test-table'].every((item) => 'DeleteRequest' in item)),
+    ).toBe(true)
+    expect(
+      batchCommands
+        .slice(2)
+        .every((command) => command.input.RequestItems['test-table'].every((item) => 'PutRequest' in item)),
+    ).toBe(true)
   })
 
   it('PUT /action-log/sessions uses explicit dateKeys to clear dates even when no sessions remain', async () => {
@@ -209,8 +297,77 @@ describe('actionLogHandler', () => {
           command.input.ExpressionAttributeValues[':prefix'] === 'ACTION_LOG#SESSION#2026-04-16#',
       ),
     ).toBe(true)
-    expect(commands.some((command) => command.constructor.name === 'DeleteCommand')).toBe(true)
+    const batchCommands = commands.filter((command) => command.constructor.name === 'BatchWriteCommand')
+    expect(batchCommands).toHaveLength(1)
+    expect(batchCommands[0].input.RequestItems['test-table']).toEqual([
+      {
+        DeleteRequest: {
+          Key: {
+            PK: 'user#test-user-123',
+            SK: 'ACTION_LOG#SESSION#2026-04-16#2026-04-16T08:00:00+09:00#old_session',
+          },
+        },
+      },
+    ])
+    expect(commands.some((command) => command.constructor.name === 'DeleteCommand')).toBe(false)
     expect(commands.some((command) => command.constructor.name === 'PutCommand')).toBe(false)
+  })
+
+  it('PUT /action-log/sessions retries batch writes when DynamoDB returns unprocessed items', async () => {
+    const commands = []
+    let batchAttempt = 0
+    const body = {
+      deviceId: 'device_1',
+      sessions: [
+        {
+          id: 'session_retry',
+          deviceId: 'device_1',
+          startedAt: '2026-04-17T09:00:00+09:00',
+          endedAt: '2026-04-17T10:00:00+09:00',
+          dateKey: '2026-04-17',
+          title: 'retry',
+          primaryCategory: '学習',
+          activityKinds: ['research'],
+          appNames: ['Chrome'],
+          domains: ['example.com'],
+          projectNames: [],
+          searchKeywords: ['retry'],
+          noteIds: [],
+          openLoopIds: [],
+          hidden: false,
+        },
+      ],
+    }
+
+    mockSend.mockImplementation((command) => {
+      commands.push(command)
+      if (command.constructor.name === 'QueryCommand') {
+        return Promise.resolve({ Items: [] })
+      }
+      if (command.constructor.name === 'BatchWriteCommand') {
+        batchAttempt += 1
+        if (batchAttempt === 1) {
+          return Promise.resolve({
+            UnprocessedItems: {
+              'test-table': command.input.RequestItems['test-table'],
+            },
+          })
+        }
+      }
+      return Promise.resolve({})
+    })
+
+    const { statusCode, body: responseBody } = parseResponse(
+      await handler(makeEvent('PUT /action-log/sessions', { body })),
+    )
+
+    expect(statusCode).toBe(200)
+    expect(responseBody.updated).toBe(1)
+    const batchCommands = commands.filter((command) => command.constructor.name === 'BatchWriteCommand')
+    expect(batchCommands).toHaveLength(2)
+    expect(batchCommands[0].input.RequestItems['test-table']).toEqual(
+      batchCommands[1].input.RequestItems['test-table'],
+    )
   })
 
   it('daily routes support exact get/put and range get', async () => {

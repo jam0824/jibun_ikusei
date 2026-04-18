@@ -129,6 +129,7 @@ export class JibunIkuseiStack extends cdk.Stack {
       ...lambdaDefaults,
       functionName: 'jibun-ikusei-actionLogHandler',
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/actionLogHandler')),
+      timeout: cdk.Duration.seconds(30),
     })
 
     const browsingTimeFn = new lambda.Function(this, 'BrowsingTimeHandler', {

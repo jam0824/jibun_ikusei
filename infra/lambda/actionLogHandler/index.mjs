@@ -1,4 +1,5 @@
 import {
+  BatchWriteCommand,
   DeleteCommand,
   GetCommand,
   PutCommand,
@@ -14,6 +15,9 @@ const DEVICE_PREFIX = "ACTION_LOG#DEVICE#";
 const OPEN_LOOP_PREFIX = "ACTION_LOG#OPEN_LOOP#";
 const DELETION_REQUEST_PREFIX = "ACTION_LOG#DELETION_REQUEST#";
 const PRIVACY_RULES_SK = "ACTION_LOG#PRIVACY_RULES";
+const BATCH_WRITE_SIZE = 25;
+const BATCH_WRITE_MAX_RETRIES = 3;
+const BATCH_WRITE_BACKOFF_MS = 10;
 
 function nowJstIso() {
   const now = new Date();
@@ -176,6 +180,67 @@ async function deleteItems(items, pk) {
   }
 }
 
+function chunkItems(items, size = BATCH_WRITE_SIZE) {
+  const chunks = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+function buildBatchDeleteRequests(items, fallbackPk) {
+  return (items ?? []).map((item) => ({
+    DeleteRequest: {
+      Key: {
+        PK: item.PK ?? fallbackPk,
+        SK: item.SK,
+      },
+    },
+  }));
+}
+
+function buildBatchPutRequests(pk, sessions) {
+  return (sessions ?? []).map((session) => ({
+    PutRequest: {
+      Item: buildSessionItem(pk, session),
+    },
+  }));
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function batchWriteRequests(requests) {
+  const chunks = chunkItems(requests);
+  for (const chunk of chunks) {
+    let pendingRequests = chunk;
+    let retryCount = 0;
+    while (pendingRequests.length > 0) {
+      const result = await db.send(
+        new BatchWriteCommand({
+          RequestItems: {
+            [TABLE_NAME]: pendingRequests,
+          },
+        }),
+      );
+      const unprocessed = result.UnprocessedItems?.[TABLE_NAME] ?? [];
+      if (unprocessed.length === 0) {
+        break;
+      }
+      retryCount += 1;
+      if (retryCount > BATCH_WRITE_MAX_RETRIES) {
+        throw new Error(
+          `BatchWriteCommand exhausted retries with ${unprocessed.length} unprocessed items`,
+        );
+      }
+      pendingRequests = unprocessed;
+      await sleep(BATCH_WRITE_BACKOFF_MS * retryCount);
+    }
+  }
+  return chunks.length;
+}
+
 export const handler = async (event) => {
   const userId = getUserId(event);
   const pk = `user#${userId}`;
@@ -215,6 +280,7 @@ export const handler = async (event) => {
     }
 
     case "PUT /action-log/sessions": {
+      const syncStartedAt = Date.now();
       const body = parseBody(event);
       const sessions = Array.isArray(body.sessions) ? body.sessions : null;
       if (sessions === null) {
@@ -235,28 +301,45 @@ export const handler = async (event) => {
         explicitDateKeys === undefined
           ? [...new Set(sessions.map((session) => session.dateKey).filter(Boolean))]
           : [...new Set(explicitDateKeys)];
-      for (const dateKey of dateKeys) {
-        const existing = await queryBeginsWith({
-          pk,
-          prefix: `${SESSION_PREFIX}${dateKey}#`,
-        });
-        for (const item of existing.Items ?? []) {
-          await db.send(
-            new DeleteCommand({
-              TableName: TABLE_NAME,
-              Key: { PK: pk, SK: item.SK },
-            }),
-          );
-        }
-      }
+      let deleteCount = 0;
+      let deleteChunkCount = 0;
+      let putChunkCount = 0;
 
-      for (const session of sessions) {
-        await db.send(
-          new PutCommand({
-            TableName: TABLE_NAME,
-            Item: buildSessionItem(pk, session),
-          }),
-        );
+      try {
+        const existingItems = [];
+        for (const dateKey of dateKeys) {
+          const existing = await queryBeginsWith({
+            pk,
+            prefix: `${SESSION_PREFIX}${dateKey}#`,
+          });
+          existingItems.push(...(existing.Items ?? []));
+        }
+
+        const deleteRequests = buildBatchDeleteRequests(existingItems, pk);
+        const putRequests = buildBatchPutRequests(pk, sessions);
+        deleteCount = deleteRequests.length;
+        deleteChunkCount = await batchWriteRequests(deleteRequests);
+        putChunkCount = await batchWriteRequests(putRequests);
+
+        console.info("PUT /action-log/sessions completed", {
+          dateKeyCount: dateKeys.length,
+          deleted: deleteCount,
+          inserted: sessions.length,
+          deleteChunkCount,
+          putChunkCount,
+          elapsedMs: Date.now() - syncStartedAt,
+        });
+      } catch (error) {
+        console.error("PUT /action-log/sessions failed", {
+          dateKeyCount: dateKeys.length,
+          deleted: deleteCount,
+          inserted: sessions.length,
+          deleteChunkCount,
+          putChunkCount,
+          elapsedMs: Date.now() - syncStartedAt,
+          errorMessage: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
       }
 
       return response(200, { updated: sessions.length });
