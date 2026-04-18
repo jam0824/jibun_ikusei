@@ -1,5 +1,6 @@
-import { CalendarDays, Search, Sparkles, ScrollText } from 'lucide-react'
-import { NavLink } from 'react-router-dom'
+import { CalendarDays, Clock3, Search, Sparkles, ScrollText } from 'lucide-react'
+import { NavLink, useLocation } from 'react-router-dom'
+import { getYesterdayDateKeyJst } from '@/lib/action-log-view'
 import { cn } from '@/lib/utils'
 
 export function RecordsSectionTabs({
@@ -46,11 +47,16 @@ export function ActivityLogNav({
 }: {
   year?: number
 }) {
+  const location = useLocation()
   const baseNavClass =
     'flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-200'
+  const view = new URLSearchParams(location.search).get('view')
+  const viewParam = view === 'session' || view === 'event' ? `?view=${view}` : ''
+  const yesterdayDateKey = getYesterdayDateKeyJst()
 
   const items = [
-    { label: '今日', to: '/records/activity/today', icon: Sparkles },
+    { label: '今日', to: `/records/activity/today${viewParam}`, icon: Sparkles },
+    { label: '昨日', to: `/records/activity/day/${yesterdayDateKey}${viewParam}`, icon: Clock3 },
     { label: 'カレンダー', to: '/records/activity/calendar', icon: CalendarDays },
     { label: '検索', to: '/records/activity/search', icon: Search },
     {

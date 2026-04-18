@@ -1301,4 +1301,29 @@ describe('activity log routes', () => {
 
     expect(screen.getByText('手動メモ')).toBeInTheDocument()
   })
+
+  it('navigates between today and yesterday while preserving the current view', async () => {
+    renderApp('/records/activity/today?view=event')
+    await settleApp()
+
+    fireEvent.click(screen.getByRole('link', { name: '昨日' }))
+    await settleApp()
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/activity/day/2026-04-16?view=event')
+
+    fireEvent.click(screen.getByRole('link', { name: '今日' }))
+    await settleApp()
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/activity/today?view=event')
+  })
+
+  it('opens the JST previous-day screen from the shared activity nav on the search screen', async () => {
+    renderApp('/records/activity/search')
+    await settleApp()
+
+    fireEvent.click(screen.getByRole('link', { name: '昨日' }))
+    await settleApp()
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/activity/day/2026-04-16')
+  })
 })
