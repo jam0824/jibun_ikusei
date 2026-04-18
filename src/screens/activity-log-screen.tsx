@@ -70,13 +70,13 @@ function ViewModeToggle({
   onChange: (next: ActivityLogViewMode) => void
 }) {
   return (
-    <div className="inline-flex rounded-2xl border border-slate-200 bg-white p-1">
+    <div className="inline-flex shrink-0 rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">
       {(['session', 'event'] as const).map((mode) => (
         <Button
           key={mode}
           size="sm"
           variant={value === mode ? 'primary' : 'ghost'}
-          className="rounded-xl"
+          className="min-w-[5.5rem] rounded-xl px-4 text-base sm:min-w-0 sm:px-3 sm:text-xs"
           onClick={() => onChange(mode)}
         >
           {mode}
@@ -268,9 +268,9 @@ function SessionListItem({
           {secondaryText ? <div className="mt-2 text-sm text-slate-600">{secondaryText}</div> : null}
           {metaText ? <div className="mt-1 text-xs text-slate-500">{metaText}</div> : null}
         </div>
-        <div className="flex items-center gap-2">
-          {showClockIcon ? <Clock3 className="mt-0.5 h-4 w-4 text-slate-400" /> : null}
-          {onToggleSessionHidden ? (
+        {onToggleSessionHidden ? (
+          <div className="flex shrink-0 items-center gap-2">
+            {showClockIcon ? <Clock3 className="mt-0.5 h-4 w-4 text-slate-400" /> : null}
             <Button
               variant="ghost"
               size="sm"
@@ -281,8 +281,12 @@ function SessionListItem({
             >
               {session.hidden ? '再表示' : '非表示'}
             </Button>
-          ) : null}
-        </div>
+          </div>
+        ) : showClockIcon ? (
+          <div className="shrink-0 pt-0.5">
+            <Clock3 className="h-4 w-4 text-slate-400" />
+          </div>
+        ) : null}
       </div>
     </div>
   )
@@ -319,7 +323,6 @@ function SessionsOrEventsCard({
   eventVisibleCount,
   onLoadMoreSessions,
   onLoadMoreEvents,
-  onToggleSessionHidden,
 }: {
   day: ActivityDayViewData
   viewMode: ActivityLogViewMode
@@ -328,7 +331,6 @@ function SessionsOrEventsCard({
   eventVisibleCount: number
   onLoadMoreSessions: () => void
   onLoadMoreEvents: () => void
-  onToggleSessionHidden?: (sessionId: string, dateKey: string, hidden: boolean) => void
 }) {
   const visibleSessions = day.sessions.filter((session) => includeHidden || !session.hidden)
   const displayedSessions = visibleSessions.slice(0, sessionVisibleCount)
@@ -395,7 +397,6 @@ function SessionsOrEventsCard({
               <SessionListItem
                 key={session.id}
                 session={session}
-                onToggleSessionHidden={onToggleSessionHidden}
                 timeStartFormat="HH:mm"
                 timeEndFormat="HH:mm"
                 className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
@@ -478,28 +479,6 @@ function TodayOrDayView({
     setSessionVisibleCount(TIMELINE_PAGE_SIZE)
   }, [includeHiddenSessions])
 
-  const handleToggleSessionHidden = async (
-    sessionId: string,
-    sessionDateKey: string,
-    hidden: boolean,
-  ) => {
-    await setActivitySessionHidden({
-      sessionId,
-      dateKey: sessionDateKey,
-      hidden,
-    })
-    setDay((current) =>
-      current
-        ? {
-            ...current,
-            sessions: current.sessions.map((session) =>
-              session.id === sessionId ? { ...session, hidden } : session,
-            ),
-          }
-        : current,
-    )
-  }
-
   return (
     <Screen
       title={variant === 'today' ? '今日の行動ログ' : '日別行動ログ'}
@@ -515,17 +494,20 @@ function TodayOrDayView({
         <h2 className="text-xl font-bold text-slate-900">
           {variant === 'today' ? '今日の行動ログ' : '日別行動ログ'}
         </h2>
-        <div className="flex flex-col gap-3 rounded-3xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Target
+        <div className="space-y-3 rounded-3xl border border-slate-200 bg-white p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Target</div>
+          <div
+            data-testid="activity-day-target-row"
+            className="flex items-center justify-between gap-3"
+          >
+            <div className="min-w-0 text-base font-bold text-slate-900 sm:text-lg">
+              対象日: {dateKey}
             </div>
-            <div className="mt-1 text-lg font-bold text-slate-900">対象日: {dateKey}</div>
+            <ViewModeToggle
+              value={viewMode}
+              onChange={(next) => setSearchParams(next === 'session' ? {} : { view: next })}
+            />
           </div>
-          <ViewModeToggle
-            value={viewMode}
-            onChange={(next) => setSearchParams(next === 'session' ? {} : { view: next })}
-          />
         </div>
         {isLoading ? <LoadingCard label="行動ログを読み込んでいます..." /> : null}
         {error ? (
@@ -555,7 +537,6 @@ function TodayOrDayView({
                 setSessionVisibleCount((current) => current + TIMELINE_PAGE_SIZE)
               }
               onLoadMoreEvents={() => setEventVisibleCount((current) => current + TIMELINE_PAGE_SIZE)}
-              onToggleSessionHidden={handleToggleSessionHidden}
             />
             <OpenLoopsCard openLoops={day.openLoops} />
           </>
@@ -794,18 +775,19 @@ function ReviewYearView() {
               reviews.map((review) => (
                 <Card key={review.weekKey}>
                   <CardContent className="space-y-3">
-                    <div className="flex items-center justify-between gap-3">
-                      <div>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0 flex-1">
                         <div className="text-sm font-semibold text-slate-900">{review.weekKey}</div>
                         <div className="mt-1 text-sm text-slate-600">{review.summary}</div>
                       </div>
                       <Button
                         variant="outline"
                         size="sm"
+                        className="self-start"
                         aria-label={`Open ${review.weekKey}`}
                         onClick={() => navigate(`/records/activity/review/week?weekKey=${review.weekKey}`)}
                       >
-                        詳細を見る
+                        詳細
                       </Button>
                     </div>
                     <div className="flex flex-wrap gap-2">
