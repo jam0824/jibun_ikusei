@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, useLocation } from 'react-router-dom'
 import { AppShellRoutes } from '@/App'
 import { hydratePersistedState } from '@/domain/logic'
@@ -175,6 +175,10 @@ function renderApp(initialEntry: string) {
       <AppShellRoutes />
     </MemoryRouter>,
   )
+}
+
+function getSessionCard(sessionId: string) {
+  return screen.getByTestId(`activity-session-${sessionId}`)
 }
 
 async function settleApp() {
@@ -527,6 +531,45 @@ describe('activity log routes', () => {
     expect(screen.queryByText('Chrome 諡｡蠑ｵ縺ｮ隱ｿ譟ｻ')).not.toBeInTheDocument()
   })
 
+  it('prioritizes session summary above the generated title in the day view', async () => {
+    vi.mocked(api.getActionLogSessions).mockResolvedValue([
+      createSession('session_summary_first', {
+        title: 'Self Growth App',
+        summary: 'Reviewed browser pages for the self-growth app.',
+        appNames: ['Chrome'],
+      }),
+    ])
+
+    renderApp('/records/activity/day/2026-04-17')
+    await settleApp()
+
+    const card = getSessionCard('session_summary_first')
+    const summary = within(card).getByText('Reviewed browser pages for the self-growth app.')
+    const title = within(card).getByText('Self Growth App')
+
+    expect(summary.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('falls back to the title first and shows category-app-domain metadata when summary is missing', async () => {
+    vi.mocked(api.getActionLogSessions).mockResolvedValue([
+      createSession('session_summary_missing', {
+        title: 'Fallback Title',
+        summary: undefined,
+        appNames: ['AppOne'],
+        domains: ['domain.example'],
+      }),
+    ])
+
+    renderApp('/records/activity/day/2026-04-17')
+    await settleApp()
+
+    const card = getSessionCard('session_summary_missing')
+    const title = within(card).getByText('Fallback Title')
+    const metadata = within(card).getByText('学習 / AppOne / domain.example')
+
+    expect(title.compareDocumentPosition(metadata) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('can restore a hidden session from the day view when hidden sessions are included', async () => {
     renderApp('/records/activity/day/2026-04-17')
     await settleApp()
@@ -616,6 +659,25 @@ describe('activity log routes', () => {
 
     expect(screen.getByText('Hidden session')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Restore session session_hidden' })).toBeInTheDocument()
+  })
+
+  it('uses the same summary-first ordering on the search screen', async () => {
+    vi.mocked(api.getActionLogSessions).mockResolvedValue([
+      createSession('session_search_order', {
+        title: 'Search Result Title',
+        summary: 'Summarized search result activity.',
+        appNames: ['Chrome'],
+      }),
+    ])
+
+    renderApp('/records/activity/search')
+    await settleApp()
+
+    const card = getSessionCard('session_search_order')
+    const summary = within(card).getByText('Summarized search result activity.')
+    const title = within(card).getByText('Search Result Title')
+
+    expect(summary.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('allows deleting only up to yesterday on the search screen', async () => {
