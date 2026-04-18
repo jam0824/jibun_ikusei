@@ -3,7 +3,9 @@
 更新日: 2026-04-18
 
 関連仕様:
+- [行動ログ_INDEX.md](./行動ログ_INDEX.md)
 - [行動ログ基盤仕様_v_0_1.md](./行動ログ基盤仕様_v_0_1.md)
+- [行動ログ_organizer_openai補足_2026-04-18.md](./行動ログ_organizer_openai補足_2026-04-18.md)
 - [自分育成ゲームアプリ_仕様_v_0_3_local_first.md](./自分育成ゲームアプリ_仕様_v_0_3_local_first.md)
 - [自分育成ゲーム_画面遷移図_v_0_1.md](./自分育成ゲーム_画面遷移図_v_0_1.md)
 - [自分育成ゲーム_chrome_extention仕様.md](./自分育成ゲーム_chrome_extention仕様.md)

@@ -117,16 +117,16 @@ def _extract_session_ids(input_payload: dict) -> list[str]:
 def _build_result_for_ids(session_ids: list[str]) -> StructuredJsonResult:
     return StructuredJsonResult(
         output={
-            "sessions": [
-                {
-                    "sessionId": session_id,
-                    "title": f"AI title {index + 1}",
-                    "primaryCategory": "その他",
-                    "activityKinds": ["active_window_changed"],
-                    "summary": f"AI summary {index + 1}",
-                    "searchKeywords": [f"kw-{index + 1}"],
-                    "openLoops": [],
-                }
+                "sessions": [
+                    {
+                        "sessionId": session_id,
+                        "title": f"AI title {index + 1}",
+                        "primaryCategory": "その他",
+                        "activityKinds": ["作業"],
+                        "summary": f"AI summary {index + 1}",
+                        "searchKeywords": [f"kw-{index + 1}"],
+                        "openLoops": [],
+                    }
                 for index, session_id in enumerate(session_ids)
             ]
         },
@@ -171,7 +171,7 @@ async def test_organizer_uses_openai_structured_outputs_and_logs_usage(
                         "sessionId": _extract_session_ids(kwargs["input_payload"])[0],
                         "title": "OpenAI generated title",
                         "primaryCategory": "その他",
-                        "activityKinds": ["active_window_changed"],
+                        "activityKinds": ["調査"],
                         "summary": "OpenAI generated summary",
                         "searchKeywords": ["example.com"],
                         "openLoops": [],
@@ -196,12 +196,132 @@ async def test_organizer_uses_openai_structured_outputs_and_logs_usage(
     assert request_calls[0]["model"] == "gpt-5-nano"
     assert request_calls[0]["max_output_tokens"] == 222
     assert request_calls[0]["reasoning_effort"] == "minimal"
+    assert "natural Japanese" in request_calls[0]["system_prompt"]
+    assert "Never use Korean or Hangul" in request_calls[0]["system_prompt"]
+    assert "Never mention internal telemetry" in request_calls[0]["system_prompt"]
     assert api_client.put_sessions_calls[0]["sessions"][0]["title"] == "OpenAI generated title"
     assert "Action-log organizer OpenAI usage" in caplog.text
     assert "input_tokens=120" in caplog.text
     assert "Action-log organizer stats" in caplog.text
     assert "reused_count=0" in caplog.text
     assert "ai_count=1" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_organizer_rejects_hangul_openai_output_and_falls_back(tmp_path, monkeypatch, caplog):
+    log_dir = tmp_path / "raw_events"
+    _write_spool(
+        log_dir,
+        "2026-04-17",
+        [
+            _event(
+                "raw_1",
+                datetime(2026, 4, 17, 9, 0, tzinfo=JST),
+                app_name="chrome.exe",
+                window_title="GitHub PR を確認",
+                domain="github.com",
+            )
+        ],
+    )
+    api_client = _FakeApiClient()
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=log_dir,
+        processing_config=_make_processing_config(),
+        openai_api_key="test-key",
+    )
+
+    async def _fake_request_openai_json_with_usage(**kwargs):
+        return StructuredJsonResult(
+            output={
+                "sessions": [
+                    {
+                        "sessionId": _extract_session_ids(kwargs["input_payload"])[0],
+                        "title": "Chrome에서 GitHub PR 페이지를 확인했습니다.",
+                        "primaryCategory": "기타",
+                        "activityKinds": ["활동 로그"],
+                        "summary": "GitHub PR 페이지를 확인한 활동입니다.",
+                        "searchKeywords": ["github.com"],
+                        "openLoops": [],
+                    }
+                ]
+            },
+            usage=None,
+        )
+
+    monkeypatch.setattr(
+        "core.action_log_organizer.request_openai_json_with_usage",
+        _fake_request_openai_json_with_usage,
+    )
+
+    with caplog.at_level(logging.INFO):
+        await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    saved_session = api_client.put_sessions_calls[0]["sessions"][0]
+    assert saved_session["title"] == "chrome.exe / GitHub PR を確認"
+    assert saved_session["summary"] == "chrome.exe を中心に作業していた。"
+    assert "rejected non-Japanese enrichment with Hangul" in caplog.text
+    assert "language_rejected_count=1" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_organizer_rejects_internal_telemetry_terms_and_falls_back(
+    tmp_path, monkeypatch, caplog
+):
+    log_dir = tmp_path / "raw_events"
+    _write_spool(
+        log_dir,
+        "2026-04-17",
+        [
+            _event(
+                "raw_1",
+                datetime(2026, 4, 17, 9, 0, tzinfo=JST),
+                app_name="Codex.exe",
+                window_title="Codex",
+            )
+        ],
+    )
+    api_client = _FakeApiClient()
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=log_dir,
+        processing_config=_make_processing_config(),
+        openai_api_key="test-key",
+    )
+
+    async def _fake_request_openai_json_with_usage(**kwargs):
+        return StructuredJsonResult(
+            output={
+                "sessions": [
+                    {
+                        "sessionId": _extract_session_ids(kwargs["input_payload"])[0],
+                        "title": "Codexのハートビートを検出",
+                        "primaryCategory": "その他",
+                        "activityKinds": ["heartbeat"],
+                        "summary": "Codexによる作業の心拍イベントを記録した。",
+                        "searchKeywords": ["Codex", "heartbeat"],
+                        "openLoops": [],
+                    }
+                ]
+            },
+            usage=None,
+        )
+
+    monkeypatch.setattr(
+        "core.action_log_organizer.request_openai_json_with_usage",
+        _fake_request_openai_json_with_usage,
+    )
+
+    with caplog.at_level(logging.INFO):
+        await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    saved_session = api_client.put_sessions_calls[0]["sessions"][0]
+    assert saved_session["title"] == "Codex.exe / Codex"
+    assert saved_session["summary"] == "Codex.exe を中心に作業していた。"
+    assert "rejected enrichment mentioning internal telemetry terms" in caplog.text
+    assert "telemetry_term_rejected_count=1" in caplog.text
 
 
 @pytest.mark.asyncio
@@ -250,6 +370,180 @@ async def test_organizer_openai_without_api_key_falls_back_and_still_syncs(tmp_p
 
 
 @pytest.mark.asyncio
+async def test_organizer_does_not_reuse_existing_hangul_enrichment(tmp_path, monkeypatch, caplog):
+    log_dir = tmp_path / "raw_events"
+    _write_spool(
+        log_dir,
+        "2026-04-17",
+        [
+            _event(
+                "raw_1",
+                datetime(2026, 4, 17, 9, 0, tzinfo=JST),
+                app_name="chrome.exe",
+                window_title="GitHub PR を確認",
+                domain="github.com",
+            )
+        ],
+    )
+    probe_organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=_FakeApiClient(),
+        raw_event_log_dir=log_dir,
+        processing_config=_make_processing_config(),
+        openai_api_key="test-key",
+    )
+    candidate = probe_organizer.build_candidate_sessions(
+        probe_organizer.load_recent_raw_events(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+    )[0]
+    existing_session = {
+        "id": candidate["id"],
+        "deviceId": "device_1",
+        "startedAt": candidate["startedAt"],
+        "endedAt": candidate["endedAt"],
+        "dateKey": candidate["dateKey"],
+        "title": "Chrome에서 GitHub PR 페이지를 확인했습니다.",
+        "primaryCategory": "기타",
+        "activityKinds": ["활동 로그"],
+        "appNames": list(candidate["appNames"]),
+        "domains": list(candidate["domains"]),
+        "projectNames": list(candidate["projectNames"]),
+        "summary": "GitHub PR 페이지를 확인한 활동입니다.",
+        "searchKeywords": ["github.com"],
+        "noteIds": [],
+        "openLoopIds": [],
+        "hidden": False,
+    }
+    api_client = _FakeApiClient(existing_sessions=[existing_session])
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=log_dir,
+        processing_config=_make_processing_config(),
+        openai_api_key="test-key",
+    )
+    request_payloads: list[dict] = []
+
+    async def _fake_request_openai_json_with_usage(**kwargs):
+        request_payloads.append(kwargs["input_payload"])
+        return StructuredJsonResult(
+            output={
+                "sessions": [
+                    {
+                        "sessionId": _extract_session_ids(kwargs["input_payload"])[0],
+                        "title": "GitHub PR の確認",
+                        "primaryCategory": "その他",
+                        "activityKinds": ["調査"],
+                        "summary": "GitHub PR の内容を確認していた。",
+                        "searchKeywords": ["GitHub PR", "github.com"],
+                        "openLoops": [],
+                    }
+                ]
+            },
+            usage=None,
+        )
+
+    monkeypatch.setattr(
+        "core.action_log_organizer.request_openai_json_with_usage",
+        _fake_request_openai_json_with_usage,
+    )
+
+    with caplog.at_level(logging.INFO):
+        await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    assert _extract_session_ids(request_payloads[0]) == [candidate["id"]]
+    assert api_client.put_sessions_calls[0]["sessions"][0]["title"] == "GitHub PR の確認"
+    assert "discarded reused enrichment with Hangul" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_organizer_does_not_reuse_existing_internal_telemetry_terms(
+    tmp_path, monkeypatch, caplog
+):
+    log_dir = tmp_path / "raw_events"
+    _write_spool(
+        log_dir,
+        "2026-04-17",
+        [
+            _event(
+                "raw_1",
+                datetime(2026, 4, 17, 9, 0, tzinfo=JST),
+                app_name="chrome.exe",
+                window_title="YouTube",
+                domain="www.youtube.com",
+            )
+        ],
+    )
+    probe_organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=_FakeApiClient(),
+        raw_event_log_dir=log_dir,
+        processing_config=_make_processing_config(),
+        openai_api_key="test-key",
+    )
+    candidate = probe_organizer.build_candidate_sessions(
+        probe_organizer.load_recent_raw_events(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+    )[0]
+    existing_session = {
+        "id": candidate["id"],
+        "deviceId": "device_1",
+        "startedAt": candidate["startedAt"],
+        "endedAt": candidate["endedAt"],
+        "dateKey": candidate["dateKey"],
+        "title": "YouTubeのheartbeatイベント発生",
+        "primaryCategory": "その他",
+        "activityKinds": ["heartbeat"],
+        "appNames": list(candidate["appNames"]),
+        "domains": list(candidate["domains"]),
+        "projectNames": list(candidate["projectNames"]),
+        "summary": "YouTubeの心拍イベントを記録した。",
+        "searchKeywords": ["YouTube", "heartbeat"],
+        "noteIds": [],
+        "openLoopIds": [],
+        "hidden": False,
+    }
+    api_client = _FakeApiClient(existing_sessions=[existing_session])
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=log_dir,
+        processing_config=_make_processing_config(),
+        openai_api_key="test-key",
+    )
+    request_payloads: list[dict] = []
+
+    async def _fake_request_openai_json_with_usage(**kwargs):
+        request_payloads.append(kwargs["input_payload"])
+        return StructuredJsonResult(
+            output={
+                "sessions": [
+                    {
+                        "sessionId": _extract_session_ids(kwargs["input_payload"])[0],
+                        "title": "YouTubeページの閲覧",
+                        "primaryCategory": "その他",
+                        "activityKinds": ["動画視聴"],
+                        "summary": "YouTubeページを続けて閲覧していた。",
+                        "searchKeywords": ["YouTube", "www.youtube.com"],
+                        "openLoops": [],
+                    }
+                ]
+            },
+            usage=None,
+        )
+
+    monkeypatch.setattr(
+        "core.action_log_organizer.request_openai_json_with_usage",
+        _fake_request_openai_json_with_usage,
+    )
+
+    with caplog.at_level(logging.INFO):
+        await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    assert _extract_session_ids(request_payloads[0]) == [candidate["id"]]
+    assert api_client.put_sessions_calls[0]["sessions"][0]["title"] == "YouTubeページの閲覧"
+    assert "discarded reused enrichment with internal telemetry terms" in caplog.text
+
+
+@pytest.mark.asyncio
 async def test_organizer_reuses_existing_enrichment_and_excludes_it_from_openai_request(
     tmp_path, monkeypatch
 ):
@@ -294,7 +588,7 @@ async def test_organizer_reuses_existing_enrichment_and_excludes_it_from_openai_
         "dateKey": reused_candidate["dateKey"],
         "title": "Existing title",
         "primaryCategory": "その他",
-        "activityKinds": ["active_window_changed"],
+        "activityKinds": ["調査"],
         "appNames": list(reused_candidate["appNames"]),
         "domains": list(reused_candidate["domains"]),
         "projectNames": list(reused_candidate["projectNames"]),
@@ -336,7 +630,7 @@ async def test_organizer_reuses_existing_enrichment_and_excludes_it_from_openai_
                         "sessionId": new_candidate["id"],
                         "title": "New AI title",
                         "primaryCategory": "その他",
-                        "activityKinds": ["active_window_changed"],
+                        "activityKinds": ["調査"],
                         "summary": "New AI summary",
                         "searchKeywords": ["new-keyword"],
                         "openLoops": [],

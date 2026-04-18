@@ -203,7 +203,7 @@ async def test_organizer_logs_budget_exhaustion_and_fallback_count(
                         "sessionId": session_id,
                         "title": f"AI title {index + 1}",
                         "primaryCategory": "その他",
-                        "activityKinds": ["active_window_changed"],
+                        "activityKinds": ["作業"],
                         "summary": f"AI summary {index + 1}",
                         "searchKeywords": [f"kw-{index + 1}"],
                         "openLoops": [],

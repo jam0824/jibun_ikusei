@@ -37,6 +37,28 @@ DEFAULT_ACTIVITY_PROCESSING_CONFIG = {
 _CODE_APPS = ("code.exe", "cursor.exe", "wezterm", "powershell", "windows terminal", "git")
 _LEARNING_HINTS = ("docs", "developer", "tutorial", "article", "reference", "guide", "manual")
 _OPEN_LOOP_HINTS = ("todo", "wip", "fixme", "unfinished", "残", "未完")
+_HANGUL_RE = re.compile(r"[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]")
+_FORBIDDEN_TELEMETRY_TERMS = (
+    "heartbeat",
+    "heart beat",
+    "heartbeat event",
+    "browser_page_changed",
+    "active_window_changed",
+    "raw event",
+    "raw-event",
+    "心拍イベント",
+    "ハートビート",
+    "ハートイベント",
+)
+_JAPANESE_OUTPUT_REQUIREMENT = (
+    "Write every natural-language field in concise natural Japanese. "
+    "Never use Korean or Hangul in titles, primary categories, activity kinds, summaries, search keywords, or open loop text. "
+    "English proper nouns such as app names, domains, GitHub, and YouTube may appear only as names."
+)
+_TELEMETRY_OUTPUT_REQUIREMENT = (
+    "Never mention internal telemetry or raw event names such as heartbeat, browser_page_changed, active_window_changed, or raw event. "
+    "Describe the user's activity in natural language instead."
+)
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +198,44 @@ def _last_non_empty(current_events: list[dict[str, Any]], key: str) -> str:
 def _open_loop_id(device_id: str, date_key: str, title: str) -> str:
     digest = sha1(f"{device_id}|{date_key}|{_normalize_title(title)}".encode("utf-8")).hexdigest()
     return f"loop_{digest[:16]}"
+
+
+def _contains_hangul(value: Any) -> bool:
+    return bool(_HANGUL_RE.search(str(value or "")))
+
+
+def _enrichment_contains_hangul(enrichment: dict[str, Any]) -> bool:
+    values: list[str] = [
+        str(enrichment.get("title") or ""),
+        str(enrichment.get("primaryCategory") or ""),
+        str(enrichment.get("summary") or ""),
+    ]
+    values.extend(str(value or "") for value in enrichment.get("activityKinds", []))
+    values.extend(str(value or "") for value in enrichment.get("searchKeywords", []))
+    for item in enrichment.get("openLoops", []):
+        values.append(str(item.get("title") or ""))
+        values.append(str(item.get("description") or ""))
+    return any(_contains_hangul(value) for value in values)
+
+
+def _find_forbidden_telemetry_terms(enrichment: dict[str, Any]) -> list[str]:
+    values: list[str] = [
+        str(enrichment.get("title") or ""),
+        str(enrichment.get("primaryCategory") or ""),
+        str(enrichment.get("summary") or ""),
+    ]
+    values.extend(str(value or "") for value in enrichment.get("activityKinds", []))
+    values.extend(str(value or "") for value in enrichment.get("searchKeywords", []))
+    for item in enrichment.get("openLoops", []):
+        values.append(str(item.get("title") or ""))
+        values.append(str(item.get("description") or ""))
+
+    haystack = "\n".join(values).lower()
+    found: list[str] = []
+    for term in _FORBIDDEN_TELEMETRY_TERMS:
+        if term.lower() in haystack and term not in found:
+            found.append(term)
+    return found
 
 
 def _normalized_session_context(values: Any) -> tuple[str, ...]:
@@ -426,10 +486,27 @@ class ActionLogOrganizer:
             if existing_session is None:
                 uncached_candidates.append(candidate)
                 continue
-            reused_results[candidate["id"]] = self._build_reused_enrichment(
+            reused_enrichment = self._build_reused_enrichment(
                 existing_session,
                 existing_open_loops_by_id,
             )
+            if _enrichment_contains_hangul(reused_enrichment):
+                self._logger.warning(
+                    "Action-log organizer discarded reused enrichment with Hangul: session_id=%s",
+                    existing_session.get("id"),
+                )
+                uncached_candidates.append(candidate)
+                continue
+            forbidden_terms = _find_forbidden_telemetry_terms(reused_enrichment)
+            if forbidden_terms:
+                self._logger.warning(
+                    "Action-log organizer discarded reused enrichment with internal telemetry terms: session_id=%s terms=%s",
+                    existing_session.get("id"),
+                    ",".join(forbidden_terms),
+                )
+                uncached_candidates.append(candidate)
+                continue
+            reused_results[candidate["id"]] = reused_enrichment
 
         return reused_results, uncached_candidates
 
@@ -468,21 +545,33 @@ class ActionLogOrganizer:
             else ({}, 0, False)
         )
         llm_results = {**reused_results, **ai_results}
-        fallback_count = len(candidates) - len(reused_results) - len(ai_results)
-        self._logger.info(
-            "Action-log organizer stats: total_candidates=%d reused_count=%d ai_count=%d fallback_count=%d batch_count=%d budget_exhausted=%s",
-            len(candidates),
-            len(reused_results),
-            len(ai_results),
-            fallback_count,
-            batch_count,
-            budget_exhausted,
-        )
         sessions: list[dict[str, Any]] = []
         open_loops: list[dict[str, Any]] = []
         organized_at = reference.isoformat(timespec="seconds")
+        language_rejected_count = 0
+        telemetry_term_rejected_count = 0
         for candidate in candidates:
-            enriched = llm_results.get(candidate["id"]) or self._fallback_session(candidate)
+            fallback_enrichment = self._fallback_session(candidate)
+            enriched = llm_results.get(candidate["id"])
+            if enriched is None:
+                enriched = fallback_enrichment
+            elif _enrichment_contains_hangul(enriched):
+                language_rejected_count += 1
+                self._logger.warning(
+                    "Action-log organizer rejected non-Japanese enrichment with Hangul: session_id=%s",
+                    candidate["id"],
+                )
+                enriched = fallback_enrichment
+            else:
+                forbidden_terms = _find_forbidden_telemetry_terms(enriched)
+                if forbidden_terms:
+                    telemetry_term_rejected_count += 1
+                    self._logger.warning(
+                        "Action-log organizer rejected enrichment mentioning internal telemetry terms: session_id=%s terms=%s",
+                        candidate["id"],
+                        ",".join(forbidden_terms),
+                    )
+                    enriched = fallback_enrichment
             session_open_loops = self._build_open_loops(
                 candidate=candidate,
                 enriched=enriched,
@@ -514,6 +603,22 @@ class ActionLogOrganizer:
                     ),
                 }
             )
+        effective_ai_count = max(
+            0,
+            len(ai_results) - language_rejected_count - telemetry_term_rejected_count,
+        )
+        fallback_count = len(candidates) - len(reused_results) - effective_ai_count
+        self._logger.info(
+            "Action-log organizer stats: total_candidates=%d reused_count=%d ai_count=%d fallback_count=%d batch_count=%d budget_exhausted=%s language_rejected_count=%d telemetry_term_rejected_count=%d",
+            len(candidates),
+            len(reused_results),
+            effective_ai_count,
+            fallback_count,
+            batch_count,
+            budget_exhausted,
+            language_rejected_count,
+            telemetry_term_rejected_count,
+        )
 
         await self.api_client.put_action_log_sessions(
             {
@@ -691,7 +796,8 @@ class ActionLogOrganizer:
         system_prompt = (
             "You organize desktop activity sessions for a Japanese self-growth app called Lily. "
             "Return only valid JSON that strictly matches the provided schema. "
-            "Write concise natural Japanese titles and summaries. "
+            f"{_JAPANESE_OUTPUT_REQUIREMENT} "
+            f"{_TELEMETRY_OUTPUT_REQUIREMENT} "
             "Use only the provided metadata."
         )
         results: dict[str, dict[str, Any]] = {}
@@ -753,10 +859,12 @@ class ActionLogOrganizer:
         user_text = json.dumps(self._build_llm_input_payload(candidates), ensure_ascii=False)
         system_prompt = (
             "You organize desktop activity sessions. Return only JSON with this shape: "
-            '{"sessions":[{"sessionId":"...","title":"...","primaryCategory":"蟄ｦ鄙竹莉穂ｺ弓蛛･蠎ｷ|逕滓ｴｻ|蜑ｵ菴忿蟇ｾ莠ｺ|螽ｯ讌ｽ|縺昴・莉・,'
+            '{"sessions":[{"sessionId":"...","title":"...","primaryCategory":"学習|仕事|健康|生活|創作|対人|娯楽|その他",'
             '"activityKinds":["..."],"summary":"...","searchKeywords":["..."],'
             '"openLoops":[{"title":"...","description":"..."}]}]}. '
-            "Keep titles and summaries concise natural Japanese. Use only the provided metadata."
+            f"{_JAPANESE_OUTPUT_REQUIREMENT} "
+            f"{_TELEMETRY_OUTPUT_REQUIREMENT} "
+            "Use only the provided metadata."
         )
         text = ""
         try:

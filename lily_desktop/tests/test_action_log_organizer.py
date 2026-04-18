@@ -597,6 +597,9 @@ async def test_organizer_uses_ollama_batch_and_saves_open_loops(tmp_path, monkey
 
     assert build_calls[0]["provider"] == "ollama"
     assert build_calls[0]["model"] == "gemma4:e4b"
+    assert "natural Japanese" in build_calls[0]["system_prompt"]
+    assert "Never use Korean or Hangul" in build_calls[0]["system_prompt"]
+    assert "Never mention internal telemetry" in build_calls[0]["system_prompt"]
     assert api_client.put_sessions_calls[0]["sessions"][0]["title"] == "Chrome拡張の調査"
     assert api_client.put_sessions_calls[0]["sessions"][0]["searchKeywords"] == [
         "Chrome拡張",
