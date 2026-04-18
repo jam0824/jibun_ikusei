@@ -20,7 +20,9 @@ import {
   putActionLogWeeklyActivityReview,
   getActionLogWeeklyActivityReview,
   getActionLogWeeklyActivityReviews,
+  getFitbitData,
   getHealthData,
+  getNutrition,
   getQuests,
   getSituationLogs,
   type SituationLogEntry,
@@ -734,11 +736,13 @@ export async function generatePreviousDayDailyActivityLogSections(params: {
   const needsQuestSummary = targetSections.includes('questSummary')
   const needsHealthSummary = targetSections.includes('healthSummary')
 
-  const [sessions, quests, completions, healthData] = await Promise.all([
+  const [sessions, quests, completions, healthData, fitbitData, nutritionData] = await Promise.all([
     needsSummary ? getActionLogSessions(params.dateKey, params.dateKey) : Promise.resolve([]),
     needsQuestSummary ? getQuests() : Promise.resolve([]),
     needsQuestSummary ? getCompletions() : Promise.resolve([]),
     needsHealthSummary ? getHealthData(params.dateKey, params.dateKey) : Promise.resolve([]),
+    needsHealthSummary ? getFitbitData(params.dateKey, params.dateKey) : Promise.resolve([]),
+    needsHealthSummary ? getNutrition(params.dateKey) : Promise.resolve(null),
   ])
 
   const filteredSessions = needsSummary
@@ -827,6 +831,8 @@ export async function generatePreviousDayDailyActivityLogSections(params: {
         settings: params.settings,
         dateKey: params.dateKey,
         healthData,
+        fitbitData,
+        nutritionData,
       })
         .then((generated) =>
           queueSave('healthSummary', {

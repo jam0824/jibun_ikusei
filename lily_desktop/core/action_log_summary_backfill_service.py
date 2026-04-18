@@ -92,7 +92,7 @@ _DAILY_HEALTH_SUMMARY_SYSTEM_PROMPT = (
     "Write in Japanese. The prose must read like リリィがユーザーをそっと見守って書いた観察日記風の地の文. "
     "直接話しかける口調は禁止. "
     "Generate only healthSummary. "
-    "Use only the provided health-data records."
+    "Use only the provided health-data, fitbit-data, and nutrition-data records."
 )
 
 _WEEKLY_SYSTEM_PROMPT = (
@@ -261,6 +261,127 @@ def _sanitize_health_data(health_data: list[dict[str, Any]]) -> list[dict[str, A
     ]
 
 
+def _sanitize_fitbit_data(fitbit_data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    sanitized: list[dict[str, Any]] = []
+    for entry in fitbit_data:
+        heart = entry.get("heart") or None
+        active_zone_minutes = entry.get("active_zone_minutes") or None
+        sleep = entry.get("sleep") or None
+        activity = entry.get("activity") or None
+        sanitized.append(
+            {
+                "date": entry.get("date"),
+                "heart": {
+                    "resting_heart_rate": (heart or {}).get("resting_heart_rate"),
+                }
+                if heart
+                else None,
+                "active_zone_minutes": {
+                    "minutes_total_estimate": (active_zone_minutes or {}).get(
+                        "minutes_total_estimate"
+                    ),
+                }
+                if active_zone_minutes
+                else None,
+                "sleep": {
+                    "all_sleep_count": (sleep or {}).get("all_sleep_count"),
+                    "main_sleep": {
+                        "date_of_sleep": ((sleep or {}).get("main_sleep") or {}).get(
+                            "date_of_sleep"
+                        ),
+                        "start_time": ((sleep or {}).get("main_sleep") or {}).get(
+                            "start_time"
+                        ),
+                        "end_time": ((sleep or {}).get("main_sleep") or {}).get(
+                            "end_time"
+                        ),
+                        "minutes_asleep": ((sleep or {}).get("main_sleep") or {}).get(
+                            "minutes_asleep"
+                        ),
+                        "minutes_awake": ((sleep or {}).get("main_sleep") or {}).get(
+                            "minutes_awake"
+                        ),
+                        "time_in_bed": ((sleep or {}).get("main_sleep") or {}).get(
+                            "time_in_bed"
+                        ),
+                        "deep_minutes": ((sleep or {}).get("main_sleep") or {}).get(
+                            "deep_minutes"
+                        ),
+                        "light_minutes": ((sleep or {}).get("main_sleep") or {}).get(
+                            "light_minutes"
+                        ),
+                        "rem_minutes": ((sleep or {}).get("main_sleep") or {}).get(
+                            "rem_minutes"
+                        ),
+                        "wake_minutes": ((sleep or {}).get("main_sleep") or {}).get(
+                            "wake_minutes"
+                        ),
+                    }
+                    if (sleep or {}).get("main_sleep")
+                    else None,
+                }
+                if sleep
+                else None,
+                "activity": {
+                    "steps": (activity or {}).get("steps"),
+                    "distance": (activity or {}).get("distance"),
+                    "calories": (activity or {}).get("calories"),
+                    "very_active_minutes": (activity or {}).get("very_active_minutes"),
+                    "fairly_active_minutes": (activity or {}).get("fairly_active_minutes"),
+                    "lightly_active_minutes": (activity or {}).get("lightly_active_minutes"),
+                    "sedentary_minutes": (activity or {}).get("sedentary_minutes"),
+                }
+                if activity
+                else None,
+            }
+        )
+    return sanitized
+
+
+def _extract_same_day_nutrition(
+    date_key: str, nutrition_range: dict[str, Any]
+) -> dict[str, Any] | None:
+    day_data = nutrition_range.get(date_key)
+    if not isinstance(day_data, dict):
+        return None
+    return day_data
+
+
+def _sanitize_nutrition_data(nutrition_data: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(nutrition_data, dict):
+        return None
+
+    def _sanitize_meal(meal: Any) -> dict[str, Any] | None:
+        if not isinstance(meal, dict):
+            return None
+        nutrients = meal.get("nutrients")
+        sanitized_nutrients = (
+            {
+                str(key): {
+                    "value": value.get("value"),
+                    "unit": value.get("unit"),
+                    "label": value.get("label"),
+                }
+                for key, value in nutrients.items()
+                if isinstance(value, dict)
+            }
+            if isinstance(nutrients, dict)
+            else {}
+        )
+        return {
+            "date": meal.get("date"),
+            "mealType": meal.get("mealType"),
+            "nutrients": sanitized_nutrients,
+        }
+
+    return {
+        "breakfast": _sanitize_meal(nutrition_data.get("breakfast")),
+        "lunch": _sanitize_meal(nutrition_data.get("lunch")),
+        "dinner": _sanitize_meal(nutrition_data.get("dinner")),
+        "daily": _sanitize_meal(nutrition_data.get("daily")),
+    }
+
+
 def _build_weekly_fallback(
     *,
     week_key: str,
@@ -425,7 +546,7 @@ class ActionLogSummaryBackfillService:
         needs_quest_summary = "questSummary" in target_sections
         needs_health_summary = "healthSummary" in target_sections
 
-        sessions, quests, completions, health_data = await asyncio.gather(
+        sessions, quests, completions, health_data, fitbit_data, nutrition_range = await asyncio.gather(
             self.api_client.get_action_log_sessions(yesterday_key, yesterday_key)
             if needs_summary
             else asyncio.sleep(0, result=[]),
@@ -438,6 +559,12 @@ class ActionLogSummaryBackfillService:
             self.api_client.get_health_data(yesterday_key, yesterday_key)
             if needs_health_summary
             else asyncio.sleep(0, result=[]),
+            self.api_client.get_fitbit_data(yesterday_key, yesterday_key)
+            if needs_health_summary
+            else asyncio.sleep(0, result=[]),
+            self.api_client.get_nutrition_range(yesterday_key, yesterday_key)
+            if needs_health_summary
+            else asyncio.sleep(0, result={}),
         )
 
         filtered_sessions = sessions if needs_summary else []
@@ -461,6 +588,20 @@ class ActionLogSummaryBackfillService:
             _filter_same_day_health_data(yesterday_key, health_data)
             if needs_health_summary
             else []
+        )
+        same_day_fitbit_data = (
+            [
+                entry
+                for entry in fitbit_data
+                if str(entry.get("date", "")).strip() == yesterday_key
+            ]
+            if needs_health_summary
+            else []
+        )
+        same_day_nutrition = (
+            _extract_same_day_nutrition(yesterday_key, nutrition_range)
+            if needs_health_summary
+            else None
         )
 
         async def _generate_summary():
@@ -506,6 +647,8 @@ class ActionLogSummaryBackfillService:
                     "task": "daily_activity_log_health_summary",
                     "dateKey": yesterday_key,
                     "health-data": _sanitize_health_data(same_day_health_data),
+                    "fitbit-data": _sanitize_fitbit_data(same_day_fitbit_data),
+                    "nutrition-data": _sanitize_nutrition_data(same_day_nutrition),
                 },
                 system_prompt=_DAILY_HEALTH_SUMMARY_SYSTEM_PROMPT,
                 max_output_tokens=DAILY_ACTIVITY_LOG_MAX_OUTPUT_TOKENS,

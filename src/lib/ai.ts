@@ -22,7 +22,12 @@ import type {
   SkillResolutionResult,
   UserSettings,
 } from '@/domain/types'
-import type { ActivityLogEntry, HealthDataEntry } from '@/lib/api-client'
+import type {
+  ActivityLogEntry,
+  FitbitSummary,
+  HealthDataEntry,
+  NutritionDayResult,
+} from '@/lib/api-client'
 import { getDayKey } from '@/lib/date'
 import { createOfflineError, isOffline } from '@/lib/network'
 
@@ -223,7 +228,7 @@ const DAILY_HEALTH_SUMMARY_SYSTEM_PROMPT = [
   '直接話しかける口調は禁止.',
   'Do not use second-person coaching language.',
   'Generate only healthSummary.',
-  'Use only the provided health-data records.',
+  'Use only the provided health-data, fitbit-data, and nutrition-data records.',
 ].join(' ')
 
 const WEEKLY_ACTIVITY_REVIEW_SYSTEM_PROMPT = [
@@ -893,6 +898,83 @@ function sanitizeHealthDataForActionLogAi(healthData: HealthDataEntry[]) {
   }))
 }
 
+function sanitizeFitbitDataForActionLogAi(fitbitData: FitbitSummary[]) {
+  return fitbitData.map((entry) => ({
+    date: entry.date,
+    heart: entry.heart
+      ? {
+          resting_heart_rate: entry.heart.resting_heart_rate,
+        }
+      : null,
+    active_zone_minutes: entry.active_zone_minutes
+      ? {
+          minutes_total_estimate: entry.active_zone_minutes.minutes_total_estimate,
+        }
+      : null,
+    sleep: entry.sleep
+      ? {
+          all_sleep_count: entry.sleep.all_sleep_count,
+          main_sleep: entry.sleep.main_sleep
+            ? {
+                date_of_sleep: entry.sleep.main_sleep.date_of_sleep,
+                start_time: entry.sleep.main_sleep.start_time,
+                end_time: entry.sleep.main_sleep.end_time,
+                minutes_asleep: entry.sleep.main_sleep.minutes_asleep,
+                minutes_awake: entry.sleep.main_sleep.minutes_awake,
+                time_in_bed: entry.sleep.main_sleep.time_in_bed,
+                deep_minutes: entry.sleep.main_sleep.deep_minutes,
+                light_minutes: entry.sleep.main_sleep.light_minutes,
+                rem_minutes: entry.sleep.main_sleep.rem_minutes,
+                wake_minutes: entry.sleep.main_sleep.wake_minutes,
+              }
+            : null,
+        }
+      : null,
+    activity: entry.activity
+      ? {
+          steps: entry.activity.steps,
+          distance: entry.activity.distance,
+          calories: entry.activity.calories,
+          very_active_minutes: entry.activity.very_active_minutes,
+          fairly_active_minutes: entry.activity.fairly_active_minutes,
+          lightly_active_minutes: entry.activity.lightly_active_minutes,
+          sedentary_minutes: entry.activity.sedentary_minutes,
+        }
+      : null,
+  }))
+}
+
+function sanitizeNutritionDataForActionLogAi(nutritionData: NutritionDayResult | null) {
+  if (!nutritionData) {
+    return null
+  }
+
+  const sanitizeMeal = (meal: NutritionDayResult[keyof NutritionDayResult]) =>
+    meal
+      ? {
+          date: meal.date,
+          mealType: meal.mealType,
+          nutrients: Object.fromEntries(
+            Object.entries(meal.nutrients).map(([key, value]) => [
+              key,
+              {
+                value: value.value,
+                unit: value.unit,
+                label: value.label,
+              },
+            ]),
+          ),
+        }
+      : null
+
+  return {
+    breakfast: sanitizeMeal(nutritionData.breakfast),
+    lunch: sanitizeMeal(nutritionData.lunch),
+    dinner: sanitizeMeal(nutritionData.dinner),
+    daily: sanitizeMeal(nutritionData.daily),
+  }
+}
+
 function filterDateCompletions(dateKey: string, completions: QuestCompletion[]) {
   return getActiveCompletions(completions)
     .filter((completion) => getDayKey(completion.completedAt) === dateKey)
@@ -1012,10 +1094,13 @@ export async function generateDailyHealthSummary(params: {
   settings: UserSettings
   dateKey: string
   healthData: HealthDataEntry[]
+  fitbitData: FitbitSummary[]
+  nutritionData: NutritionDayResult | null
 }): Promise<GeneratedDailyHealthSummary> {
-  const { aiConfig, settings, dateKey, healthData } = params
+  const { aiConfig, settings, dateKey, healthData, fitbitData, nutritionData } = params
   const openAiConfig = aiConfig.providers.openai
   const sameDayHealthData = filterDateHealthData(dateKey, healthData)
+  const sameDayFitbitData = fitbitData.filter((entry) => entry.date === dateKey)
 
   if (!settings.aiEnabled || !openAiConfig.apiKey || isOffline()) {
     throw new Error('DailyActivityLog health summary generation is unavailable.')
@@ -1032,6 +1117,8 @@ export async function generateDailyHealthSummary(params: {
       task: 'daily_activity_log_health_summary',
       dateKey,
       'health-data': sanitizeHealthDataForActionLogAi(sameDayHealthData),
+      'fitbit-data': sanitizeFitbitDataForActionLogAi(sameDayFitbitData),
+      'nutrition-data': sanitizeNutritionDataForActionLogAi(nutritionData),
     },
     systemPrompt: DAILY_HEALTH_SUMMARY_SYSTEM_PROMPT,
     maxOutputTokens: 1600,
@@ -1052,6 +1139,8 @@ export async function generateDailyActivityLog(params: {
   quests: Quest[]
   completions: QuestCompletion[]
   healthData: HealthDataEntry[]
+  fitbitData: FitbitSummary[]
+  nutritionData: NutritionDayResult | null
 }): Promise<GeneratedDailyActivityLog> {
   const [summary, questSummary, healthSummary] = await Promise.all([
     generateDailyActivityLogSummary({
@@ -1072,6 +1161,8 @@ export async function generateDailyActivityLog(params: {
       settings: params.settings,
       dateKey: params.dateKey,
       healthData: params.healthData,
+      fitbitData: params.fitbitData,
+      nutritionData: params.nutritionData,
     }),
   ])
 
