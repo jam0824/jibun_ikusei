@@ -23,6 +23,7 @@ import type {
   WeeklyActivityReview,
 } from '@/domain/action-log-types'
 import { getIdToken } from '@/lib/auth'
+import { normalizeDailyActivityLog } from '@/lib/action-log-contract'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL as string
 
@@ -379,18 +380,22 @@ export function getActionLogSessionsPage(params: {
 }
 
 export function getActionLogDailyActivityLogs(from: string, to: string) {
-  return request<DailyActivityLog[]>(`/action-log/daily?from=${from}&to=${to}`)
+  return request<unknown[]>(`/action-log/daily?from=${from}&to=${to}`).then((logs) =>
+    logs.map((log) => normalizeDailyActivityLog(log)),
+  )
 }
 
 export function getActionLogDailyActivityLog(dateKey: string) {
-  return request<DailyActivityLog | null>(`/action-log/daily/${dateKey}`)
+  return request<unknown | null>(`/action-log/daily/${dateKey}`).then((log) =>
+    log ? normalizeDailyActivityLog(log) : null,
+  )
 }
 
 export function putActionLogDailyActivityLog(log: DailyActivityLog) {
-  return request<DailyActivityLog>(`/action-log/daily/${log.dateKey}`, {
+  return request<unknown>(`/action-log/daily/${log.dateKey}`, {
     method: 'PUT',
     body: JSON.stringify(log),
-  })
+  }).then((savedLog) => normalizeDailyActivityLog(savedLog))
 }
 
 export function getActionLogWeeklyActivityReview(weekKey: string) {
@@ -449,6 +454,7 @@ export function deleteActionLogRange(from: string, to: string) {
       dailyLogs: number
       weeklyReviews: number
       openLoops: number
+      situationLogs: number
     }
     deletionRequestId: string
   }>(`/action-log/range?from=${from}&to=${to}`, {

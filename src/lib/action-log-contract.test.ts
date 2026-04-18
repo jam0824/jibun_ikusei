@@ -4,6 +4,7 @@ import { getWeekKey } from '@/lib/date'
 
 import {
   activitySessionSchema,
+  dailyActivityLogSchema,
   deviceSchema,
   normalizeActivitySessionDraft,
   normalizeRawEventDraft,
@@ -152,6 +153,25 @@ describe('action-log-contract', () => {
     ).toMatchObject({
       dateKey: '2026-04-17',
       updatedAt: '2026-04-17T09:20:00+09:00',
+    })
+  })
+
+  it('fills missing quest and health summaries for legacy DailyActivityLog data', () => {
+    expect(
+      dailyActivityLogSchema.parse({
+        id: 'daily_2026-04-17',
+        dateKey: '2026-04-17',
+        summary: 'その日のまとめ',
+        mainThemes: ['調査'],
+        noteIds: [],
+        openLoopIds: [],
+        reviewQuestions: ['次に何を見るか。'],
+        generatedAt: '2026-04-17T22:00:00+09:00',
+      }),
+    ).toMatchObject({
+      summary: 'その日のまとめ',
+      questSummary: expect.stringContaining('リリィ'),
+      healthSummary: expect.stringContaining('リリィ'),
     })
   })
 

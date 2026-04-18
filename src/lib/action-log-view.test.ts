@@ -7,9 +7,12 @@ import type {
   WeeklyActivityReview,
 } from '@/domain/action-log-types'
 import { hydratePersistedState } from '@/domain/logic'
+import type { Quest, QuestCompletion } from '@/domain/types'
+import type { HealthDataEntry, SituationLogEntry } from '@/lib/api-client'
 
 vi.mock('@/lib/api-client', () => ({
   deleteActionLogRange: vi.fn(),
+  getCompletions: vi.fn(),
   getActionLogDailyActivityLog: vi.fn(),
   getActionLogDailyActivityLogs: vi.fn(),
   getActionLogOpenLoops: vi.fn(),
@@ -19,6 +22,9 @@ vi.mock('@/lib/api-client', () => ({
   getActionLogSessionsPage: vi.fn(),
   getActionLogWeeklyActivityReview: vi.fn(),
   getActionLogWeeklyActivityReviews: vi.fn(),
+  getHealthData: vi.fn(),
+  getQuests: vi.fn(),
+  getSituationLogs: vi.fn(),
   putActionLogDailyActivityLog: vi.fn(),
   putActionLogSessionHidden: vi.fn(),
   putActionLogWeeklyActivityReview: vi.fn(),
@@ -34,6 +40,7 @@ import * as ai from '@/lib/ai'
 import {
   buildCompactSessionBlocks,
   canDeleteActionLogRange,
+  deleteActionLogDateRange,
   ensurePreviousDayDailyActivityLog,
   ensurePreviousDayDailyActivityLogShell,
   ensurePreviousWeekReviewForWeb,
@@ -101,11 +108,75 @@ function createOpenLoop(id = 'open_loop_1', overrides: Partial<OpenLoop> = {}): 
   }
 }
 
+function createQuest(id = 'quest_1', overrides: Partial<Quest> = {}): Quest {
+  return {
+    id,
+    title: '朝の読書',
+    description: '静かな読書時間',
+    questType: 'repeatable',
+    xpReward: 5,
+    category: '学習',
+    skillMappingMode: 'ask_each_time',
+    cooldownMinutes: 0,
+    dailyCompletionCap: 10,
+    status: 'active',
+    privacyMode: 'normal',
+    pinned: false,
+    createdAt: '2026-04-16T07:00:00+09:00',
+    updatedAt: '2026-04-16T07:00:00+09:00',
+    ...overrides,
+  }
+}
+
+function createCompletion(
+  id = 'completion_1',
+  questId = 'quest_1',
+  overrides: Partial<QuestCompletion> = {},
+): QuestCompletion {
+  return {
+    id,
+    questId,
+    clientRequestId: `req_${id}`,
+    completedAt: '2026-04-16T08:00:00+09:00',
+    userXpAwarded: 5,
+    skillResolutionStatus: 'resolved',
+    createdAt: '2026-04-16T08:00:00+09:00',
+    ...overrides,
+  }
+}
+
+function createHealthDataEntry(overrides: Partial<HealthDataEntry> = {}): HealthDataEntry {
+  return {
+    date: '2026-04-16',
+    time: '07:10',
+    weight_kg: 61.2,
+    body_fat_pct: 18.1,
+    source: 'health-planet',
+    ...overrides,
+  }
+}
+
+function createSituationLog(
+  timestamp = '2026-04-16T18:30:00+09:00',
+  overrides: Partial<SituationLogEntry> = {},
+): SituationLogEntry {
+  return {
+    summary: '直近30分は実装と確認を静かに行き来していた。',
+    timestamp,
+    details: {
+      active_apps: ['Code', 'Chrome'],
+    },
+    ...overrides,
+  }
+}
+
 function createDailyLog(dateKey = '2026-04-16', overrides: Partial<DailyActivityLog> = {}): DailyActivityLog {
   return {
     id: `daily_${dateKey}`,
     dateKey,
     summary: 'Lily noted a steady day of research and implementation.',
+    questSummary: 'Lily noted a small but steady trail of quest clears through the day.',
+    healthSummary: 'Lily saw a quiet health record that still left a few steady marks.',
     mainThemes: ['Chrome docs', 'research'],
     noteIds: [],
     openLoopIds: ['open_loop_1'],
@@ -158,6 +229,7 @@ describe('action log view orchestration', () => {
       items: [createRawEvent('event_1')],
       nextCursor: null,
     })
+    vi.mocked(api.getCompletions).mockResolvedValue([createCompletion()])
     vi.mocked(api.getActionLogDailyActivityLog).mockResolvedValue(null)
     vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([createOpenLoop()])
     vi.mocked(api.getActionLogSessionsPage).mockResolvedValue({
@@ -165,6 +237,9 @@ describe('action log view orchestration', () => {
       nextCursor: null,
     })
     vi.mocked(api.getActionLogWeeklyActivityReview).mockResolvedValue(null)
+    vi.mocked(api.getHealthData).mockResolvedValue([createHealthDataEntry()])
+    vi.mocked(api.getQuests).mockResolvedValue([createQuest()])
+    vi.mocked(api.getSituationLogs).mockResolvedValue([createSituationLog()])
     vi.mocked(api.putActionLogDailyActivityLog).mockImplementation(async (log) => log)
     vi.mocked(api.putActionLogWeeklyActivityReview).mockImplementation(async (review) => review)
     vi.mocked(api.putActionLogSessionHidden).mockImplementation(async (_id, input) =>
@@ -174,6 +249,17 @@ describe('action log view orchestration', () => {
     vi.mocked(api.getActionLogWeeklyActivityReviews).mockResolvedValue([
       createWeeklyReview('2026-W16'),
     ])
+    vi.mocked(api.deleteActionLogRange).mockResolvedValue({
+      deleted: {
+        rawEvents: 1,
+        sessions: 1,
+        dailyLogs: 1,
+        weeklyReviews: 1,
+        openLoops: 1,
+        situationLogs: 2,
+      },
+      deletionRequestId: 'delete_1',
+    })
   })
 
   it('generates and saves a missing DailyActivityLog only for yesterday using ActivitySession input', async () => {
@@ -181,6 +267,8 @@ describe('action log view orchestration', () => {
     vi.mocked(ai.generateDailyActivityLog).mockResolvedValue({
       provider: 'template',
       summary: 'Lily stitched together the day from the surrounding sessions.',
+      questSummary: 'Lily saw one quest clear land as a small checkpoint in the day.',
+      healthSummary: 'Lily saw a single health record quietly anchor the morning.',
       mainThemes: ['Chrome docs', 'research'],
       reviewQuestions: ['What should be explored next?'],
     })
@@ -197,6 +285,9 @@ describe('action log view orchestration', () => {
       dateKey: '2026-04-16',
       sessions: [createSession('session_1')],
       openLoops: [createOpenLoop()],
+      quests: [createQuest()],
+      completions: [createCompletion()],
+      healthData: [createHealthDataEntry()],
     })
     expect(vi.mocked(ai.generateDailyActivityLog).mock.calls[0][0]).not.toHaveProperty('rawEvents')
     expect(api.putActionLogDailyActivityLog).toHaveBeenCalledWith(
@@ -285,15 +376,21 @@ describe('action log view orchestration', () => {
         status: 'closed',
       }),
     ])
+    vi.mocked(api.getSituationLogs).mockResolvedValue([
+      createSituationLog('2026-04-16T18:00:00+09:00', { summary: 'older summary' }),
+      createSituationLog('2026-04-16T19:00:00+09:00', { summary: 'newer summary' }),
+    ])
 
     const result = await fetchActivityDayShell('2026-04-16')
 
     expect(api.getActionLogDailyActivityLog).toHaveBeenCalledWith('2026-04-16')
     expect(api.getActionLogOpenLoops).toHaveBeenCalledWith('2026-04-16', '2026-04-16')
+    expect(api.getSituationLogs).toHaveBeenCalledWith('2026-04-16', '2026-04-16')
     expect(api.getActionLogSessionsPage).not.toHaveBeenCalled()
     expect(api.getActionLogRawEventsPage).not.toHaveBeenCalled()
     expect(result.dailyLog?.id).toBe('daily_2026-04-16')
     expect(result.openLoops.map((openLoop) => openLoop.id)).toEqual(['open_loop_open'])
+    expect(result.situationLogs.map((log) => log.summary)).toEqual(['newer summary', 'older summary'])
   })
 
   it('fetches a paged session timeline for the day', async () => {
@@ -356,6 +453,8 @@ describe('action log view orchestration', () => {
     vi.mocked(ai.generateDailyActivityLog).mockResolvedValue({
       provider: 'template',
       summary: 'Generated summary for yesterday only.',
+      questSummary: 'Generated quest summary for yesterday only.',
+      healthSummary: 'Generated health summary for yesterday only.',
       mainThemes: ['Chrome docs'],
       reviewQuestions: ['What remains open?'],
     })
@@ -519,6 +618,8 @@ describe('action log view orchestration', () => {
     vi.mocked(ai.generateDailyActivityLog).mockResolvedValue({
       provider: 'template',
       summary: 'Daily summary based on open loops only.',
+      questSummary: 'Quest summary based on open loops only.',
+      healthSummary: 'Health summary based on open loops only.',
       mainThemes: ['Chrome docs'],
       reviewQuestions: ['What remains open?'],
     })
@@ -830,6 +931,7 @@ describe('action log view orchestration', () => {
     vi.mocked(api.getActionLogSessions).mockResolvedValue([createSession('session_1')])
     vi.mocked(api.getActionLogDailyActivityLogs).mockResolvedValue([createDailyLog('2026-04-16')])
     vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([createOpenLoop('open_loop_1')])
+    vi.mocked(api.getSituationLogs).mockResolvedValue([createSituationLog()])
     vi.mocked(api.getActionLogWeeklyActivityReviews).mockResolvedValue([
       createWeeklyReview('2026-W16'),
       createWeeklyReview('2026-W10', {
@@ -849,6 +951,7 @@ describe('action log view orchestration', () => {
     expect(bundle.sessions.map((session) => session.id)).toEqual(['session_1'])
     expect(bundle.dailyLogs.map((log) => log.id)).toEqual(['daily_2026-04-16'])
     expect(bundle.openLoops.map((openLoop) => openLoop.id)).toEqual(['open_loop_1'])
+    expect(bundle.situationLogs.map((log) => log.timestamp)).toEqual(['2026-04-16T18:30:00+09:00'])
     expect(bundle.weeklyReviews.map((review) => review.id)).toEqual(['weekly_2026-W16'])
     expect(bundle.meta).toMatchObject({
       from: '2026-04-14',
@@ -874,6 +977,17 @@ describe('action log view orchestration', () => {
         now: new Date('2026-04-17T09:00:00+09:00'),
       }),
     ).toBe(false)
+  })
+
+  it('deletes an action-log range and returns situation log counts too', async () => {
+    const result = await deleteActionLogDateRange({
+      from: '2026-04-10',
+      to: '2026-04-16',
+      now: new Date('2026-04-17T09:00:00+09:00'),
+    })
+
+    expect(api.deleteActionLogRange).toHaveBeenCalledWith('2026-04-10', '2026-04-16')
+    expect(result.deleted.situationLogs).toBe(2)
   })
 
   it('updates a session hidden flag through the targeted API', async () => {

@@ -14,6 +14,7 @@ const WEEKLY_PREFIX = "ACTION_LOG#WEEKLY#";
 const DEVICE_PREFIX = "ACTION_LOG#DEVICE#";
 const OPEN_LOOP_PREFIX = "ACTION_LOG#OPEN_LOOP#";
 const DELETION_REQUEST_PREFIX = "ACTION_LOG#DELETION_REQUEST#";
+const SITUATION_PREFIX = "SITUATION#";
 const PRIVACY_RULES_SK = "ACTION_LOG#PRIVACY_RULES";
 const BATCH_WRITE_SIZE = 25;
 const BATCH_WRITE_MAX_RETRIES = 3;
@@ -690,11 +691,12 @@ export const handler = async (event) => {
         return range.error;
       }
 
-      const [rawEvents, sessions, dailyLogs, openLoops, weeklyCandidates] = await Promise.all([
+      const [rawEvents, sessions, dailyLogs, openLoops, situationLogs, weeklyCandidates] = await Promise.all([
         queryBetween({ pk, prefix: RAW_EVENT_PREFIX, from: range.from, to: range.to }),
         queryBetween({ pk, prefix: SESSION_PREFIX, from: range.from, to: range.to }),
         queryBetween({ pk, prefix: DAILY_PREFIX, from: range.from, to: range.to }),
         queryBetween({ pk, prefix: OPEN_LOOP_PREFIX, from: range.from, to: range.to }),
+        queryBetween({ pk, prefix: SITUATION_PREFIX, from: range.from, to: range.to }),
         queryBeginsWith({ pk, prefix: WEEKLY_PREFIX }),
       ]);
 
@@ -710,6 +712,7 @@ export const handler = async (event) => {
       await deleteItems(sessions.Items, pk);
       await deleteItems(dailyLogs.Items, pk);
       await deleteItems(openLoops.Items, pk);
+      await deleteItems(situationLogs.Items, pk);
       await deleteItems(weeklyReviews, pk);
 
       const deletionRequest = {
@@ -732,6 +735,7 @@ export const handler = async (event) => {
           dailyLogs: dailyLogs.Items?.length ?? 0,
           weeklyReviews: weeklyReviews.length,
           openLoops: openLoops.Items?.length ?? 0,
+          situationLogs: situationLogs.Items?.length ?? 0,
         },
         deletionRequestId: deletionRequest.id,
       });

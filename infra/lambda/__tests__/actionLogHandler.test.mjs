@@ -799,6 +799,16 @@ describe('actionLogHandler', () => {
             ],
           })
         }
+        if (String(prefix).startsWith('SITUATION#')) {
+          return Promise.resolve({
+            Items: [
+              {
+                PK: 'user#test-user-123',
+                SK: 'SITUATION#2026-04-16T12:00:00+09:00#log_1',
+              },
+            ],
+          })
+        }
         if (command.input.ExpressionAttributeValues[':prefix'] === 'ACTION_LOG#WEEKLY#') {
           return Promise.resolve({
             Items: [
@@ -824,6 +834,7 @@ describe('actionLogHandler', () => {
     expect(body.deleted.dailyLogs).toBe(1)
     expect(body.deleted.openLoops).toBe(1)
     expect(body.deleted.weeklyReviews).toBe(1)
+    expect(body.deleted.situationLogs).toBe(1)
     const putCommands = commands.filter((command) => command.constructor.name === 'PutCommand')
     expect(
       putCommands.some((command) =>

@@ -130,6 +130,38 @@ describe('api-client action-log stubs', () => {
   })
 
   it('uses the expected action-log read and write paths', async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const path = String(input)
+      if (path.includes('/action-log/daily?')) {
+        return {
+          ok: true,
+          text: async () => '[]',
+        }
+      }
+      if (path.includes('/action-log/daily/2026-04-17') && !path.includes('/action-log/daily?')) {
+        return {
+          ok: true,
+          text: async () =>
+            JSON.stringify({
+              id: 'daily_1',
+              dateKey: '2026-04-17',
+              summary: 'summary',
+              questSummary: 'quest summary',
+              healthSummary: 'health summary',
+              mainThemes: ['調査'],
+              noteIds: [],
+              openLoopIds: [],
+              reviewQuestions: ['q1'],
+              generatedAt: '2026-04-17T23:59:00+09:00',
+            }),
+        }
+      }
+      return {
+        ok: true,
+        text: async () => '{}',
+      }
+    })
+
     await getActionLogRawEvents('2026-04-01', '2026-04-17')
     await getActionLogSessions('2026-04-01', '2026-04-17')
     await getActionLogDailyActivityLogs('2026-04-01', '2026-04-17')
@@ -138,6 +170,8 @@ describe('api-client action-log stubs', () => {
       id: 'daily_1',
       dateKey: '2026-04-17',
       summary: 'summary',
+      questSummary: 'quest summary',
+      healthSummary: 'health summary',
       mainThemes: ['調査'],
       noteIds: [],
       openLoopIds: [],
