@@ -368,6 +368,24 @@ describe('activity log routes', () => {
     expect(screen.getAllByText('Chrome / Manifest V3 - Chrome for Developers').length).toBeGreaterThan(0)
   })
 
+  it('keeps the target date and session-event toggle in the same target row', async () => {
+    renderApp('/records/activity/today')
+    await settleApp()
+
+    const targetRow = screen.getByTestId('activity-day-target-row')
+
+    expect(within(targetRow).getByText('対象日: 2026-04-17')).toBeInTheDocument()
+    expect(within(targetRow).getByRole('button', { name: 'session' })).toBeInTheDocument()
+    expect(within(targetRow).getByRole('button', { name: 'event' })).toBeInTheDocument()
+  })
+
+  it('does not render hide buttons on today session cards', async () => {
+    renderApp('/records/activity/today')
+    await settleApp()
+
+    expect(screen.queryByRole('button', { name: 'Hide session session_1' })).not.toBeInTheDocument()
+  })
+
   it('shows only the first 50 sessions until more is requested', async () => {
     vi.mocked(api.getActionLogSessions).mockResolvedValue(createSessionBatch(75))
 
@@ -492,6 +510,26 @@ describe('activity log routes', () => {
     expect(newerTitle.compareDocumentPosition(olderTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
+  it('does not render restore buttons on day session cards even when hidden sessions are included', async () => {
+    vi.mocked(api.getActionLogSessions).mockResolvedValue([
+      createSession('session_hidden_day', {
+        id: 'session_hidden_day',
+        hidden: true,
+      }),
+    ])
+
+    renderApp('/records/activity/day/2026-04-17')
+    await settleApp()
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Include hidden sessions in timeline' }))
+    await settleApp()
+
+    expect(screen.getByTestId('activity-session-session_hidden_day')).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: 'Restore session session_hidden_day' }),
+    ).not.toBeInTheDocument()
+  })
+
   it('generates a missing previous-day daily log only on the previous-day route', async () => {
     renderApp('/records/activity/day/2026-04-16')
     await settleApp()
@@ -569,6 +607,14 @@ describe('activity log routes', () => {
     await settleApp()
 
     expect(screen.getByTestId('location')).toHaveTextContent('/records/activity/review/week?weekKey=2026-W15')
+  })
+
+  it('uses the shorter 詳細 label on weekly review cards', async () => {
+    renderApp('/records/activity/review/year?year=2026')
+    await settleApp()
+
+    expect(screen.getAllByText('詳細').length).toBeGreaterThan(0)
+    expect(screen.queryByText('詳細を見る')).not.toBeInTheDocument()
   })
 
   it('canonicalizes a yearless review route to the latest available year', async () => {
@@ -679,8 +725,8 @@ describe('activity log routes', () => {
     expect(screen.queryByText('Chrome 拡張の調査')).not.toBeInTheDocument()
   })
 
-  it('hides a session from the day view when hide is pressed', async () => {
-    renderApp('/records/activity/day/2026-04-17')
+  it('hides a session from the search view when hide is pressed', async () => {
+    renderApp('/records/activity/search')
     await settleApp()
 
     fireEvent.click(screen.getByRole('button', { name: 'Hide session session_1' }))
@@ -690,7 +736,7 @@ describe('activity log routes', () => {
       dateKey: '2026-04-17',
       hidden: true,
     })
-    expect(screen.queryByText('Chrome 諡｡蠑ｵ縺ｮ隱ｿ譟ｻ')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('activity-session-session_1')).not.toBeInTheDocument()
   })
 
   it('prioritizes session summary above the generated title in the day view', async () => {
@@ -730,28 +776,6 @@ describe('activity log routes', () => {
     const metadata = within(card).getByText('学習 / AppOne / domain.example')
 
     expect(title.compareDocumentPosition(metadata) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  })
-
-  it('can restore a hidden session from the day view when hidden sessions are included', async () => {
-    renderApp('/records/activity/day/2026-04-17')
-    await settleApp()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Hide session session_1' }))
-    await settleApp()
-
-    expect(screen.queryByText('Chrome 諡｡蠑ｵ縺ｮ隱ｿ譟ｻ')).not.toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole('switch', { name: 'Include hidden sessions in timeline' }))
-    await settleApp()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Restore session session_1' }))
-    await settleApp()
-
-    expect(api.putActionLogSessionHidden).toHaveBeenLastCalledWith('session_1', {
-      dateKey: '2026-04-17',
-      hidden: false,
-    })
-    expect(screen.getByRole('button', { name: 'Hide session session_1' })).toBeInTheDocument()
   })
 
   it.skip('shows hidden sessions in search only when includeHidden is enabled', async () => {

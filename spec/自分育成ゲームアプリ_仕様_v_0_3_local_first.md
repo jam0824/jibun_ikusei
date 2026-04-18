@@ -512,15 +512,17 @@ Cognito で認証される利用アカウント。アプリのデータ分離単
 
 - タイムライン
 - `today/day` のタイムラインは `session` / `event` とも初期 `50件` 表示とし、残りは `さらに50件表示` で追加する
+- `today/day` の `Target` カードでは、モバイルでも `対象日` と `session / event` 切り替えを同じ行に配置する
 - デイリーログ
 - 検索導線
 - 週次行動レビュー導線
-- セッションの非表示化と手動メモ導線
+- 手動メモ導線と hidden session の検索導線
 
 #### `activity` タブ内の通常導線
 
 - `行動ログ` タブを開くと `/records/activity/today` へ遷移する。
 - `成長記録 / 行動ログ` タブと、行動ログ内の `今日 / カレンダー / 検索 / 週次レビュー` pill ナビは、選択中に文字色・アイコン色のコントラストを十分に確保し、暗色背景では白文字を使って背景に埋もれない見た目を保つ。
+- `today/day` のセッションカードでは直接 `非表示 / 再表示` ボタンを出さず、右上は時刻アイコン中心の軽い表示にする。
 - `今日` から特定日へ移動する時は `/records/activity/day/:dateKey` を使う。
 - `カレンダー` は `/records/activity/calendar?month=YYYY-MM`
 - `検索` は `/records/activity/search`
@@ -530,6 +532,7 @@ Cognito で認証される利用アカウント。アプリのデータ分離単
 - `calendar` では 1 か月分を表示し、`前月` / `次月` / `年月ピッカー` で移動できる。
 - `review/year` は `year` query を持てる。未指定時は JST 基準の当年、または直近の利用可能年を表示する。
 - `review/year` では 1 年分の週次レビュー一覧を表示し、`前年` / `次年` / `年ピッカー` で移動できる。
+- `review/year` の各週カードの導線ラベルは `詳細` とし、モバイルでは本文と衝突しないよう縦積み配置を許容する。
 - `review/year` の各週を押すと `/records/activity/review/week?weekKey=YYYY-Www` の詳細へ遷移する。
 - `review/week` は個別週の詳細 route として扱い、本文やカテゴリ比率、OpenLoop を表示する。
 
