@@ -606,37 +606,37 @@
 
 ### 目的
 
-- [ ] `DailyActivityLog` を `その日のまとめ / クエストクリア状況まとめ / 健康状況まとめ` の 3 本立てへ拡張する
+- [x] `DailyActivityLog` を `その日のまとめ / クエストクリア状況まとめ / 健康状況まとめ` の 3 本立てへ拡張する
 - [ ] `session` 表示で 30 分まとめを `DailyActivityLog` の下、session timeline の上に統合する
 - [ ] `situation_logs` を長期保存対象へ切り替える
 
 ### 実装対象
 
-- [ ] `DailyActivityLog` に `questSummary` と `healthSummary` を追加する
+- [x] `DailyActivityLog` に `questSummary` と `healthSummary` を追加する
 - [ ] `today/day` の `session` 表示で `SituationLog` を最新順に表示する
 - [ ] `today/day` の `event` 表示では `SituationLog` を出さない
 - [x] `today/day` で `OpenLoop` 表示を持たない
-- [ ] カレンダーセルは `DailyActivityLog.summary` だけを表示する
+- [x] カレンダーセルは `DailyActivityLog.summary` だけを表示する
 - [ ] `situation_logs` の TTL を撤廃する
 - [ ] export bundle に `situationLogs` を含める
 - [ ] 期間 delete で `SituationLog` も削除対象に含める
 
 ### 先に書く failing test
 
-- [ ] `DailyActivityLog` の 3 本まとめが `summary -> questSummary -> healthSummary` の順で表示されるテスト
+- [x] `DailyActivityLog` の 3 本まとめが `summary -> questSummary -> healthSummary` の順で表示されるテスト
 - [ ] `session` 表示で `SituationLog` が `timestamp` 降順に出るテスト
 - [ ] `event` 表示では `SituationLog` が出ないテスト
 - [x] `today/day` で `OpenLoop` が表示されないテスト
-- [ ] カレンダーセルに `DailyActivityLog.summary` だけが出るテスト
+- [x] カレンダーセルに `DailyActivityLog.summary` だけが出るテスト
 - [ ] export bundle に `situationLogs` が含まれるテスト
 - [ ] `DELETE /action-log/range` が `SituationLog` も削除対象に含めるテスト
 
 ### 実装メモ
 
-- [ ] `summary`, `questSummary`, `healthSummary` はすべて JST 同日データを入力にし、`gpt-5.4` で生成する
-- [ ] `questSummary` は `QuestCompletion` と関連 `Quest` 情報、`healthSummary` は `health-data` を主入力にする
-- [ ] 3 本ともリリィ観察日記風の地の文でそろえる
-- [ ] `mainThemes` / `reviewQuestions` は保持してもよいが、day 画面の必須表示にはしない
+- [x] `summary`, `questSummary`, `healthSummary` はすべて JST 同日データを入力にし、`gpt-5.4` で生成する
+- [x] `questSummary` は `QuestCompletion` と関連 `Quest` 情報、`healthSummary` は `health-data` を主入力にする
+- [x] 3 本ともリリィ観察日記風の地の文でそろえる
+- [x] `mainThemes` / `reviewQuestions` は保持してもよいが、day 画面の必須表示にはしない
 - [x] `OpenLoop` 導線は廃止し、行動ログは session / daily / weekly を正本にする
 
 ### 完了条件

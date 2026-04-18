@@ -320,7 +320,12 @@ function formatActivitySessionLine(session: ActivitySession): string {
 }
 
 function formatDailyActivityLogLine(log: DailyActivityLog): string {
-  return `- [その日のまとめ] ${log.summary} (${log.dateKey})`
+  const summary =
+    log.summary?.trim() ||
+    log.questSummary?.trim() ||
+    log.healthSummary?.trim() ||
+    'まだ生成されていません。'
+  return `- [その日のまとめ] ${summary} (${log.dateKey})`
 }
 
 async function loadMessagesForSessions(

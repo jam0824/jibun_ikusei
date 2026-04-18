@@ -38,6 +38,7 @@ class EventBus(QObject):
     # デバッグ
     five_minute_record_requested = Signal()  # 手動で5分記録を要求
     thirty_minute_record_requested = Signal()  # 手動で30分記録を要求
+    previous_day_daily_log_regeneration_requested = Signal()  # 前日のDailyActivityLog再生成
     auto_talk_requested = Signal()        # 手動で雑談を発火
     books_talk_requested = Signal()       # 手動で本雑談を発火
     memory_talk_requested = Signal()      # 手動で思い出雑談を発火

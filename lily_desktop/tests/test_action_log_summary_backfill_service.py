@@ -39,12 +39,49 @@ def _session(
     }
 
 
+def _quest(quest_id: str, title: str = "朝の読書") -> dict:
+    return {
+        "id": quest_id,
+        "title": title,
+        "category": "学習",
+        "questType": "repeatable",
+        "status": "active",
+    }
+
+
+def _completion(
+    completion_id: str,
+    *,
+    quest_id: str,
+    completed_at: str,
+) -> dict:
+    return {
+        "id": completion_id,
+        "questId": quest_id,
+        "completedAt": completed_at,
+        "note": "進めた",
+    }
+
+
+def _health_entry(date_key: str, time: str = "07:10") -> dict:
+    return {
+        "date": date_key,
+        "time": time,
+        "weight_kg": 61.2,
+        "body_fat_pct": 18.1,
+        "source": "health-planet",
+    }
+
+
 @dataclass
 class _FakeApiClient:
     daily_logs: dict[str, dict | None] = field(default_factory=dict)
     weekly_reviews: dict[str, dict | None] = field(default_factory=dict)
     daily_sessions: dict[str, list[dict]] = field(default_factory=dict)
     weekly_sessions: dict[tuple[str, str], list[dict]] = field(default_factory=dict)
+    quests: list[dict] = field(default_factory=list)
+    completions: list[dict] = field(default_factory=list)
+    health_data: dict[tuple[str, str], list[dict]] = field(default_factory=dict)
     put_daily_calls: list[dict] = field(default_factory=list)
     put_weekly_calls: list[dict] = field(default_factory=list)
     session_calls: list[tuple[str, str]] = field(default_factory=list)
@@ -69,6 +106,15 @@ class _FakeApiClient:
             return list(self.daily_sessions.get(from_date, []))
         return list(self.weekly_sessions.get((from_date, to_date), []))
 
+    async def get_quests(self) -> list[dict]:
+        return list(self.quests)
+
+    async def get_completions(self) -> list[dict]:
+        return list(self.completions)
+
+    async def get_health_data(self, from_date: str, to_date: str) -> list[dict]:
+        return list(self.health_data.get((from_date, to_date), []))
+
 
 @pytest.mark.asyncio
 async def test_backfill_generates_missing_yesterday_daily_and_previous_week_weekly(monkeypatch):
@@ -84,6 +130,17 @@ async def test_backfill_generates_missing_yesterday_daily_and_previous_week_week
                 )
             ]
         },
+        quests=[_quest("quest_daily", "前日の読書")],
+        completions=[
+            _completion(
+                "completion_daily",
+                quest_id="quest_daily",
+                completed_at="2026-04-16T08:00:00+09:00",
+            )
+        ],
+        health_data={
+            ("2026-04-16", "2026-04-16"): [_health_entry("2026-04-16")]
+        },
         weekly_sessions={
             ("2026-04-06", "2026-04-12"): [
                 _session(
@@ -97,12 +154,23 @@ async def test_backfill_generates_missing_yesterday_daily_and_previous_week_week
         },
     )
 
+    request_calls: list[dict] = []
+
     async def _fake_request_openai_json(**kwargs):
-        if kwargs["schema_name"] == "daily_activity_log":
+        request_calls.append(kwargs)
+        if kwargs["schema_name"] == "daily_activity_log_summary":
             return {
                 "summary": "リリィは、前日の調査の流れを静かに見つめていた。",
                 "mainThemes": ["Chrome拡張", "調査"],
                 "reviewQuestions": ["次に確認したい仕様はどこだったか。"],
+            }
+        if kwargs["schema_name"] == "daily_activity_log_quest_summary":
+            return {
+                "questSummary": "リリィは、前日のクエスト達成が静かな区切りを作っていたと見ている。",
+            }
+        if kwargs["schema_name"] == "daily_activity_log_health_summary":
+            return {
+                "healthSummary": "リリィは、前日の健康記録が朝の輪郭を残していたと見ている。",
             }
         return {
             "summary": "リリィは、前週の調査と実装の往復を見つめていた。",
@@ -127,16 +195,33 @@ async def test_backfill_generates_missing_yesterday_daily_and_previous_week_week
         ("2026-04-16", "2026-04-16"),
         ("2026-04-06", "2026-04-12"),
     ]
+    assert request_calls[0]["schema_name"] == "daily_activity_log_summary"
+    assert request_calls[0]["max_output_tokens"] == 1600
+    assert request_calls[1]["schema_name"] == "daily_activity_log_quest_summary"
+    assert request_calls[1]["max_output_tokens"] == 1600
+    assert request_calls[2]["schema_name"] == "daily_activity_log_health_summary"
+    assert request_calls[2]["max_output_tokens"] == 1600
+    assert request_calls[3]["schema_name"] == "weekly_activity_review"
+    assert request_calls[3]["max_output_tokens"] == 1600
     assert api_client.put_daily_calls[0]["id"] == "daily_2026-04-16"
     assert api_client.put_daily_calls[0]["summary"] == "リリィは、前日の調査の流れを静かに見つめていた。"
+    assert api_client.put_daily_calls[0]["questSummary"] == "リリィは、前日のクエスト達成が静かな区切りを作っていたと見ている。"
+    assert api_client.put_daily_calls[0]["healthSummary"] == "リリィは、前日の健康記録が朝の輪郭を残していたと見ている。"
     assert api_client.put_weekly_calls[0]["id"] == "weekly_2026-W15"
     assert api_client.put_weekly_calls[0]["summary"] == "リリィは、前週の調査と実装の往復を見つめていた。"
 
 
 @pytest.mark.asyncio
-async def test_backfill_does_not_regenerate_existing_daily_or_weekly(monkeypatch):
+async def test_backfill_does_not_regenerate_existing_complete_daily_or_weekly(monkeypatch):
     api_client = _FakeApiClient(
-        daily_logs={"2026-04-16": {"id": "daily_2026-04-16"}},
+        daily_logs={
+            "2026-04-16": {
+                "id": "daily_2026-04-16",
+                "summary": "existing",
+                "questSummary": "existing quest",
+                "healthSummary": "existing health",
+            }
+        },
         weekly_reviews={"2026-W15": {"id": "weekly_2026-W15"}},
     )
 
@@ -167,7 +252,7 @@ async def test_backfill_does_not_regenerate_existing_daily_or_weekly(monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_backfill_uses_template_fallback_when_openai_fails(monkeypatch):
+async def test_backfill_saves_only_successful_daily_sections_when_some_generations_fail(monkeypatch):
     api_client = _FakeApiClient(
         daily_sessions={
             "2026-04-16": [
@@ -179,6 +264,17 @@ async def test_backfill_uses_template_fallback_when_openai_fails(monkeypatch):
                     title="前日の調査",
                 )
             ]
+        },
+        quests=[_quest("quest_daily", "前日の読書")],
+        completions=[
+            _completion(
+                "completion_daily",
+                quest_id="quest_daily",
+                completed_at="2026-04-16T08:00:00+09:00",
+            )
+        ],
+        health_data={
+            ("2026-04-16", "2026-04-16"): [_health_entry("2026-04-16")]
         },
         weekly_sessions={
             ("2026-04-06", "2026-04-12"): [
@@ -193,12 +289,27 @@ async def test_backfill_uses_template_fallback_when_openai_fails(monkeypatch):
         },
     )
 
-    async def _failing_request_openai_json(**_kwargs):
-        raise RuntimeError("openai unavailable")
+    async def _partially_failing_request_openai_json(**kwargs):
+        if kwargs["schema_name"] == "daily_activity_log_summary":
+            return {
+                "summary": "リリィは、前日の調査の流れを静かに見つめていた。",
+                "mainThemes": ["Chrome拡張", "調査"],
+                "reviewQuestions": ["次に確認したい仕様はどこだったか。"],
+            }
+        if kwargs["schema_name"] == "daily_activity_log_health_summary":
+            return {
+                "healthSummary": "リリィは、前日の健康記録が朝の輪郭を残していたと見ている。",
+            }
+        if kwargs["schema_name"] == "daily_activity_log_quest_summary":
+            raise RuntimeError("quest summary unavailable")
+        return {
+            "summary": "リリィは、前週の調査と実装の往復を見つめていた。",
+            "focusThemes": ["Chrome拡張", "開発"],
+        }
 
     monkeypatch.setattr(
         "core.action_log_summary_backfill_service.request_openai_json",
-        _failing_request_openai_json,
+        _partially_failing_request_openai_json,
     )
 
     service = ActionLogSummaryBackfillService(
@@ -211,12 +322,28 @@ async def test_backfill_uses_template_fallback_when_openai_fails(monkeypatch):
     )
 
     assert api_client.put_daily_calls[0]["summary"].startswith("リリィ")
+    assert (
+        api_client.put_daily_calls[0].get("questSummary") is None
+        or "questSummary" not in api_client.put_daily_calls[0]
+    )
+    assert api_client.put_daily_calls[0]["healthSummary"].startswith("リリィ")
     assert api_client.put_weekly_calls[0]["summary"].startswith("リリィ")
 
 
 @pytest.mark.asyncio
-async def test_backfill_uses_session_only_inputs_and_saves_without_open_loop_ids(monkeypatch):
+async def test_backfill_regenerates_only_missing_daily_sections(monkeypatch):
     api_client = _FakeApiClient(
+        daily_logs={
+            "2026-04-16": {
+                "id": "daily_2026-04-16",
+                "dateKey": "2026-04-16",
+                "summary": "既存のその日のまとめ",
+                "mainThemes": ["既存テーマ"],
+                "noteIds": [],
+                "reviewQuestions": ["既存の問い"],
+                "generatedAt": "2026-04-16T22:00:00+09:00",
+            }
+        },
         daily_sessions={
             "2026-04-16": [
                 _session(
@@ -227,6 +354,17 @@ async def test_backfill_uses_session_only_inputs_and_saves_without_open_loop_ids
                     title="前日の調査",
                 )
             ]
+        },
+        quests=[_quest("quest_daily", "前日の読書")],
+        completions=[
+            _completion(
+                "completion_daily",
+                quest_id="quest_daily",
+                completed_at="2026-04-16T08:00:00+09:00",
+            )
+        ],
+        health_data={
+            ("2026-04-16", "2026-04-16"): [_health_entry("2026-04-16")]
         },
         weekly_sessions={
             ("2026-04-06", "2026-04-12"): [
@@ -244,11 +382,13 @@ async def test_backfill_uses_session_only_inputs_and_saves_without_open_loop_ids
 
     async def _fake_request_openai_json(**kwargs):
         captured_inputs.append(kwargs["input_payload"])
-        if kwargs["schema_name"] == "daily_activity_log":
+        if kwargs["schema_name"] == "daily_activity_log_quest_summary":
             return {
-                "summary": "リリィは、前日の調査の流れを静かに見つめていた。",
-                "mainThemes": ["Chrome拡張", "調査"],
-                "reviewQuestions": ["次に確認したい仕様はどこだったか。"],
+                "questSummary": "リリィは、前日のクエスト達成が静かな区切りを作っていたと見ている。",
+            }
+        if kwargs["schema_name"] == "daily_activity_log_health_summary":
+            return {
+                "healthSummary": "リリィは、前日の健康記録が朝の輪郭を残していたと見ている。",
             }
         return {
             "summary": "リリィは、前週の調査と実装の往復を見つめていた。",
@@ -269,7 +409,11 @@ async def test_backfill_uses_session_only_inputs_and_saves_without_open_loop_ids
         now=datetime(2026, 4, 17, 9, 0, tzinfo=JST)
     )
 
+    assert len(captured_inputs) == 3
     assert "openLoops" not in captured_inputs[0]
     assert "openLoops" not in captured_inputs[1]
-    assert "openLoopIds" not in api_client.put_daily_calls[0]
+    assert "openLoops" not in captured_inputs[2]
+    assert api_client.put_daily_calls[0]["summary"] == "既存のその日のまとめ"
+    assert api_client.put_daily_calls[0]["questSummary"].startswith("リリィ")
+    assert api_client.put_daily_calls[0]["healthSummary"].startswith("リリィ")
     assert "openLoopIds" not in api_client.put_weekly_calls[0]

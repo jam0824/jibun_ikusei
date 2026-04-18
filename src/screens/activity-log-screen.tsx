@@ -1,5 +1,5 @@
 import { CalendarDays, Clock3, Search, Sparkles } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ActivityLogNav, RecordsSectionTabs } from '@/components/records-navigation'
 import type { ActivitySession, RawEvent } from '@/domain/action-log-types'
@@ -17,19 +17,21 @@ import {
   type ActivityWeekViewData,
   canDeleteActionLogRange,
   deleteActionLogDateRange,
-  ensurePreviousDayDailyActivityLogShell,
   ensurePreviousWeekReviewForWeb,
   exportActionLogBundle,
   fetchActivityCalendarMonth,
   fetchActivityDayEventPage,
   fetchActivityDaySessionPage,
   fetchActivityDayShell,
+  generatePreviousDayDailyActivityLogSections,
   fetchActivityReviewWeek,
   fetchActivityReviewYear,
   getCurrentMonthKeyJst,
   getCurrentWeekKeyJst,
   getCurrentYearJst,
+  getMissingDailyActivityLogSections,
   getTodayDateKeyJst,
+  getYesterdayDateKeyJst,
   normalizeMonthKey,
   normalizeViewMode,
   normalizeWeekKey,
@@ -38,6 +40,7 @@ import {
   searchActivityLogs,
   setActivitySessionHidden,
   shiftMonthKey,
+  type DailyActivityLogSectionKey,
 } from '@/lib/action-log-view'
 import { useAppStore } from '@/store/app-store'
 
@@ -143,8 +146,55 @@ function ManualNotePlaceholder() {
   )
 }
 
-function DailySummaryCard({ day }: { day: ActivityDayViewData }) {
-  if (!day.dailyLog) {
+type DailySectionStatus = 'idle' | 'loading' | 'failed'
+type DailySectionStatusMap = Record<DailyActivityLogSectionKey, DailySectionStatus>
+
+const DEFAULT_DAILY_SECTION_STATUSES: DailySectionStatusMap = {
+  summary: 'idle',
+  questSummary: 'idle',
+  healthSummary: 'idle',
+}
+
+const DAILY_SECTION_MISSING_MESSAGE = 'まだ生成されていません。次回また生成します。'
+
+function buildSectionStatusMap(
+  sections: DailyActivityLogSectionKey[],
+  status: DailySectionStatus,
+): DailySectionStatusMap {
+  return sections.reduce(
+    (result, section) => ({
+      ...result,
+      [section]: status,
+    }),
+    { ...DEFAULT_DAILY_SECTION_STATUSES },
+  )
+}
+
+function hasDailySectionState(statuses: DailySectionStatusMap) {
+  return Object.values(statuses).some((status) => status !== 'idle')
+}
+
+function getDailySectionContent(
+  value: string | undefined,
+  status: DailySectionStatus,
+) {
+  if (value?.trim()) {
+    return value
+  }
+  if (status === 'loading') {
+    return '生成中…'
+  }
+  return DAILY_SECTION_MISSING_MESSAGE
+}
+
+function DailySummaryCard({
+  day,
+  dailySectionStatuses,
+}: {
+  day: ActivityDayViewData
+  dailySectionStatuses: DailySectionStatusMap
+}) {
+  if (!day.dailyLog && !hasDailySectionState(dailySectionStatuses)) {
     return (
       <Card>
         <CardContent className="space-y-3">
@@ -168,20 +218,26 @@ function DailySummaryCard({ day }: { day: ActivityDayViewData }) {
             </div>
             <div className="mt-1 text-lg font-bold text-slate-900">その日のまとめ</div>
           </div>
-          <Badge tone="soft">{day.dailyLog.dateKey}</Badge>
+          <Badge tone="soft">{day.dateKey}</Badge>
         </div>
         <div className="space-y-4">
           <div className="space-y-2">
             <div className="text-sm font-semibold text-slate-900">その日のまとめ</div>
-            <p className="text-sm leading-6 text-slate-600">{day.dailyLog.summary}</p>
+            <p className="text-sm leading-6 text-slate-600">
+              {getDailySectionContent(day.dailyLog?.summary, dailySectionStatuses.summary)}
+            </p>
           </div>
           <div className="space-y-2">
             <div className="text-sm font-semibold text-slate-900">クエストクリア状況まとめ</div>
-            <p className="text-sm leading-6 text-slate-600">{day.dailyLog.questSummary}</p>
+            <p className="text-sm leading-6 text-slate-600">
+              {getDailySectionContent(day.dailyLog?.questSummary, dailySectionStatuses.questSummary)}
+            </p>
           </div>
           <div className="space-y-2">
             <div className="text-sm font-semibold text-slate-900">健康状況まとめ</div>
-            <p className="text-sm leading-6 text-slate-600">{day.dailyLog.healthSummary}</p>
+            <p className="text-sm leading-6 text-slate-600">
+              {getDailySectionContent(day.dailyLog?.healthSummary, dailySectionStatuses.healthSummary)}
+            </p>
           </div>
         </div>
       </CardContent>
@@ -486,21 +542,22 @@ function TodayOrDayView({
   )
   const [error, setError] = useState<string>()
   const [isShellLoading, setIsShellLoading] = useState(true)
+  const [dailySectionStatuses, setDailySectionStatuses] = useState<DailySectionStatusMap>(
+    DEFAULT_DAILY_SECTION_STATUSES,
+  )
+  const previousDayGenerationAttemptRef = useRef<string | null>(null)
 
   useEffect(() => {
     let active = true
     setIsShellLoading(true)
     setError(undefined)
     setDayShell(null)
+    setDailySectionStatuses(DEFAULT_DAILY_SECTION_STATUSES)
+    previousDayGenerationAttemptRef.current = null
     setSessionTimeline(createEmptyTimelinePageState<ActivitySession>())
     setEventTimeline(createEmptyTimelinePageState<RawEvent>())
 
-    const loadShell =
-      variant === 'today'
-        ? fetchActivityDayShell(dateKey)
-        : ensurePreviousDayDailyActivityLogShell({ aiConfig, settings, dateKey })
-
-    void loadShell
+    void fetchActivityDayShell(dateKey)
       .then((nextDayShell) => {
         if (active) {
           setDayShell(nextDayShell)
@@ -520,7 +577,63 @@ function TodayOrDayView({
     return () => {
       active = false
     }
-  }, [aiConfig, dateKey, settings, variant])
+  }, [dateKey, variant])
+
+  useEffect(() => {
+    if (variant !== 'day' || !dayShell) {
+      return
+    }
+    if (dateKey !== getYesterdayDateKeyJst()) {
+      return
+    }
+    if (previousDayGenerationAttemptRef.current === dateKey) {
+      return
+    }
+
+    const missingSections = getMissingDailyActivityLogSections(dayShell.dailyLog)
+    if (missingSections.length === 0) {
+      return
+    }
+
+    previousDayGenerationAttemptRef.current = dateKey
+    let active = true
+    setDailySectionStatuses(buildSectionStatusMap(missingSections, 'loading'))
+
+    void generatePreviousDayDailyActivityLogSections({
+      aiConfig,
+      settings,
+      dateKey,
+      dailyLog: dayShell.dailyLog,
+      onSectionSaved: ({ section, dailyLog }) => {
+        if (!active) {
+          return
+        }
+        setDayShell((current) => (current ? { ...current, dailyLog } : current))
+        setDailySectionStatuses((current) => ({
+          ...current,
+          [section]: 'idle',
+        }))
+      },
+      onSectionFailed: (section) => {
+        if (!active) {
+          return
+        }
+        setDailySectionStatuses((current) => ({
+          ...current,
+          [section]: 'failed',
+        }))
+      },
+    }).then(({ dailyLog }) => {
+      if (!active || !dailyLog) {
+        return
+      }
+      setDayShell((current) => (current ? { ...current, dailyLog } : current))
+    })
+
+    return () => {
+      active = false
+    }
+  }, [aiConfig, dateKey, dayShell, settings, variant])
 
   useEffect(() => {
     setSessionTimeline(createEmptyTimelinePageState<ActivitySession>())
@@ -724,7 +837,7 @@ function TodayOrDayView({
         ) : null}
         {!isLoading && !error && day ? (
           <>
-            <DailySummaryCard day={day} />
+            <DailySummaryCard day={day} dailySectionStatuses={dailySectionStatuses} />
             <ManualNotePlaceholder />
             {viewMode === 'session' ? (
               <>

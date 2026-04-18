@@ -59,5 +59,6 @@ def test_build_context_menu_replaces_debug_capture_actions(qapp):
     labels = [action.text() for action in debug_menu.actions()]
     assert "5分記録を実行" in labels
     assert "30分記録を実行" in labels
+    assert "前日の DailyActivityLog を再生成" in labels
     assert "デスクトップ状況を取得" not in labels
     assert "カメラ状況を取得" not in labels
