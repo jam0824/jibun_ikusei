@@ -25,10 +25,16 @@ import {
   getSituationLogs,
   type SituationLogEntry,
 } from '@/lib/api-client'
-import { generateDailyActivityLog, generateWeeklyActivityReview } from '@/lib/ai'
+import {
+  generateDailyActivityLogSummary,
+  generateDailyHealthSummary,
+  generateDailyQuestSummary,
+  generateWeeklyActivityReview,
+} from '@/lib/ai'
 import { getDayKey, getWeekKey, parseDate, toJstIso } from '@/lib/date'
 
 export type ActivityLogViewMode = 'session' | 'event'
+export type DailyActivityLogSectionKey = 'summary' | 'questSummary' | 'healthSummary'
 
 export interface ActivityDayViewData {
   dateKey: string
@@ -117,6 +123,35 @@ export function getYesterdayDateKeyJst(referenceDate = new Date()) {
   const yesterday = new Date(referenceDate)
   yesterday.setDate(yesterday.getDate() - 1)
   return getDayKey(yesterday)
+}
+
+function hasDailyActivityLogText(value?: string) {
+  return Boolean(value?.trim())
+}
+
+export function getMissingDailyActivityLogSections(
+  dailyLog: DailyActivityLog | null,
+): DailyActivityLogSectionKey[] {
+  return DAILY_ACTIVITY_LOG_SECTION_KEYS.filter((section) => !hasDailyActivityLogText(dailyLog?.[section]))
+}
+
+function buildDailyActivityLogPayload(params: {
+  dateKey: string
+  dailyLog: DailyActivityLog | null
+  generatedAt: Date
+}): DailyActivityLog {
+  const { dateKey, dailyLog, generatedAt } = params
+  return {
+    id: dailyLog?.id ?? `daily_${dateKey}`,
+    dateKey,
+    summary: dailyLog?.summary,
+    questSummary: dailyLog?.questSummary,
+    healthSummary: dailyLog?.healthSummary,
+    mainThemes: dailyLog?.mainThemes ?? [],
+    noteIds: dailyLog?.noteIds ?? [],
+    reviewQuestions: dailyLog?.reviewQuestions ?? [],
+    generatedAt: toJstIso(generatedAt),
+  }
 }
 
 export function getCurrentWeekKeyJst() {
@@ -636,6 +671,18 @@ function buildActivityDayShellData(params: {
   }
 }
 
+export interface PreviousDayDailyActivityLogGenerationResult {
+  dailyLog: DailyActivityLog | null
+  completedSections: DailyActivityLogSectionKey[]
+  failedSections: DailyActivityLogSectionKey[]
+}
+
+const DAILY_ACTIVITY_LOG_SECTION_KEYS: DailyActivityLogSectionKey[] = [
+  'summary',
+  'questSummary',
+  'healthSummary',
+]
+
 export async function fetchActivityDayShell(dateKey: string): Promise<ActivityDayShellData> {
   const [dailyLog, situationLogs] = await Promise.all([
     getActionLogDailyActivityLog(dateKey),
@@ -647,6 +694,160 @@ export async function fetchActivityDayShell(dateKey: string): Promise<ActivityDa
     dailyLog,
     situationLogs,
   })
+}
+
+export async function generatePreviousDayDailyActivityLogSections(params: {
+  aiConfig: AiConfig
+  settings: UserSettings
+  dateKey: string
+  dailyLog: DailyActivityLog | null
+  now?: Date
+  force?: boolean
+  onSectionSaved?: (payload: {
+    section: DailyActivityLogSectionKey
+    dailyLog: DailyActivityLog
+  }) => void
+  onSectionFailed?: (section: DailyActivityLogSectionKey) => void
+}): Promise<PreviousDayDailyActivityLogGenerationResult> {
+  const referenceNow = params.now ?? new Date()
+  if (params.dateKey !== getYesterdayDateKeyJst(referenceNow)) {
+    return {
+      dailyLog: params.dailyLog,
+      completedSections: [],
+      failedSections: [],
+    }
+  }
+
+  const targetSections = params.force
+    ? [...DAILY_ACTIVITY_LOG_SECTION_KEYS]
+    : getMissingDailyActivityLogSections(params.dailyLog)
+
+  if (targetSections.length === 0) {
+    return {
+      dailyLog: params.dailyLog,
+      completedSections: [],
+      failedSections: [],
+    }
+  }
+
+  const needsSummary = targetSections.includes('summary')
+  const needsQuestSummary = targetSections.includes('questSummary')
+  const needsHealthSummary = targetSections.includes('healthSummary')
+
+  const [sessions, quests, completions, healthData] = await Promise.all([
+    needsSummary ? getActionLogSessions(params.dateKey, params.dateKey) : Promise.resolve([]),
+    needsQuestSummary ? getQuests() : Promise.resolve([]),
+    needsQuestSummary ? getCompletions() : Promise.resolve([]),
+    needsHealthSummary ? getHealthData(params.dateKey, params.dateKey) : Promise.resolve([]),
+  ])
+
+  const filteredSessions = needsSummary
+    ? sortSessionsNewestFirst(filterDaySessions(sessions, params.dateKey))
+    : []
+
+  let resolvedDailyLog = params.dailyLog?.dateKey === params.dateKey ? params.dailyLog : null
+  const completedSections: DailyActivityLogSectionKey[] = []
+  const failedSections: DailyActivityLogSectionKey[] = []
+  let saveChain = Promise.resolve(resolvedDailyLog)
+
+  const queueSave = async (
+    section: DailyActivityLogSectionKey,
+    updates: Partial<DailyActivityLog>,
+  ) => {
+    saveChain = saveChain.then(async (currentDailyLog) => {
+      const savedDailyLog = await putActionLogDailyActivityLog({
+        ...buildDailyActivityLogPayload({
+          dateKey: params.dateKey,
+          dailyLog: currentDailyLog,
+          generatedAt: referenceNow,
+        }),
+        ...updates,
+      })
+      resolvedDailyLog = savedDailyLog
+      completedSections.push(section)
+      params.onSectionSaved?.({
+        section,
+        dailyLog: savedDailyLog,
+      })
+      return savedDailyLog
+    })
+
+    await saveChain
+  }
+
+  const sectionTasks: Promise<void>[] = []
+
+  if (needsSummary) {
+    sectionTasks.push(
+      generateDailyActivityLogSummary({
+        aiConfig: params.aiConfig,
+        settings: params.settings,
+        dateKey: params.dateKey,
+        sessions: filteredSessions,
+      })
+        .then((generated) =>
+          queueSave('summary', {
+            summary: generated.summary,
+            mainThemes: generated.mainThemes,
+            reviewQuestions: generated.reviewQuestions,
+          }),
+        )
+        .catch(() => {
+          failedSections.push('summary')
+          params.onSectionFailed?.('summary')
+        }),
+    )
+  }
+
+  if (needsQuestSummary) {
+    sectionTasks.push(
+      generateDailyQuestSummary({
+        aiConfig: params.aiConfig,
+        settings: params.settings,
+        dateKey: params.dateKey,
+        quests,
+        completions,
+      })
+        .then((generated) =>
+          queueSave('questSummary', {
+            questSummary: generated.questSummary,
+          }),
+        )
+        .catch(() => {
+          failedSections.push('questSummary')
+          params.onSectionFailed?.('questSummary')
+        }),
+    )
+  }
+
+  if (needsHealthSummary) {
+    sectionTasks.push(
+      generateDailyHealthSummary({
+        aiConfig: params.aiConfig,
+        settings: params.settings,
+        dateKey: params.dateKey,
+        healthData,
+      })
+        .then((generated) =>
+          queueSave('healthSummary', {
+            healthSummary: generated.healthSummary,
+          }),
+        )
+        .catch(() => {
+          failedSections.push('healthSummary')
+          params.onSectionFailed?.('healthSummary')
+        }),
+    )
+  }
+
+  await Promise.all(sectionTasks)
+  resolvedDailyLog = await saveChain
+
+  return {
+    dailyLog: resolvedDailyLog,
+    completedSections,
+    failedSections,
+  }
 }
 
 export async function ensurePreviousDayDailyActivityLogShell(params: {
@@ -663,35 +864,15 @@ export async function ensurePreviousDayDailyActivityLogShell(params: {
   ])
   let resolvedDailyLog = dailyLog?.dateKey === dateKey ? dailyLog : null
 
-  if (!resolvedDailyLog && dateKey === getYesterdayDateKeyJst(now)) {
-    const [sessions, quests, completions, healthData] = await Promise.all([
-      getActionLogSessions(dateKey, dateKey),
-      getQuests(),
-      getCompletions(),
-      getHealthData(dateKey, dateKey),
-    ])
-    const filteredSessions = sortSessionsNewestFirst(filterDaySessions(sessions, dateKey))
-    const generated = await generateDailyActivityLog({
+  if (dateKey === getYesterdayDateKeyJst(now)) {
+    const generated = await generatePreviousDayDailyActivityLogSections({
       aiConfig: params.aiConfig,
       settings: params.settings,
       dateKey,
-      sessions: filteredSessions,
-      quests,
-      completions,
-      healthData,
+      dailyLog: resolvedDailyLog,
+      now,
     })
-
-    resolvedDailyLog = await putActionLogDailyActivityLog({
-      id: `daily_${dateKey}`,
-      dateKey,
-      summary: generated.summary,
-      questSummary: generated.questSummary,
-      healthSummary: generated.healthSummary,
-      mainThemes: generated.mainThemes,
-      noteIds: [],
-      reviewQuestions: generated.reviewQuestions,
-      generatedAt: toJstIso(),
-    })
+    resolvedDailyLog = generated.dailyLog
   }
 
   return {
@@ -763,33 +944,15 @@ export async function ensurePreviousDayDailyActivityLog(params: {
   const filteredRawEvents = sortRawEventsNewestFirst(filterDayRawEvents(rawEvents, dateKey))
   let resolvedDailyLog = dailyLog?.dateKey === dateKey ? dailyLog : null
 
-  if (!resolvedDailyLog && dateKey === getYesterdayDateKeyJst(now)) {
-    const [quests, completions, healthData] = await Promise.all([
-      getQuests(),
-      getCompletions(),
-      getHealthData(dateKey, dateKey),
-    ])
-    const generated = await generateDailyActivityLog({
+  if (dateKey === getYesterdayDateKeyJst(now)) {
+    const generated = await generatePreviousDayDailyActivityLogSections({
       aiConfig: params.aiConfig,
       settings: params.settings,
       dateKey,
-      sessions: filteredSessions,
-      quests,
-      completions,
-      healthData,
+      dailyLog: resolvedDailyLog,
+      now,
     })
-
-    resolvedDailyLog = await putActionLogDailyActivityLog({
-      id: `daily_${dateKey}`,
-      dateKey,
-      summary: generated.summary,
-      questSummary: generated.questSummary,
-      healthSummary: generated.healthSummary,
-      mainThemes: generated.mainThemes,
-      noteIds: [],
-      reviewQuestions: generated.reviewQuestions,
-      generatedAt: toJstIso(),
-    })
+    resolvedDailyLog = generated.dailyLog
   }
 
   return {

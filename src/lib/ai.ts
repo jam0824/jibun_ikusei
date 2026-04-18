@@ -47,12 +47,18 @@ const weeklyReflectionSchema = z.object({
   recommendations: z.array(z.string().min(1)).min(1).max(3),
 })
 
-const dailyActivityLogSchema = z.object({
+const dailyActivityLogSummarySchema = z.object({
   summary: z.string().min(1),
-  questSummary: z.string().min(1),
-  healthSummary: z.string().min(1),
   mainThemes: z.array(z.string().min(1)).min(1).max(5),
   reviewQuestions: z.array(z.string().min(1)).min(1).max(3),
+})
+
+const dailyQuestSummarySchema = z.object({
+  questSummary: z.string().min(1),
+})
+
+const dailyHealthSummarySchema = z.object({
+  healthSummary: z.string().min(1),
 })
 
 const weeklyActivityReviewSchema = z.object({
@@ -115,13 +121,11 @@ const weeklyReflectionJsonSchema = {
   required: ['comment', 'recommendations'],
 }
 
-const dailyActivityLogJsonSchema = {
+const dailyActivityLogSummaryJsonSchema = {
   type: 'object',
   additionalProperties: false,
   properties: {
     summary: { type: 'string' },
-    questSummary: { type: 'string' },
-    healthSummary: { type: 'string' },
     mainThemes: {
       type: 'array',
       items: { type: 'string' },
@@ -135,7 +139,25 @@ const dailyActivityLogJsonSchema = {
       maxItems: 3,
     },
   },
-  required: ['summary', 'questSummary', 'healthSummary', 'mainThemes', 'reviewQuestions'],
+  required: ['summary', 'mainThemes', 'reviewQuestions'],
+}
+
+const dailyQuestSummaryJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    questSummary: { type: 'string' },
+  },
+  required: ['questSummary'],
+}
+
+const dailyHealthSummaryJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    healthSummary: { type: 'string' },
+  },
+  required: ['healthSummary'],
 }
 
 const weeklyActivityReviewJsonSchema = {
@@ -171,15 +193,37 @@ const WEEKLY_REFLECTION_SYSTEM_PROMPT = [
   'Recommendations must be 1 to 3 short Japanese suggestions.',
 ].join(' ')
 
-const DAILY_ACTIVITY_LOG_SYSTEM_PROMPT = [
-  'You write a DailyActivityLog for a Japanese self-growth app called Lily.',
+const DAILY_ACTIVITY_LOG_SUMMARY_SYSTEM_PROMPT = [
+  'You write the summary section of a DailyActivityLog for a Japanese self-growth app called Lily.',
   'Return only valid JSON that strictly matches the provided schema.',
   'Write in Japanese.',
   'The prose must read like リリィがユーザーをそっと見守って書いた観察日記風の地の文.',
   '直接話しかける口調は禁止.',
   'Do not use second-person coaching language.',
-  'Generate summary, questSummary, healthSummary, mainThemes, and reviewQuestions.',
-  'Use the provided ActivitySession, QuestCompletion, Quest, and health-data records only.',
+  'Generate only summary, mainThemes, and reviewQuestions.',
+  'Use only the provided ActivitySession records.',
+].join(' ')
+
+const DAILY_QUEST_SUMMARY_SYSTEM_PROMPT = [
+  'You write the quest summary section of a DailyActivityLog for a Japanese self-growth app called Lily.',
+  'Return only valid JSON that strictly matches the provided schema.',
+  'Write in Japanese.',
+  'The prose must read like リリィがユーザーをそっと見守って書いた観察日記風の地の文.',
+  '直接話しかける口調は禁止.',
+  'Do not use second-person coaching language.',
+  'Generate only questSummary.',
+  'Use only the provided QuestCompletion and Quest records.',
+].join(' ')
+
+const DAILY_HEALTH_SUMMARY_SYSTEM_PROMPT = [
+  'You write the health summary section of a DailyActivityLog for a Japanese self-growth app called Lily.',
+  'Return only valid JSON that strictly matches the provided schema.',
+  'Write in Japanese.',
+  'The prose must read like リリィがユーザーをそっと見守って書いた観察日記風の地の文.',
+  '直接話しかける口調は禁止.',
+  'Do not use second-person coaching language.',
+  'Generate only healthSummary.',
+  'Use only the provided health-data records.',
 ].join(' ')
 
 const WEEKLY_ACTIVITY_REVIEW_SYSTEM_PROMPT = [
@@ -328,6 +372,7 @@ async function requestOpenAiJson<T>({
   schema,
   input,
   systemPrompt = DEFAULT_JSON_SYSTEM_PROMPT,
+  maxOutputTokens = 300,
 }: {
   apiKey: string
   model: string
@@ -335,6 +380,7 @@ async function requestOpenAiJson<T>({
   schema: Record<string, unknown>
   input: Record<string, unknown>
   systemPrompt?: string
+  maxOutputTokens?: number
 }) {
   let lastError: Error | undefined
 
@@ -375,7 +421,7 @@ async function requestOpenAiJson<T>({
             strict: true,
           },
         },
-        max_output_tokens: 300,
+        max_output_tokens: maxOutputTokens,
       }),
     })
 
@@ -699,6 +745,7 @@ export async function generateWeeklyReflection(params: {
         summary,
       },
       systemPrompt: WEEKLY_REFLECTION_SYSTEM_PROMPT,
+      maxOutputTokens: 1600,
     })
 
     const parsed = weeklyReflectionSchema.parse(result)
@@ -710,6 +757,23 @@ export async function generateWeeklyReflection(params: {
   } catch {
     return buildWeeklyReflectionFallback(summary)
   }
+}
+
+export interface GeneratedDailyActivityLogSummary {
+  provider: 'openai'
+  summary: string
+  mainThemes: string[]
+  reviewQuestions: string[]
+}
+
+export interface GeneratedDailyQuestSummary {
+  provider: 'openai'
+  questSummary: string
+}
+
+export interface GeneratedDailyHealthSummary {
+  provider: 'openai'
+  healthSummary: string
 }
 
 export interface GeneratedDailyActivityLog {
@@ -968,6 +1032,125 @@ function buildWeeklyActivityReviewFallback(params: {
   }
 }
 
+export async function generateDailyActivityLogSummary(params: {
+  aiConfig: AiConfig
+  settings: UserSettings
+  dateKey: string
+  sessions: ActivitySession[]
+}): Promise<GeneratedDailyActivityLogSummary> {
+  const { aiConfig, settings, dateKey, sessions } = params
+  const openAiConfig = aiConfig.providers.openai
+
+  if (!settings.aiEnabled || !openAiConfig.apiKey || isOffline()) {
+    throw new Error('DailyActivityLog summary generation is unavailable.')
+  }
+
+  const result = await requestOpenAiJson<{
+    summary: string
+    mainThemes: string[]
+    reviewQuestions: string[]
+  }>({
+    apiKey: openAiConfig.apiKey,
+    model: OPENAI_MODELS.text,
+    schemaName: 'daily_activity_log_summary',
+    schema: dailyActivityLogSummaryJsonSchema,
+    input: {
+      task: 'daily_activity_log_summary',
+      dateKey,
+      ActivitySession: sanitizeSessionsForActionLogAi(sessions),
+    },
+    systemPrompt: DAILY_ACTIVITY_LOG_SUMMARY_SYSTEM_PROMPT,
+    maxOutputTokens: 1600,
+  })
+
+  const parsed = dailyActivityLogSummarySchema.parse(result)
+  return {
+    provider: 'openai',
+    summary: parsed.summary,
+    mainThemes: parsed.mainThemes,
+    reviewQuestions: parsed.reviewQuestions,
+  }
+}
+
+export async function generateDailyQuestSummary(params: {
+  aiConfig: AiConfig
+  settings: UserSettings
+  dateKey: string
+  quests: Quest[]
+  completions: QuestCompletion[]
+}): Promise<GeneratedDailyQuestSummary> {
+  const { aiConfig, settings, dateKey, quests, completions } = params
+  const openAiConfig = aiConfig.providers.openai
+  const sameDayCompletions = filterDateCompletions(dateKey, completions)
+  const relatedQuestIds = new Set(sameDayCompletions.map((completion) => completion.questId))
+  const relatedQuests = quests.filter((quest) => relatedQuestIds.has(quest.id))
+  const questMap = new Map(relatedQuests.map((quest) => [quest.id, quest] as const))
+
+  if (!settings.aiEnabled || !openAiConfig.apiKey || isOffline()) {
+    throw new Error('DailyActivityLog quest summary generation is unavailable.')
+  }
+
+  const result = await requestOpenAiJson<{
+    questSummary: string
+  }>({
+    apiKey: openAiConfig.apiKey,
+    model: OPENAI_MODELS.text,
+    schemaName: 'daily_activity_log_quest_summary',
+    schema: dailyQuestSummaryJsonSchema,
+    input: {
+      task: 'daily_activity_log_quest_summary',
+      dateKey,
+      QuestCompletion: sanitizeCompletionsForActionLogAi(sameDayCompletions, questMap),
+      Quest: sanitizeQuestsForActionLogAi(relatedQuests),
+    },
+    systemPrompt: DAILY_QUEST_SUMMARY_SYSTEM_PROMPT,
+    maxOutputTokens: 1600,
+  })
+
+  const parsed = dailyQuestSummarySchema.parse(result)
+  return {
+    provider: 'openai',
+    questSummary: parsed.questSummary,
+  }
+}
+
+export async function generateDailyHealthSummary(params: {
+  aiConfig: AiConfig
+  settings: UserSettings
+  dateKey: string
+  healthData: HealthDataEntry[]
+}): Promise<GeneratedDailyHealthSummary> {
+  const { aiConfig, settings, dateKey, healthData } = params
+  const openAiConfig = aiConfig.providers.openai
+  const sameDayHealthData = filterDateHealthData(dateKey, healthData)
+
+  if (!settings.aiEnabled || !openAiConfig.apiKey || isOffline()) {
+    throw new Error('DailyActivityLog health summary generation is unavailable.')
+  }
+
+  const result = await requestOpenAiJson<{
+    healthSummary: string
+  }>({
+    apiKey: openAiConfig.apiKey,
+    model: OPENAI_MODELS.text,
+    schemaName: 'daily_activity_log_health_summary',
+    schema: dailyHealthSummaryJsonSchema,
+    input: {
+      task: 'daily_activity_log_health_summary',
+      dateKey,
+      'health-data': sanitizeHealthDataForActionLogAi(sameDayHealthData),
+    },
+    systemPrompt: DAILY_HEALTH_SUMMARY_SYSTEM_PROMPT,
+    maxOutputTokens: 1600,
+  })
+
+  const parsed = dailyHealthSummarySchema.parse(result)
+  return {
+    provider: 'openai',
+    healthSummary: parsed.healthSummary,
+  }
+}
+
 export async function generateDailyActivityLog(params: {
   aiConfig: AiConfig
   settings: UserSettings
@@ -977,64 +1160,35 @@ export async function generateDailyActivityLog(params: {
   completions: QuestCompletion[]
   healthData: HealthDataEntry[]
 }): Promise<GeneratedDailyActivityLog> {
-  const { aiConfig, settings, dateKey, sessions, quests, completions, healthData } = params
-  const openAiConfig = aiConfig.providers.openai
-  const sameDayCompletions = filterDateCompletions(dateKey, completions)
-  const sameDayHealthData = filterDateHealthData(dateKey, healthData)
-  const relatedQuestIds = new Set(sameDayCompletions.map((completion) => completion.questId))
-  const relatedQuests = quests.filter((quest) => relatedQuestIds.has(quest.id))
+  const [summary, questSummary, healthSummary] = await Promise.all([
+    generateDailyActivityLogSummary({
+      aiConfig: params.aiConfig,
+      settings: params.settings,
+      dateKey: params.dateKey,
+      sessions: params.sessions,
+    }),
+    generateDailyQuestSummary({
+      aiConfig: params.aiConfig,
+      settings: params.settings,
+      dateKey: params.dateKey,
+      quests: params.quests,
+      completions: params.completions,
+    }),
+    generateDailyHealthSummary({
+      aiConfig: params.aiConfig,
+      settings: params.settings,
+      dateKey: params.dateKey,
+      healthData: params.healthData,
+    }),
+  ])
 
-  if (!settings.aiEnabled || !openAiConfig.apiKey || isOffline()) {
-    return buildDailyActivityLogFallback({
-      dateKey,
-      sessions,
-      quests: relatedQuests,
-      completions: sameDayCompletions,
-      healthData: sameDayHealthData,
-    })
-  }
-
-  try {
-    const questMap = new Map(relatedQuests.map((quest) => [quest.id, quest] as const))
-    const result = await requestOpenAiJson<{
-      summary: string
-      questSummary: string
-      healthSummary: string
-      mainThemes: string[]
-      reviewQuestions: string[]
-    }>({
-      apiKey: openAiConfig.apiKey,
-      model: OPENAI_MODELS.text,
-      schemaName: 'daily_activity_log',
-      schema: dailyActivityLogJsonSchema,
-      input: {
-        task: 'daily_activity_log',
-        dateKey,
-        sessions: sanitizeSessionsForActionLogAi(sessions),
-        quests: sanitizeQuestsForActionLogAi(relatedQuests),
-        completions: sanitizeCompletionsForActionLogAi(sameDayCompletions, questMap),
-        healthData: sanitizeHealthDataForActionLogAi(sameDayHealthData),
-      },
-      systemPrompt: DAILY_ACTIVITY_LOG_SYSTEM_PROMPT,
-    })
-
-    const parsed = dailyActivityLogSchema.parse(result)
-    return {
-      provider: 'openai',
-      summary: parsed.summary,
-      questSummary: parsed.questSummary,
-      healthSummary: parsed.healthSummary,
-      mainThemes: parsed.mainThemes,
-      reviewQuestions: parsed.reviewQuestions,
-    }
-  } catch {
-    return buildDailyActivityLogFallback({
-      dateKey,
-      sessions,
-      quests: relatedQuests,
-      completions: sameDayCompletions,
-      healthData: sameDayHealthData,
-    })
+  return {
+    provider: 'openai',
+    summary: summary.summary,
+    questSummary: questSummary.questSummary,
+    healthSummary: healthSummary.healthSummary,
+    mainThemes: summary.mainThemes,
+    reviewQuestions: summary.reviewQuestions,
   }
 }
 
@@ -1072,6 +1226,7 @@ export async function generateWeeklyActivityReview(params: {
         sessions: sanitizeSessionsForActionLogAi(sessions),
       },
       systemPrompt: WEEKLY_ACTIVITY_REVIEW_SYSTEM_PROMPT,
+      maxOutputTokens: 1600,
     })
 
     const parsed = weeklyActivityReviewSchema.parse(result)

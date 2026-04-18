@@ -135,21 +135,20 @@ describe('action-log-contract', () => {
     ).toThrow()
   })
 
-  it('fills missing quest and health summaries for legacy DailyActivityLog data', () => {
+  it('preserves missing daily log sections for incomplete DailyActivityLog data', () => {
     expect(
       dailyActivityLogSchema.parse({
         id: 'daily_2026-04-17',
         dateKey: '2026-04-17',
-        summary: 'その日のまとめ',
         mainThemes: ['調査'],
         noteIds: [],
         reviewQuestions: ['次に何を見るか。'],
         generatedAt: '2026-04-17T22:00:00+09:00',
       }),
     ).toMatchObject({
-      summary: 'その日のまとめ',
-      questSummary: expect.stringContaining('リリィ'),
-      healthSummary: expect.stringContaining('リリィ'),
+      summary: undefined,
+      questSummary: undefined,
+      healthSummary: undefined,
     })
   })
 

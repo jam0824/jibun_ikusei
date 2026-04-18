@@ -410,13 +410,16 @@ describe('activity log routes', () => {
       createSituationLog('2026-04-17T19:00:00+09:00', { summary: '最新の30分まとめ' }),
     ])
 
-    vi.spyOn(ai, 'generateDailyActivityLog').mockResolvedValue({
-      provider: 'template',
+    vi.spyOn(ai, 'generateDailyActivityLogSummary').mockResolvedValue({
       summary: 'リリィは、前日の調査の流れを静かに見つめていた。',
-      questSummary: 'リリィは、前日のクエスト達成が小さな区切りを作っていたと見ている。',
-      healthSummary: 'リリィは、前日の健康記録が朝の輪郭を静かに残していたと見ている。',
       mainThemes: ['Chrome拡張', '調査'],
       reviewQuestions: ['次に確認したい仕様はどこだったか。'],
+    })
+    vi.spyOn(ai, 'generateDailyQuestSummary').mockResolvedValue({
+      questSummary: 'リリィは、前日のクエスト達成が小さな区切りを作っていたと見ている。',
+    })
+    vi.spyOn(ai, 'generateDailyHealthSummary').mockResolvedValue({
+      healthSummary: 'リリィは、前日の健康記録が朝の輪郭を静かに残していたと見ている。',
     })
     vi.spyOn(ai, 'generateWeeklyActivityReview').mockResolvedValue({
       provider: 'template',
@@ -578,6 +581,62 @@ describe('activity log routes', () => {
     expect(summary.compareDocumentPosition(questSummary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(questSummary.compareDocumentPosition(healthSummary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(screen.queryByText('次に確認したい仕様はどこだったか。')).not.toBeInTheDocument()
+  })
+
+  it('shows section-level generation messages while previous-day daily sections are being generated', async () => {
+    let resolveSummary: ((value: { summary: string; mainThemes: string[]; reviewQuestions: string[] }) => void) | null = null
+    let resolveQuest: ((value: { questSummary: string }) => void) | null = null
+    let resolveHealth: ((value: { healthSummary: string }) => void) | null = null
+
+    vi.mocked(api.getActionLogDailyActivityLog).mockImplementation(async (dateKey) => {
+      if (dateKey === '2026-04-16') {
+        return null
+      }
+      if (dateKey === '2026-04-17') {
+        return createDailyLog('2026-04-17')
+      }
+      return null
+    })
+    vi.mocked(ai.generateDailyActivityLogSummary).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveSummary = resolve
+        }),
+    )
+    vi.mocked(ai.generateDailyQuestSummary).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveQuest = resolve
+        }),
+    )
+    vi.mocked(ai.generateDailyHealthSummary).mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveHealth = resolve
+        }),
+    )
+
+    renderApp('/records/activity/day/2026-04-16')
+    await settleApp()
+
+    expect(screen.getAllByText('生成中…').length).toBeGreaterThanOrEqual(3)
+
+    resolveSummary?.({
+      summary: 'リリィは、前日の調査の流れを静かに見つめていた。',
+      mainThemes: ['Chrome拡張', '調査'],
+      reviewQuestions: ['次に確認したい仕様はどこだったか。'],
+    })
+    resolveQuest?.({
+      questSummary: 'リリィは、前日のクエスト達成が小さな区切りを作っていたと見ている。',
+    })
+    resolveHealth?.({
+      healthSummary: 'リリィは、前日の健康記録が朝の輪郭を静かに残していたと見ている。',
+    })
+
+    await settleApp()
+
+    expect(screen.queryByText('生成中…')).not.toBeInTheDocument()
+    expect(screen.getByText('リリィは、前日の調査の流れを静かに見つめていた。')).toBeInTheDocument()
   })
 
   it('renders same-day situation logs newest first only in session view', async () => {
@@ -872,15 +931,19 @@ describe('activity log routes', () => {
     renderApp('/records/activity/day/2026-04-16')
     await settleApp()
 
-    expect(ai.generateDailyActivityLog).toHaveBeenCalledTimes(1)
-    expect(api.putActionLogDailyActivityLog).toHaveBeenCalledTimes(1)
+    expect(ai.generateDailyActivityLogSummary).toHaveBeenCalledTimes(1)
+    expect(ai.generateDailyQuestSummary).toHaveBeenCalledTimes(1)
+    expect(ai.generateDailyHealthSummary).toHaveBeenCalledTimes(1)
+    expect(api.putActionLogDailyActivityLog).toHaveBeenCalledTimes(3)
   })
 
   it('does not generate a missing older-day daily log', async () => {
     renderApp('/records/activity/day/2026-04-15')
     await settleApp()
 
-    expect(ai.generateDailyActivityLog).not.toHaveBeenCalled()
+    expect(ai.generateDailyActivityLogSummary).not.toHaveBeenCalled()
+    expect(ai.generateDailyQuestSummary).not.toHaveBeenCalled()
+    expect(ai.generateDailyHealthSummary).not.toHaveBeenCalled()
     expect(api.putActionLogDailyActivityLog).not.toHaveBeenCalled()
   })
 

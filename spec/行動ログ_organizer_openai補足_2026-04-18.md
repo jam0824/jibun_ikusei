@@ -8,7 +8,10 @@
 - checked-in の organizer 既定値は `activity_processing.provider=openai`、`activity_processing.model=gpt-5-nano`、`activity_processing.max_completion_tokens=1200` とする。
 - `activity_processing.base_url` は既存どおり保持するが、provider が `openai` のとき organizer では使わない。
 - 日次 `DailyActivityLog` と週次 `WeeklyActivityReview` の backfill は従来どおり `gpt-5.4` を使う。
+- 日次 `DailyActivityLog` の backfill は `summary` / `questSummary` / `healthSummary` を 3 本別々の `gpt-5.4` request として送る。
 - 日次 `DailyActivityLog` と週次 `WeeklyActivityReview` の backfill は `max_output_tokens=1600` を明示して送る。
+- 日次 `DailyActivityLog` はテンプレート fallback を使わず、成功した section だけ保存し、missing section は次回起動時または手動再生成時に再試行する。
+- desktop のデバッグメニューには `前日の DailyActivityLog を再生成` を置き、3 section を強制再実行できるようにする。
 
 ## OpenAI organizer 契約
 

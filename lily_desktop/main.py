@@ -191,6 +191,9 @@ class App:
         # デバッグ
         bus.five_minute_record_requested.connect(self._on_five_minute_record_requested)
         bus.thirty_minute_record_requested.connect(self._on_thirty_minute_record_requested)
+        bus.previous_day_daily_log_regeneration_requested.connect(
+            self._on_previous_day_daily_log_regeneration_requested
+        )
         bus.auto_talk_requested.connect(self._on_auto_talk_requested)
         bus.books_talk_requested.connect(self._on_books_talk_requested)
         bus.memory_talk_requested.connect(self._on_memory_talk_requested)
@@ -917,6 +920,57 @@ class App:
             self.event_hub.publish(CaptureSummaryDue(source="debug.manual_thirty_minute"))
             return
         asyncio.ensure_future(self.run_capture_summary_job())
+
+    def _on_previous_day_daily_log_regeneration_requested(self) -> None:
+        bus.balloon_show.emit("リリィ", "[デバッグ] 前日の DailyActivityLog を再生成するね")
+        asyncio.ensure_future(self._run_debug_previous_day_daily_log_regeneration_job())
+
+    async def _run_debug_previous_day_daily_log_regeneration_job(self) -> None:
+        if not self.config.activity_capture.enabled:
+            bus.balloon_show.emit(
+                "リリィ", "[デバッグ] Action Log が無効だから再生成できなかったよ"
+            )
+            return
+        if not getattr(self.auth, "is_configured", False):
+            bus.balloon_show.emit(
+                "リリィ", "[デバッグ] サインイン状態を確認してから再生成するね"
+            )
+            return
+
+        service = self._get_action_log_summary_backfill_service()
+        try:
+            result = await service.regenerate_previous_day_daily_log()
+        except Exception:
+            logger.exception("前日の DailyActivityLog 再生成に失敗")
+            bus.balloon_show.emit(
+                "リリィ", "[デバッグ] 前日の DailyActivityLog の再生成に失敗しちゃった"
+            )
+            return
+
+        completed_sections = result.get("completed_sections", [])
+        failed_sections = result.get("failed_sections", [])
+        logger.info(
+            "前日の DailyActivityLog 再生成: completed=%s failed=%s",
+            completed_sections,
+            failed_sections,
+        )
+
+        if completed_sections and failed_sections:
+            bus.balloon_show.emit(
+                "リリィ",
+                "[デバッグ] 前日の DailyActivityLog を一部再生成したよ",
+            )
+            return
+        if completed_sections:
+            bus.balloon_show.emit(
+                "リリィ",
+                "[デバッグ] 前日の DailyActivityLog を再生成したよ",
+            )
+            return
+        bus.balloon_show.emit(
+            "リリィ",
+            "[デバッグ] 前日の DailyActivityLog は更新できなかったよ",
+        )
 
     async def _capture_and_record_coordinated(self) -> SituationRecord | None:
         """カメラ取得と行動ログ要約を組み合わせて状況を記録する。"""

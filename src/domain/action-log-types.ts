@@ -102,9 +102,9 @@ export interface ActivitySession {
 export interface DailyActivityLog {
   id: string
   dateKey: string
-  summary: string
-  questSummary: string
-  healthSummary: string
+  summary?: string
+  questSummary?: string
+  healthSummary?: string
   mainThemes: string[]
   noteIds: string[]
   reviewQuestions: string[]

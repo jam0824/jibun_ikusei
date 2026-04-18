@@ -131,6 +131,30 @@ def test_thirty_minute_record_request_publishes_summary_event():
     assert isinstance(hub.events[0], CaptureSummaryDue)
 
 
+def test_previous_day_daily_log_regeneration_request_schedules_debug_job(monkeypatch):
+    scheduled: list[object] = []
+    balloon_calls: list[tuple[str, str]] = []
+    app = SimpleNamespace(
+        _run_debug_previous_day_daily_log_regeneration_job=Mock(return_value="job"),
+    )
+
+    monkeypatch.setattr(main_mod.asyncio, "ensure_future", lambda coro: scheduled.append(coro))
+    monkeypatch.setattr(
+        main_mod,
+        "bus",
+        SimpleNamespace(
+            balloon_show=SimpleNamespace(
+                emit=lambda speaker, text: balloon_calls.append((speaker, text))
+            )
+        ),
+    )
+
+    main_mod.App._on_previous_day_daily_log_regeneration_requested(app)
+
+    assert scheduled == ["job"]
+    assert balloon_calls == [("リリィ", "[デバッグ] 前日の DailyActivityLog を再生成するね")]
+
+
 def test_memory_talk_request_publishes_forced_memory_event():
     hub = _CaptureHub()
     app = SimpleNamespace(

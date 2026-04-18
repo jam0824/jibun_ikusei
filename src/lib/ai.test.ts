@@ -5,7 +5,9 @@ import type { Quest, QuestCompletion } from '@/domain/types'
 import type { HealthDataEntry } from '@/lib/api-client'
 import {
   buildLilyChatSystemPrompt,
-  generateDailyActivityLog,
+  generateDailyActivityLogSummary,
+  generateDailyHealthSummary,
+  generateDailyQuestSummary,
   generateWeeklyActivityReview,
   generateWeeklyReflection,
   generateLilyMessageWithProvider,
@@ -324,7 +326,7 @@ describe('ai adapter', () => {
     expect(result.recommendations.length).toBeLessThanOrEqual(3)
   })
 
-  it('generates DailyActivityLog with gpt-5.4 and observation-diary prompt', async () => {
+  it('generates DailyActivityLog summary section with gpt-5.4 and observation-diary prompt', async () => {
     const state = hydratePersistedState()
     state.aiConfig.activeProvider = 'gemini'
     state.aiConfig.providers.openai.apiKey = 'sk-test'
@@ -340,7 +342,7 @@ describe('ai adapter', () => {
               content: [
                 {
                   type: 'output_text',
-                  text: '{"summary":"リリィは、この日は拡張の調査に静かな集中が集まっていたと見ている。","questSummary":"リリィは、この日のクエスト達成が小さな区切りをいくつか残していたと見ている。","healthSummary":"リリィは、この日の健康記録が静かに朝の輪郭を残していたと見ている。","mainThemes":["Chrome拡張","調査"],"reviewQuestions":["次に確認したい仕様はどこだったか。","調査のあとに着手したい一歩は何か。"]}',
+                  text: '{"summary":"リリィは、この日は拡張の調査に静かな集中が集まっていたと見ている。","mainThemes":["Chrome拡張","調査"],"reviewQuestions":["次に確認したい仕様はどこだったか。","調査のあとに着手したい一歩は何か。"]}',
                 },
               ],
             },
@@ -350,30 +352,69 @@ describe('ai adapter', () => {
       ),
     )
 
-    const result = await generateDailyActivityLog({
+    const result = await generateDailyActivityLogSummary({
       aiConfig: state.aiConfig,
       settings: state.settings,
       dateKey: '2026-04-17',
       sessions: [createActivitySession('session_1')],
-      quests: [createQuest()],
-      completions: [createCompletion()],
-      healthData: [createHealthDataEntry()],
     })
 
-    expect(result.provider).toBe('openai')
     expect(result.summary).toContain('リリィは')
+    expect(result.mainThemes).toEqual(['Chrome拡張', '調査'])
+
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    expect(body.model).toBe('gpt-5.4')
+    expect(body.max_output_tokens).toBe(1600)
+    expect(body.input[0].content[0].text).toContain('観察日記風')
+    expect(body.input[0].content[0].text).toContain('直接話しかける口調は禁止')
+    expect(body.input[1].content[0].text).toContain('ActivitySession')
+  })
+
+  it('generates DailyActivityLog quest summary section with gpt-5.4 quest inputs', async () => {
+    const state = hydratePersistedState()
+    state.aiConfig.activeProvider = 'gemini'
+    state.aiConfig.providers.openai.apiKey = 'sk-test'
+    state.aiConfig.providers.openai.model = 'gpt-4.1-mini'
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          status: 'completed',
+          output: [
+            {
+              type: 'message',
+              content: [
+                {
+                  type: 'output_text',
+                  text: '{"questSummary":"リリィは、この日のクエスト達成が小さな区切りをいくつか残していたと見ている。"}',
+                },
+              ],
+            },
+          ],
+        }),
+        { status: 200 },
+      ),
+    )
+
+    const result = await generateDailyQuestSummary({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      dateKey: '2026-04-17',
+      quests: [createQuest()],
+      completions: [createCompletion()],
+    })
+
     expect(result.questSummary).toContain('リリィは')
-    expect(result.healthSummary).toContain('リリィは')
 
     const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
     expect(body.model).toBe('gpt-5.4')
+    expect(body.max_output_tokens).toBe(1600)
     expect(body.input[0].content[0].text).toContain('観察日記風')
-    expect(body.input[0].content[0].text).toContain('直接話しかける口調は禁止')
-    expect(body.input[0].content[0].text).toContain('QuestCompletion')
-    expect(body.input[0].content[0].text).toContain('health-data')
+    expect(body.input[1].content[0].text).toContain('QuestCompletion')
+    expect(body.input[1].content[0].text).toContain('Quest')
   })
 
-  it('generates WeeklyActivityReview with gpt-5.4 and observation-diary prompt', async () => {
+  it('generates DailyActivityLog health summary section with gpt-5.4 health inputs', async () => {
     const state = hydratePersistedState()
     state.aiConfig.activeProvider = 'gemini'
     state.aiConfig.providers.openai.apiKey = 'sk-test'
@@ -389,7 +430,7 @@ describe('ai adapter', () => {
               content: [
                 {
                   type: 'output_text',
-                  text: '{"summary":"リリィは、この週には調査と実装の往復がゆっくりと深まっていたと見ている。","focusThemes":["Chrome拡張","開発"]}',
+                  text: '{"healthSummary":"リリィは、この日の健康記録が静かに朝の輪郭を残していたと見ている。"}',
                 },
               ],
             },
@@ -399,77 +440,20 @@ describe('ai adapter', () => {
       ),
     )
 
-    const result = await generateWeeklyActivityReview({
-      aiConfig: state.aiConfig,
-      settings: state.settings,
-      weekKey: '2026-W16',
-      sessions: [
-        createActivitySession('session_1'),
-        createActivitySession('session_2', {
-          id: 'session_2',
-          startedAt: '2026-04-18T10:00:00+09:00',
-          endedAt: '2026-04-18T10:30:00+09:00',
-          dateKey: '2026-04-18',
-          title: 'VS Code での実装',
-          primaryCategory: '仕事',
-          activityKinds: ['開発'],
-          appNames: ['Code'],
-          domains: [],
-          searchKeywords: ['VS Code', '開発'],
-        }),
-      ],
-      categoryDurations: { 学習: 45, 仕事: 30 },
-    })
-
-    expect(result.provider).toBe('openai')
-    expect(result.summary).toContain('リリィは')
-
-    const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
-    expect(body.model).toBe('gpt-5.4')
-    expect(body.input[0].content[0].text).toContain('観察日記風')
-    expect(body.input[0].content[0].text).toContain('直接話しかける口調は禁止')
-  })
-
-  it('falls back to an observation-diary daily log when OpenAI is unavailable', async () => {
-    const state = hydratePersistedState()
-    state.settings.aiEnabled = false
-
-    const result = await generateDailyActivityLog({
+    const result = await generateDailyHealthSummary({
       aiConfig: state.aiConfig,
       settings: state.settings,
       dateKey: '2026-04-17',
-      sessions: [createActivitySession('session_1')],
-      quests: [createQuest()],
-      completions: [createCompletion()],
       healthData: [createHealthDataEntry()],
     })
 
-    expect(result.provider).toBe('template')
-    expect(result.summary).toContain('リリィ')
-    expect(result.summary).not.toContain('あなた')
-    expect(result.questSummary).toContain('リリィ')
     expect(result.healthSummary).toContain('リリィ')
-    expect(result.reviewQuestions.length).toBeGreaterThan(0)
-  })
 
-  it('returns non-empty quest and health summaries even when same-day data is sparse', async () => {
-    const state = hydratePersistedState()
-    state.settings.aiEnabled = false
-
-    const result = await generateDailyActivityLog({
-      aiConfig: state.aiConfig,
-      settings: state.settings,
-      dateKey: '2026-04-17',
-      sessions: [createActivitySession('session_1')],
-      quests: [],
-      completions: [],
-      healthData: [],
-    })
-
-    expect(result.questSummary.trim().length).toBeGreaterThan(0)
-    expect(result.healthSummary.trim().length).toBeGreaterThan(0)
-    expect(result.questSummary).toContain('リリィ')
-    expect(result.healthSummary).toContain('リリィ')
+    const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
+    expect(body.model).toBe('gpt-5.4')
+    expect(body.max_output_tokens).toBe(1600)
+    expect(body.input[0].content[0].text).toContain('観察日記風')
+    expect(body.input[1].content[0].text).toContain('health-data')
   })
 
   it('falls back to an observation-diary weekly review when OpenAI is unavailable', async () => {

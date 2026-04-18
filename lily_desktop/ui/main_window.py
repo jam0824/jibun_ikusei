@@ -290,6 +290,14 @@ class MainWindow(QWidget):
         )
         debug_menu.addAction(thirty_minute_record_action)
 
+        previous_day_daily_log_regeneration_action = QAction(
+            "前日の DailyActivityLog を再生成", self
+        )
+        previous_day_daily_log_regeneration_action.triggered.connect(
+            lambda: bus.previous_day_daily_log_regeneration_requested.emit()
+        )
+        debug_menu.addAction(previous_day_daily_log_regeneration_action)
+
         menu.addSeparator()
 
         web_menu = menu.addMenu("Web を開く")
