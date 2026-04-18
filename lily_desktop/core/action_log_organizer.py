@@ -23,13 +23,13 @@ from core.activity_capture_service import _RAW_EVENT_LOG_DIR
 JST = timezone(timedelta(hours=9))
 SESSION_GAP_SECONDS = 5 * 60
 HTTP_TIMEOUT_SECONDS = 30.0
-OPENAI_BATCH_SIZE = 8
+OPENAI_BATCH_SIZE = 1
 DEFAULT_ACTIVITY_PROCESSING_CONFIG = {
     "enabled": True,
     "provider": "openai",
     "base_url": "http://127.0.0.1:11434",
     "model": "gpt-5-nano",
-    "max_completion_tokens": 400,
+    "max_completion_tokens": 1200,
 }
 _CODE_APPS = ("code.exe", "cursor.exe", "wezterm", "powershell", "windows terminal", "git")
 _LEARNING_HINTS = ("docs", "developer", "tutorial", "article", "reference", "guide", "manual")
@@ -697,6 +697,7 @@ class ActionLogOrganizer:
                     input_payload=self._build_llm_input_payload(batch),
                     system_prompt=system_prompt,
                     max_output_tokens=self.processing_config["max_completion_tokens"],
+                    reasoning_effort="minimal",
                 )
             except Exception:
                 self._logger.exception("Action-log organizer OpenAI enrichment failed")

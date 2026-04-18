@@ -100,4 +100,4 @@ activity_processing:
   provider: openai
   base_url: http://127.0.0.1:11434
   model: gpt-5-nano
-  max_completion_tokens: 400
+  max_completion_tokens: 1200

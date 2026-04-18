@@ -195,6 +195,7 @@ async def test_organizer_uses_openai_structured_outputs_and_logs_usage(
 
     assert request_calls[0]["model"] == "gpt-5-nano"
     assert request_calls[0]["max_output_tokens"] == 222
+    assert request_calls[0]["reasoning_effort"] == "minimal"
     assert api_client.put_sessions_calls[0]["sessions"][0]["title"] == "OpenAI generated title"
     assert "Action-log organizer OpenAI usage" in caplog.text
     assert "input_tokens=120" in caplog.text
@@ -359,7 +360,7 @@ async def test_organizer_reuses_existing_enrichment_and_excludes_it_from_openai_
 
 
 @pytest.mark.asyncio
-async def test_organizer_batches_uncached_candidates_in_groups_of_eight(tmp_path, monkeypatch):
+async def test_organizer_batches_uncached_candidates_one_by_one(tmp_path, monkeypatch):
     log_dir = tmp_path / "raw_events"
     events = []
     base_time = datetime(2026, 4, 17, 9, 0, tzinfo=JST)
@@ -396,5 +397,5 @@ async def test_organizer_batches_uncached_candidates_in_groups_of_eight(tmp_path
 
     await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
 
-    assert batch_sizes == [8, 1]
+    assert batch_sizes == [1, 1, 1, 1, 1, 1, 1, 1, 1]
     assert len(api_client.put_sessions_calls[0]["sessions"]) == 9

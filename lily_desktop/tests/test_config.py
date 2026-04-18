@@ -254,7 +254,7 @@ def test_activity_processing_defaults_to_openai_gpt_5_nano(tmp_path):
     assert config.activity_processing.provider == "openai"
     assert config.activity_processing.base_url == "http://127.0.0.1:11434"
     assert config.activity_processing.model == "gpt-5-nano"
-    assert config.activity_processing.max_completion_tokens == 400
+    assert config.activity_processing.max_completion_tokens == 1200
 
 
 def test_activity_processing_uses_config_values(tmp_path):

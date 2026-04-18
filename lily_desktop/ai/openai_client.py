@@ -168,6 +168,10 @@ async def send_chat_message(
 
 
 def _extract_openai_responses_text(payload: dict[str, Any]) -> str:
+    status_error = _format_openai_responses_status_error(payload)
+    if status_error:
+        raise Exception(status_error)
+
     output_text = payload.get("output_text")
     if isinstance(output_text, str) and output_text.strip():
         return output_text
@@ -196,11 +200,37 @@ def _extract_openai_responses_text(payload: dict[str, Any]) -> str:
     if refusal_text:
         raise Exception(f"OpenAI refused the request: {refusal_text}")
 
-    status = payload.get("status")
-    if isinstance(status, str) and status != "completed":
-        raise Exception(f"OpenAI response did not complete successfully: {status}")
-
     raise Exception("OpenAI response text was empty.")
+
+
+def _format_openai_responses_status_error(payload: dict[str, Any]) -> str | None:
+    status = payload.get("status")
+    if not isinstance(status, str) or status == "completed":
+        return None
+
+    detail_payload: Any = None
+    if status == "incomplete":
+        detail_payload = payload.get("incomplete_details")
+    elif isinstance(payload.get(f"{status}_details"), dict):
+        detail_payload = payload.get(f"{status}_details")
+
+    if isinstance(detail_payload, dict) and detail_payload:
+        reason = detail_payload.get("reason")
+        if isinstance(reason, str) and reason.strip():
+            return (
+                "OpenAI response did not complete successfully: "
+                f"{status} (reason={reason})"
+            )
+        try:
+            serialized = json.dumps(detail_payload, ensure_ascii=False, sort_keys=True)
+        except TypeError:
+            serialized = str(detail_payload)
+        return (
+            "OpenAI response did not complete successfully: "
+            f"{status} (details={serialized})"
+        )
+
+    return f"OpenAI response did not complete successfully: {status}"
 
 
 def _format_openai_error_detail(resp: httpx.Response) -> str:
@@ -249,6 +279,7 @@ async def request_openai_json(
     input_payload: dict[str, Any],
     system_prompt: str = _DEFAULT_JSON_SYSTEM_PROMPT,
     max_output_tokens: int = 300,
+    reasoning_effort: str | None = None,
 ) -> dict[str, Any]:
     result = await request_openai_json_with_usage(
         api_key=api_key,
@@ -258,6 +289,7 @@ async def request_openai_json(
         input_payload=input_payload,
         system_prompt=system_prompt,
         max_output_tokens=max_output_tokens,
+        reasoning_effort=reasoning_effort,
     )
     return result.output
 
@@ -271,6 +303,7 @@ async def request_openai_json_with_usage(
     input_payload: dict[str, Any],
     system_prompt: str = _DEFAULT_JSON_SYSTEM_PROMPT,
     max_output_tokens: int = 300,
+    reasoning_effort: str | None = None,
 ) -> StructuredJsonResult:
     """Call the OpenAI Responses API and return parsed JSON plus usage."""
 
@@ -309,6 +342,8 @@ async def request_openai_json_with_usage(
             },
             "max_output_tokens": max_output_tokens,
         }
+        if reasoning_effort:
+            body["reasoning"] = {"effort": reasoning_effort}
 
         for attempt in range(1, 4):
             try:

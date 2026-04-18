@@ -74,3 +74,59 @@ async def test_request_openai_json_with_usage_returns_parsed_output_and_usage():
         "output_tokens": 5,
         "total_tokens": 17,
     }
+
+
+@pytest.mark.asyncio
+async def test_request_openai_json_with_usage_forwards_reasoning_effort():
+    fake_client = _FakeAsyncClient(
+        [
+            _FakeResponse(
+                {
+                    "status": "completed",
+                    "output_text": '{"summary":"ok"}',
+                }
+            )
+        ]
+    )
+
+    with patch("ai.openai_client.httpx.AsyncClient", return_value=fake_client):
+        await request_openai_json_with_usage(
+            api_key="test",
+            model="gpt-5-nano",
+            schema_name="organizer",
+            schema={"type": "object"},
+            input_payload={"sessions": [{"id": "session_1"}]},
+            reasoning_effort="minimal",
+        )
+
+    assert fake_client.calls[0]["reasoning"] == {"effort": "minimal"}
+
+
+@pytest.mark.asyncio
+async def test_request_openai_json_with_usage_includes_incomplete_reason_in_error():
+    fake_client = _FakeAsyncClient(
+        [
+            _FakeResponse(
+                {
+                    "status": "incomplete",
+                    "incomplete_details": {
+                        "reason": "max_output_tokens",
+                    },
+                    "output": [],
+                }
+            )
+        ]
+    )
+
+    with patch("ai.openai_client.httpx.AsyncClient", return_value=fake_client):
+        with pytest.raises(
+            Exception,
+            match="incomplete.*max_output_tokens",
+        ):
+            await request_openai_json_with_usage(
+                api_key="test",
+                model="gpt-5-nano",
+                schema_name="organizer",
+                schema={"type": "object"},
+                input_payload={"sessions": [{"id": "session_1"}]},
+            )
