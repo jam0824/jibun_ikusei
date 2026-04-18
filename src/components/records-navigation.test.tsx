@@ -3,7 +3,7 @@ import { MemoryRouter } from 'react-router-dom'
 import { ActivityLogNav, RecordsSectionTabs } from '@/components/records-navigation'
 
 describe('RecordsSectionTabs', () => {
-  it('renders the active activity tab with a high-contrast selected style', () => {
+  it('renders the active activity tab with the same soft violet tone used elsewhere in the app', () => {
     render(
       <MemoryRouter>
         <RecordsSectionTabs active="activity" />
@@ -13,15 +13,15 @@ describe('RecordsSectionTabs', () => {
     const activityTab = screen.getByRole('link', { name: '行動ログ' })
     const questTab = screen.getByRole('link', { name: '成長記録' })
 
-    expect(activityTab).toHaveClass('text-white')
-    expect(activityTab).toHaveClass('from-violet-700')
-    expect(activityTab).toHaveClass('ring-violet-300/70')
+    expect(activityTab).toHaveClass('bg-violet-50')
+    expect(activityTab).toHaveClass('text-violet-700')
+    expect(activityTab).toHaveClass('border-violet-200')
     expect(questTab).toHaveClass('text-slate-700')
   })
 })
 
 describe('ActivityLogNav', () => {
-  it('renders the current route with a readable selected style', () => {
+  it('renders the current route with the same soft violet tone used elsewhere in the app', () => {
     render(
       <MemoryRouter initialEntries={['/records/activity/today']}>
         <ActivityLogNav />
@@ -32,8 +32,10 @@ describe('ActivityLogNav', () => {
     const calendarLink = screen.getByRole('link', { name: 'カレンダー' })
 
     expect(todayLink).toHaveAttribute('aria-current', 'page')
-    expect(todayLink).toHaveClass('bg-slate-950')
-    expect(todayLink).toHaveClass('text-white')
+    expect(todayLink).toHaveClass('bg-violet-50')
+    expect(todayLink).toHaveClass('text-violet-700')
+    expect(todayLink).toHaveClass('border-violet-200')
     expect(calendarLink).toHaveClass('text-slate-700')
+    expect(screen.queryByRole('link', { name: '閲覧' })).not.toBeInTheDocument()
   })
 })
