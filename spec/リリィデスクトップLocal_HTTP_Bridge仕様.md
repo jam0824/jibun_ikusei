@@ -237,6 +237,8 @@ Chrome 拡張から、現在可聴状態にある HTTP(S) タブの full snapsho
   - 読み上げ
 - 応答生成時、保存済み `system_message` を後続ターンで追加の system prompt として無制限に再投入しない
 - `system_message` に応答するターンだけ、その通知本文を一時的な追加 system message として OpenAI へ送ってよい
+- `system_message` に応答するターンでは、保存済みの `user` / `assistant` 会話履歴を通常会話コンテキストとして再投入しない
+- `system_message` に応答するターンでは Tool Search を使わず、Quest / Completion を更新するような副作用付き tool を実行しない
 - `chrome_audible_tabs` は内部発話を生成せず、可聴タブ状態の更新だけを行う
 - `source` と `metadata` はログには残すが、内部発話文には混ぜない
 

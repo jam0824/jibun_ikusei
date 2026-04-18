@@ -139,7 +139,8 @@ class ChatEngine:
             bus.ai_response_ready.emit("リリィ", lily_text, pose_category)
 
             await self._session_mgr.save_message("assistant", lily_text)
-            self._history.append({"role": "assistant", "content": lily_text})
+            if role == "user":
+                self._history.append({"role": "assistant", "content": lily_text})
             self._append_current_session_message("assistant", lily_text)
 
             return lily_text
@@ -189,13 +190,14 @@ class ChatEngine:
         messages: list[dict[str, Any]] = [{"role": "system", "content": system_prompt}]
         if runtime_system_message:
             messages.append({"role": "system", "content": runtime_system_message})
-        messages.extend(self._normalize_history_messages(self._history))
+        else:
+            messages.extend(self._normalize_history_messages(self._history))
 
         result = await send_chat_message(
             api_key=self._config.openai.api_key,
             model=self._config.openai.chat_model,
             messages=messages,
-            tools=self._tools,
+            tools=None if runtime_system_message else self._tools,
         )
 
         # Tool呼び出し処理（最大1ラウンド）
