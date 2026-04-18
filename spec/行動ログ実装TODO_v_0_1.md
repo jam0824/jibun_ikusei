@@ -637,6 +637,7 @@
 - [ ] `questSummary` は `QuestCompletion` と関連 `Quest` 情報、`healthSummary` は `health-data` を主入力にする
 - [ ] 3 本ともリリィ観察日記風の地の文でそろえる
 - [ ] `mainThemes` / `reviewQuestions` は保持してもよいが、day 画面の必須表示にはしない
+- [ ] `OpenLoop` の個別削除導線と削除時の整合性は後続タスクとして整理する
 
 ### 完了条件
 
