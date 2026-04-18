@@ -34,6 +34,7 @@ import {
   ensurePreviousDayDailyActivityLog,
   ensurePreviousWeekReviewForWeb,
   exportActionLogBundle,
+  fetchActivityDayView,
   fetchActivityReviewWeek,
   resolveDefaultReviewYearJst,
   searchActivityLogs,
@@ -191,6 +192,73 @@ describe('action log view orchestration', () => {
       }),
     )
     expect(result.dailyLog?.summary).toBe('Lily stitched together the day from the surrounding sessions.')
+  })
+
+  it('sorts same-day sessions and raw events newest first in fetchActivityDayView', async () => {
+    vi.mocked(api.getActionLogSessions).mockResolvedValue([
+      createSession('session_old', {
+        dateKey: '2026-04-16',
+        startedAt: '2026-04-16T09:00:00+09:00',
+        endedAt: '2026-04-16T09:20:00+09:00',
+      }),
+      createSession('session_new', {
+        dateKey: '2026-04-16',
+        startedAt: '2026-04-16T11:00:00+09:00',
+        endedAt: '2026-04-16T11:20:00+09:00',
+      }),
+    ])
+    vi.mocked(api.getActionLogRawEvents).mockResolvedValue([
+      createRawEvent('event_old', {
+        occurredAt: '2026-04-16T09:05:00+09:00',
+        windowTitle: 'Older event',
+      }),
+      createRawEvent('event_new', {
+        occurredAt: '2026-04-16T11:05:00+09:00',
+        windowTitle: 'Newer event',
+      }),
+    ])
+
+    const result = await fetchActivityDayView('2026-04-16')
+
+    expect(result.sessions.map((session) => session.id)).toEqual(['session_new', 'session_old'])
+    expect(result.rawEvents.map((event) => event.id)).toEqual(['event_new', 'event_old'])
+  })
+
+  it('sorts same-day sessions and raw events newest first in ensurePreviousDayDailyActivityLog', async () => {
+    const state = hydratePersistedState()
+    vi.mocked(api.getActionLogSessions).mockResolvedValue([
+      createSession('session_old', {
+        dateKey: '2026-04-16',
+        startedAt: '2026-04-16T09:00:00+09:00',
+        endedAt: '2026-04-16T09:20:00+09:00',
+      }),
+      createSession('session_new', {
+        dateKey: '2026-04-16',
+        startedAt: '2026-04-16T11:00:00+09:00',
+        endedAt: '2026-04-16T11:20:00+09:00',
+      }),
+    ])
+    vi.mocked(api.getActionLogRawEvents).mockResolvedValue([
+      createRawEvent('event_old', {
+        occurredAt: '2026-04-16T09:05:00+09:00',
+        windowTitle: 'Older event',
+      }),
+      createRawEvent('event_new', {
+        occurredAt: '2026-04-16T11:05:00+09:00',
+        windowTitle: 'Newer event',
+      }),
+    ])
+    vi.mocked(api.getActionLogDailyActivityLog).mockResolvedValue(createDailyLog('2026-04-16'))
+
+    const result = await ensurePreviousDayDailyActivityLog({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      dateKey: '2026-04-16',
+      now: new Date('2026-04-17T09:00:00+09:00'),
+    })
+
+    expect(result.sessions.map((session) => session.id)).toEqual(['session_new', 'session_old'])
+    expect(result.rawEvents.map((event) => event.id)).toEqual(['event_new', 'event_old'])
   })
 
   it('does not generate a DailyActivityLog for today even when it is missing', async () => {

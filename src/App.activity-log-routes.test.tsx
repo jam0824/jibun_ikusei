@@ -330,6 +330,52 @@ describe('activity log routes', () => {
     expect(screen.getAllByText('Chrome / Manifest V3 - Chrome for Developers').length).toBeGreaterThan(0)
   })
 
+  it('shows newer sessions above older ones on the today timeline', async () => {
+    vi.mocked(api.getActionLogSessions).mockResolvedValue([
+      createSession('session_old', {
+        startedAt: '2026-04-17T09:00:00+09:00',
+        endedAt: '2026-04-17T09:20:00+09:00',
+        title: 'Older session',
+        summary: 'Older session summary.',
+      }),
+      createSession('session_new', {
+        startedAt: '2026-04-17T11:00:00+09:00',
+        endedAt: '2026-04-17T11:20:00+09:00',
+        title: 'Newer session',
+        summary: 'Newer session summary.',
+      }),
+    ])
+
+    renderApp('/records/activity/today')
+    await settleApp()
+
+    const newerCard = getSessionCard('session_new')
+    const olderCard = getSessionCard('session_old')
+
+    expect(newerCard.compareDocumentPosition(olderCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
+  it('shows newer raw events above older ones on the day event timeline', async () => {
+    vi.mocked(api.getActionLogRawEvents).mockResolvedValue([
+      createRawEvent('event_old', {
+        occurredAt: '2026-04-17T09:05:00+09:00',
+        windowTitle: 'Older event title',
+      }),
+      createRawEvent('event_new', {
+        occurredAt: '2026-04-17T11:05:00+09:00',
+        windowTitle: 'Newer event title',
+      }),
+    ])
+
+    renderApp('/records/activity/day/2026-04-17?view=event')
+    await settleApp()
+
+    const newerTitle = screen.getByText('Chrome / Newer event title')
+    const olderTitle = screen.getByText('Chrome / Older event title')
+
+    expect(newerTitle.compareDocumentPosition(olderTitle) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('generates a missing previous-day daily log only on the previous-day route', async () => {
     renderApp('/records/activity/day/2026-04-16')
     await settleApp()

@@ -284,6 +284,10 @@ function sortSessionsNewestFirst(sessions: ActivitySession[]) {
   return [...sessions].sort((left, right) => right.startedAt.localeCompare(left.startedAt))
 }
 
+function sortRawEventsNewestFirst(rawEvents: RawEvent[]) {
+  return [...rawEvents].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
+}
+
 function sortOpenLoopsNewestFirst(openLoops: OpenLoop[]) {
   return [...openLoops].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 }
@@ -361,8 +365,8 @@ export async function fetchActivityDayView(dateKey: string): Promise<ActivityDay
 
   return {
     dateKey,
-    sessions: filterDaySessions(sessions, dateKey),
-    rawEvents: filterDayRawEvents(rawEvents, dateKey),
+    sessions: sortSessionsNewestFirst(filterDaySessions(sessions, dateKey)),
+    rawEvents: sortRawEventsNewestFirst(filterDayRawEvents(rawEvents, dateKey)),
     dailyLog: dailyLog?.dateKey === dateKey ? dailyLog : null,
     openLoops: filterDayOpenLoops(openLoops, dateKey),
   }
@@ -383,8 +387,8 @@ export async function ensurePreviousDayDailyActivityLog(params: {
     getActionLogOpenLoops(dateKey, dateKey),
   ])
 
-  const filteredSessions = filterDaySessions(sessions, dateKey)
-  const filteredRawEvents = filterDayRawEvents(rawEvents, dateKey)
+  const filteredSessions = sortSessionsNewestFirst(filterDaySessions(sessions, dateKey))
+  const filteredRawEvents = sortRawEventsNewestFirst(filterDayRawEvents(rawEvents, dateKey))
   const filteredOpenLoops = filterDayOpenLoops(openLoops, dateKey)
   let resolvedDailyLog = dailyLog?.dateKey === dateKey ? dailyLog : null
 

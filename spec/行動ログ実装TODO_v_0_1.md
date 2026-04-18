@@ -354,6 +354,7 @@
 - [x] `review/year` から `review/week` 詳細への遷移
 - [x] `RecordsScreen` を `/records/quests` 配下へ移設
 - [x] `DailyActivityLog` を timeline より先に表示
+- [x] `today / day` の `session / event` timeline は新しい時刻を上に表示
 - [x] `ManualNote` の表示枠だけ残す
 - [ ] `ManualNote` の追加・保存
 
@@ -365,6 +366,8 @@
 - [x] `today` が JST 当日を使う
 - [x] `day/:dateKey` が指定日を表示する
 - [x] `view=session|event` で表示が切り替わる
+- [x] `today` の `session` timeline は新しい時刻が上に来る
+- [x] `day` の `event` timeline は新しい時刻が上に来る
 - [x] `DailyActivityLog` が timeline より先に表示される
 - [x] `month` 未指定時に JST 当月を表示する
 - [x] `month=YYYY-MM` 指定時に対象月を表示する
