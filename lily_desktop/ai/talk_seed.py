@@ -15,8 +15,11 @@ from ai.annict_client import AnnictWork, fetch_seasonal_works
 from ai.camera_analyzer import CameraAnalysis
 from ai.rakuten_books_client import BookTalkCandidate, RakutenBooksClient
 from ai.screen_analyzer import ScreenAnalysis
+from core.desktop_activity_summary import (
+    DesktopActivitySummary,
+    summarize_recent_desktop_activity,
+)
 from ai.wikimedia_client import WikimediaArticle, fetch_featured_content, fetch_interest_articles
-from core.desktop_context import DesktopContext
 from core.situation_capture import SituationCaptureCoordinator
 
 if TYPE_CHECKING:
@@ -66,6 +69,7 @@ class TalkSeedManager:
         rakuten_origin: str = "",
         api_client: ApiClient | None = None,
         situation_capture_coordinator: SituationCaptureCoordinator | None = None,
+        activity_capture_service=None,
     ):
         self._openai_api_key = openai_api_key
         self._screen_analysis_model = screen_analysis_model
@@ -90,8 +94,12 @@ class TalkSeedManager:
         )
         self._api_client = api_client
         self._situation_capture = situation_capture_coordinator or SituationCaptureCoordinator()
+        self._activity_capture_service = activity_capture_service
         self._used_history: list[tuple[str, datetime]] = []  # (source_key, used_at)
         self._last_camera_analysis: CameraAnalysis | None = None
+
+    def set_activity_capture_service(self, activity_capture_service) -> None:
+        self._activity_capture_service = activity_capture_service
 
     async def collect_seed(self, forced_source: str | None = None) -> TalkSeed | None:
         """カテゴリを先に抽選し、必要なカテゴリだけ取得して種を選ぶ。"""
@@ -311,25 +319,18 @@ class TalkSeedManager:
     async def _collect_desktop(self) -> list[TalkSeed]:
         """デスクトップ状況から種を生成"""
         try:
-            attempt = await self._situation_capture.capture_desktop(
-                api_key=self._openai_api_key,
+            if self._activity_capture_service is None:
+                return []
+
+            analysis = await summarize_recent_desktop_activity(
+                openai_api_key=self._openai_api_key,
                 provider=self._desktop_analysis_provider,
                 base_url=self._desktop_analysis_base_url,
                 model=self._screen_analysis_model,
+                recent_events=self._activity_capture_service.snapshot_recent_events(),
             )
-            if attempt.skipped:
-                logger.info("デスクトップ種の取得をスキップ: %s", attempt.skip_reason)
-                return []
-            if attempt.error or attempt.context is None:
-                return []
-
-            ctx = attempt.context
-            if ctx.skipped or ctx.error or ctx.analysis is None:
-                return []
-
-            analysis = ctx.analysis
             # idle 状態は雑談向きでないのでスキップ
-            if analysis.activity_type == "idle":
+            if analysis.activity_type == "idle" or not analysis.summary:
                 return []
 
             now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
@@ -830,7 +831,7 @@ def _camera_haruka_perspective(analysis: CameraAnalysis) -> str:
     return perspectives.get(analysis.scene_type, "周りの様子にテンション高く乗っかる")
 
 
-def _desktop_lily_perspective(analysis: ScreenAnalysis) -> str:
+def _desktop_lily_perspective(analysis: ScreenAnalysis | DesktopActivitySummary) -> str:
     """デスクトップ状況に基づくリリィの切り口"""
     perspectives = {
         "coding": "頑張ってコーディングしてるね、と声をかける",
@@ -843,7 +844,7 @@ def _desktop_lily_perspective(analysis: ScreenAnalysis) -> str:
     return perspectives.get(analysis.activity_type, "今の状況について柔らかく声をかける")
 
 
-def _desktop_haruka_perspective(analysis: ScreenAnalysis) -> str:
+def _desktop_haruka_perspective(analysis: ScreenAnalysis | DesktopActivitySummary) -> str:
     """デスクトップ状況に基づく葉留佳の切り口"""
     perspectives = {
         "coding": "おー、プログラミングやってるじゃん！とテンション高くツッコむ",

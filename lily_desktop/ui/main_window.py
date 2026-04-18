@@ -248,11 +248,11 @@ class MainWindow(QWidget):
         debug_menu = menu.addMenu("デバッグ")
         debug_menu.setStyleSheet(menu.styleSheet())
 
-        desktop_ctx_action = QAction("デスクトップ状況を取得", self)
-        desktop_ctx_action.triggered.connect(
-            lambda: bus.desktop_context_requested.emit()
+        five_minute_record_action = QAction("5分記録を実行", self)
+        five_minute_record_action.triggered.connect(
+            lambda: bus.five_minute_record_requested.emit()
         )
-        debug_menu.addAction(desktop_ctx_action)
+        debug_menu.addAction(five_minute_record_action)
 
         auto_talk_action = QAction("掛け合い雑談を開始", self)
         auto_talk_action.triggered.connect(
@@ -284,11 +284,11 @@ class MainWindow(QWidget):
         )
         debug_menu.addAction(quest_today_talk_action)
 
-        camera_action = QAction("カメラ状況を取得", self)
-        camera_action.triggered.connect(
-            lambda: bus.camera_capture_requested.emit()
+        thirty_minute_record_action = QAction("30分記録を実行", self)
+        thirty_minute_record_action.triggered.connect(
+            lambda: bus.thirty_minute_record_requested.emit()
         )
-        debug_menu.addAction(camera_action)
+        debug_menu.addAction(thirty_minute_record_action)
 
         menu.addSeparator()
 

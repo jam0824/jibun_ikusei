@@ -45,3 +45,19 @@ def test_build_context_menu_includes_web_submenu(qapp):
     assert "行動ログカレンダー" in labels
     assert "行動ログ検索" in labels
     assert "週次行動レビュー" in labels
+
+
+def test_build_context_menu_replaces_debug_capture_actions(qapp):
+    window = MainWindow(_make_config())
+
+    menu = window.build_context_menu()
+    actions = menu.actions()
+    debug_action = next(action for action in actions if action.text() == "デバッグ")
+    debug_menu = debug_action.menu()
+
+    assert debug_menu is not None
+    labels = [action.text() for action in debug_menu.actions()]
+    assert "5分記録を実行" in labels
+    assert "30分記録を実行" in labels
+    assert "デスクトップ状況を取得" not in labels
+    assert "カメラ状況を取得" not in labels
