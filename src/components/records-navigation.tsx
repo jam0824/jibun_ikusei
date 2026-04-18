@@ -1,19 +1,19 @@
-import { CalendarDays, ScrollText, Search, Sparkles } from 'lucide-react'
+import { CalendarDays, Search, Sparkles, ScrollText } from 'lucide-react'
 import { NavLink } from 'react-router-dom'
 import { cn } from '@/lib/utils'
 
 export function RecordsSectionTabs({
   active,
-  questHref = '/records/quests?range=today',
+  growthHref = '/records/growth?range=today',
 }: {
-  active: 'quests' | 'activity'
-  questHref?: string
+  active: 'growth' | 'activity'
+  growthHref?: string
 }) {
   const baseTabClass =
-    'flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-300'
+    'flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-200'
 
   const tabs = [
-    { key: 'quests' as const, label: '成長記録', to: questHref, icon: ScrollText },
+    { key: 'growth' as const, label: '成長記録', to: growthHref, icon: ScrollText },
     { key: 'activity' as const, label: '行動ログ', to: '/records/activity/today', icon: Sparkles },
   ]
 
@@ -28,7 +28,7 @@ export function RecordsSectionTabs({
             className={cn(
               baseTabClass,
               active === tab.key
-                ? 'border-violet-700 bg-gradient-to-r from-violet-700 via-violet-600 to-fuchsia-600 text-white shadow-lg shadow-violet-500/30 ring-1 ring-violet-300/70'
+                ? 'border-violet-200 bg-violet-50 text-violet-700 shadow-sm shadow-violet-100/80'
                 : 'border-slate-200 bg-white text-slate-700 shadow-sm shadow-slate-200/70 hover:border-violet-200 hover:text-slate-900 hover:shadow-md',
             )}
           >
@@ -47,7 +47,7 @@ export function ActivityLogNav({
   year?: number
 }) {
   const baseNavClass =
-    'flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300'
+    'flex items-center gap-1.5 rounded-full border px-4 py-2 text-sm font-semibold whitespace-nowrap transition-colors transition-shadow duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-200'
 
   const items = [
     { label: '今日', to: '/records/activity/today', icon: Sparkles },
@@ -56,7 +56,7 @@ export function ActivityLogNav({
     {
       label: '週次レビュー',
       to: year ? `/records/activity/review/year?year=${year}` : '/records/activity/review/year',
-      icon: ScrollText,
+      icon: Sparkles,
     },
   ]
 
@@ -72,8 +72,8 @@ export function ActivityLogNav({
               cn(
                 baseNavClass,
                 isActive
-                  ? 'border-slate-950 bg-slate-950 text-white shadow-lg shadow-slate-900/15 ring-1 ring-slate-700/20'
-                  : 'border-slate-200 bg-white text-slate-700 shadow-sm shadow-slate-200/70 hover:border-slate-300 hover:text-slate-900 hover:shadow-md',
+                  ? 'border-violet-200 bg-violet-50 text-violet-700 shadow-sm shadow-violet-100/80'
+                  : 'border-slate-200 bg-white text-slate-700 shadow-sm shadow-slate-200/70 hover:border-violet-200 hover:text-slate-900 hover:shadow-md',
               )
             }
           >

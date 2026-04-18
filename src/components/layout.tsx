@@ -1,6 +1,6 @@
-import { type ReactNode } from 'react'
-import { NavLink } from 'react-router-dom'
-import { Bell, Home, ListTodo, Plus, ScrollText, Sparkles } from 'lucide-react'
+import { type ReactNode, useEffect, useState } from 'react'
+import { NavLink, useNavigate } from 'react-router-dom'
+import { Bell, Home, ListTodo, Plus, ScrollText, Sparkles, Utensils } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui'
 
@@ -78,18 +78,88 @@ export function Screen({
 }
 
 export function BottomNav() {
-  const items = [
+  const navigate = useNavigate()
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false)
+
+  useEffect(() => {
+    if (!isAddMenuOpen) {
+      return
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsAddMenuOpen(false)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isAddMenuOpen])
+
+  const leadingItems = [
     { to: '/', label: 'ホーム', icon: Home, end: true },
     { to: '/quests', label: 'クエスト', icon: ListTodo },
-    { to: '/quests/new', label: '追加', icon: Plus },
-    { to: '/skills', label: 'スキル', icon: Sparkles },
+  ]
+
+  const trailingItems = [
+    { to: '/growth', label: '成長', icon: Sparkles },
     { to: '/records', label: '記録', icon: ScrollText },
   ]
 
   return (
-    <nav className="sticky bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 py-3 backdrop-blur">
+    <>
+      {isAddMenuOpen ? (
+        <>
+          <button
+            type="button"
+            aria-label="追加メニューを閉じる"
+            className="fixed inset-0 z-30 bg-slate-950/30 backdrop-blur-[2px]"
+            onClick={() => setIsAddMenuOpen(false)}
+          />
+          <div className="fixed inset-x-0 bottom-24 z-40 px-4">
+            <div className="mx-auto max-w-md rounded-[2rem] border border-slate-200 bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.18)]">
+              <div className="px-2 pb-2">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Add</div>
+                <div className="mt-1 text-lg font-black text-slate-900">何を追加しますか？</div>
+              </div>
+              <div className="grid gap-3">
+                <button
+                  type="button"
+                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left transition hover:border-violet-200 hover:bg-violet-50/40"
+                  onClick={() => {
+                    setIsAddMenuOpen(false)
+                    navigate('/quests/new')
+                  }}
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">クエスト追加</div>
+                    <div className="mt-1 text-xs text-slate-500">新しい行動や習慣を登録します。</div>
+                  </div>
+                  <ListTodo className="h-5 w-5 text-violet-600" />
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left transition hover:border-violet-200 hover:bg-violet-50/40"
+                  onClick={() => {
+                    setIsAddMenuOpen(false)
+                    navigate('/meal')
+                  }}
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">食事登録</div>
+                    <div className="mt-1 text-xs text-slate-500">栄養の記録を追加します。</div>
+                  </div>
+                  <Utensils className="h-5 w-5 text-violet-600" />
+                </button>
+              </div>
+            </div>
+          </div>
+        </>
+      ) : null}
+
+      <nav className="sticky bottom-0 z-20 border-t border-slate-200 bg-white/95 px-3 py-3 backdrop-blur">
       <div className="mx-auto grid max-w-3xl grid-cols-5 gap-2">
-        {items.map((item) => {
+        {leadingItems.map((item) => {
           const Icon = item.icon
           return (
             <NavLink
@@ -110,8 +180,37 @@ export function BottomNav() {
             </NavLink>
           )
         })}
+        <Button
+          size="icon"
+          aria-label="追加メニューを開く"
+          className="mx-auto h-12 w-12 rounded-full border-violet-500 bg-violet-600 shadow-lg shadow-violet-300 hover:bg-violet-700"
+          onClick={() => setIsAddMenuOpen(true)}
+        >
+          <Plus className="h-5 w-5" />
+        </Button>
+        {trailingItems.map((item) => {
+          const Icon = item.icon
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={({ isActive }) =>
+                cn(
+                  'flex flex-col items-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-medium transition',
+                  isActive
+                    ? 'bg-violet-50 text-violet-700'
+                    : 'text-slate-400 hover:bg-slate-50 hover:text-slate-600',
+                )
+              }
+            >
+              <Icon className="h-4 w-4" />
+              <span>{item.label}</span>
+            </NavLink>
+          )
+        })}
       </div>
-    </nav>
+      </nav>
+    </>
   )
 }
 

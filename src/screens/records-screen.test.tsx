@@ -2,14 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { hydratePersistedState } from '@/domain/logic'
-import type {
-  NutrientEntry,
-  NutrientMap,
-  NutritionRecord,
-  PersistedAppState,
-  Quest,
-  QuestCompletion,
-} from '@/domain/types'
+import type { PersistedAppState, Quest, QuestCompletion } from '@/domain/types'
 import { HomeScreen } from '@/screens/home-screen'
 import { RecordsScreen } from '@/screens/records-screen'
 import { useAppStore } from '@/store/app-store'
@@ -52,58 +45,6 @@ function createCompletion(
   }
 }
 
-function createNutritionEntry(value: number | null, unit = 'g'): NutrientEntry {
-  return {
-    value,
-    unit,
-    label: null,
-    threshold: null,
-  }
-}
-
-function createNutritionMap(value: number | null = null): NutrientMap {
-  return {
-    energy: createNutritionEntry(value, 'kcal'),
-    protein: createNutritionEntry(value),
-    fat: createNutritionEntry(value),
-    carbs: createNutritionEntry(value),
-    potassium: createNutritionEntry(value, 'mg'),
-    calcium: createNutritionEntry(value, 'mg'),
-    iron: createNutritionEntry(value, 'mg'),
-    vitaminA: createNutritionEntry(value, 'µg'),
-    vitaminE: createNutritionEntry(value, 'mg'),
-    vitaminB1: createNutritionEntry(value, 'mg'),
-    vitaminB2: createNutritionEntry(value, 'mg'),
-    vitaminB6: createNutritionEntry(value, 'mg'),
-    vitaminC: createNutritionEntry(value, 'mg'),
-    fiber: createNutritionEntry(value),
-    saturatedFat: createNutritionEntry(value),
-    salt: createNutritionEntry(value),
-  }
-}
-
-function createNutritionRecord(
-  mealType: NutritionRecord['mealType'],
-  proteinValue: number,
-  updatedAt: string,
-  date = '2026-03-19',
-  createdAt = updatedAt,
-  nutrientOverrides: Partial<NutrientMap> = {},
-): NutritionRecord {
-  return {
-    userId: 'user_1',
-    date,
-    mealType,
-    nutrients: {
-      ...createNutritionMap(null),
-      protein: createNutritionEntry(proteinValue),
-      ...nutrientOverrides,
-    },
-    createdAt,
-    updatedAt,
-  }
-}
-
 function resetStore(partial: Partial<PersistedAppState>) {
   const base = hydratePersistedState({
     meta: {
@@ -140,13 +81,13 @@ function LocationDisplay() {
   return <div data-testid="location">{`${location.pathname}${location.search}`}</div>
 }
 
-function renderRecords(initialEntry = '/records/quests') {
+function renderRecords(initialEntry = '/records/growth') {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <LocationDisplay />
       <Routes>
-        <Route path="/records/quests" element={<RecordsScreen />} />
-        <Route path="/weekly-reflection" element={<div>weekly reflection route</div>} />
+        <Route path="/records/growth" element={<RecordsScreen />} />
+        <Route path="/records/review/weekly" element={<div>weekly reflection route</div>} />
       </Routes>
     </MemoryRouter>,
   )
@@ -158,8 +99,9 @@ function renderHomeWithRecords() {
       <LocationDisplay />
       <Routes>
         <Route path="/" element={<HomeScreen />} />
-        <Route path="/records/quests" element={<RecordsScreen />} />
-        <Route path="/weekly-reflection" element={<div>weekly reflection route</div>} />
+        <Route path="/records" element={<div>records hub route</div>} />
+        <Route path="/records/growth" element={<RecordsScreen />} />
+        <Route path="/records/review/weekly" element={<div>weekly reflection route</div>} />
       </Routes>
     </MemoryRouter>,
   )
@@ -196,7 +138,7 @@ describe('records screen filters', () => {
   })
 
   it('defaults to the today filter when opened without a filter query', () => {
-    renderRecords('/records/quests')
+    renderRecords('/records/growth')
 
     expect(
       screen.getByRole('button', { name: '今日のクリア回数を表示' }),
@@ -207,7 +149,7 @@ describe('records screen filters', () => {
   })
 
   it('uses the filter query to decide which completions to show', () => {
-    renderRecords('/records/quests?range=week')
+    renderRecords('/records/growth?range=week')
 
     expect(
       screen.getByRole('button', { name: '今週のクリア回数を表示' }),
@@ -218,11 +160,11 @@ describe('records screen filters', () => {
   })
 
   it('updates both the URL and the list when a filter card is tapped', async () => {
-    renderRecords('/records/quests?range=today')
+    renderRecords('/records/growth?range=today')
 
     fireEvent.click(screen.getByRole('button', { name: 'すべてのクリア回数を表示' }))
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/records/quests?range=all')
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/growth?range=all')
     expect(
       screen.getByRole('button', { name: 'すべてのクリア回数を表示' }),
     ).toHaveAttribute('aria-pressed', 'true')
@@ -236,7 +178,7 @@ describe('records screen filters', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '今日のクリア回数を記録で見る' }))
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/records/quests?range=today')
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/growth?range=today')
     expect(
       screen.getByRole('button', { name: '今日のクリア回数を表示' }),
     ).toHaveAttribute('aria-pressed', 'true')
@@ -262,7 +204,7 @@ describe('records screen filters', () => {
       ],
     })
 
-    renderRecords('/records/quests?range=week')
+    renderRecords('/records/growth?range=week')
 
     expect(screen.getByText('今週のクリア回数上位10位')).toBeInTheDocument()
     expect(screen.getByText('今週 2回')).toBeInTheDocument()
@@ -287,7 +229,7 @@ describe('records screen filters', () => {
       ],
     })
 
-    renderRecords('/records/quests?range=all')
+    renderRecords('/records/growth?range=all')
 
     expect(screen.getByText('累計クリア回数上位10位')).toBeInTheDocument()
     expect(screen.getByText('累計 3回')).toBeInTheDocument()
@@ -295,7 +237,7 @@ describe('records screen filters', () => {
   })
 
   it('does not show quest rankings for the today filter', () => {
-    renderRecords('/records/quests?range=today')
+    renderRecords('/records/growth?range=today')
 
     expect(screen.queryByText('今週のクリア回数上位10位')).not.toBeInTheDocument()
     expect(screen.queryByText('累計クリア回数上位10位')).not.toBeInTheDocument()
@@ -329,7 +271,7 @@ describe('weekly reflection navigation', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '先週のふりかえりを確認' }))
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/weekly-reflection')
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/review/weekly')
   })
 
   it('shows the weekly reflection link from quest records in week view', () => {
@@ -344,15 +286,15 @@ describe('weekly reflection navigation', () => {
       ],
     })
 
-    renderRecords('/records/quests?range=week')
+    renderRecords('/records/growth?range=week')
 
     fireEvent.click(screen.getByRole('button', { name: '先週のふりかえりを確認' }))
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/weekly-reflection')
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/review/weekly')
   })
 })
 
-describe('records screen nutrition view', () => {
+describe('records screen growth-only layout', () => {
   beforeEach(() => {
     resetStore({})
   })
@@ -361,64 +303,11 @@ describe('records screen nutrition view', () => {
     vi.restoreAllMocks()
   })
 
-  it('1日分がない場合は最新登録データを表示する', async () => {
-    const today = new Date()
-    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
-    const dayData = {
-      daily: null,
-      breakfast: createNutritionRecord('breakfast', 10.1, `${date}T08:00:00+09:00`, date),
-      lunch: createNutritionRecord(
-        'lunch',
-        20.2,
-        `${date}T12:30:00+09:00`,
-        date,
-        `${date}T12:30:00+09:00`,
-        {
-          protein: {
-            value: 20.2,
-            unit: 'g',
-            label: '適正',
-            threshold: { type: 'range', lower: 18, upper: 30 },
-          },
-          potassium: {
-            value: 1200,
-            unit: 'mg',
-            label: '不足',
-            threshold: { type: 'min_only', lower: 3000 },
-          },
-          salt: {
-            value: 7.9,
-            unit: 'g',
-            label: '過剰',
-            threshold: { type: 'max_only', upper: 7.5 },
-          },
-          fiber: {
-            value: 11.5,
-            unit: 'g',
-            label: null,
-            threshold: null,
-          },
-        },
-      ),
-      dinner: null,
-    }
-    const fetchNutrition = vi.fn().mockResolvedValue(dayData)
+  it('does not render the old local tabs for browsing, nutrition, and health', () => {
+    renderRecords('/records/growth')
 
-    useAppStore.setState((state) => ({
-      ...state,
-      nutritionCache: { ...state.nutritionCache, [date]: dayData },
-      fetchNutrition,
-    }))
-
-    renderRecords('/records/quests')
-    fireEvent.click(screen.getByRole('button', { name: '栄養' }))
-
-    expect(await screen.findByText('表示元: 最新登録データ（昼）')).toBeInTheDocument()
-    expect(screen.getByText('20.2 g')).toBeInTheDocument()
-    expect(screen.getByText('基準: 18〜30 g')).toBeInTheDocument()
-    expect(screen.getByText('基準: 3000以上 mg')).toBeInTheDocument()
-    expect(screen.getByText('基準: 7.5未満 g')).toBeInTheDocument()
-    expect(screen.getAllByText('基準: 未取得').length).toBeGreaterThan(0)
-    expect(screen.queryByText('30.3 g')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '閲覧' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '栄養' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '健康' })).not.toBeInTheDocument()
   })
 })

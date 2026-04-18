@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { z } from 'zod'
-import { ChevronRight, ListTodo, Lock, Settings2, Sparkles, Target, Utensils } from 'lucide-react'
+import { ChevronRight, Lock, Settings2, Sparkles, Target } from 'lucide-react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { useShallow } from 'zustand/react/shallow'
 import { buildQuestDraft } from '@/domain/logic'
@@ -172,27 +172,6 @@ export function QuestFormScreen() {
         </Button>
       }
     >
-      {/* 新規追加時のみタブバー表示 */}
-      {!editingQuest && (
-        <div className="mb-4 flex gap-1 rounded-2xl border border-slate-200 bg-slate-100 p-1">
-          <button
-            type="button"
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition bg-white text-slate-900 shadow-sm"
-          >
-            <ListTodo className="h-3.5 w-3.5" />
-            クエスト追加
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/meal')}
-            className="flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition text-slate-500 hover:text-slate-700"
-          >
-            <Utensils className="h-3.5 w-3.5" />
-            食事登録
-          </button>
-        </div>
-      )}
-
       <section>
         <Card>
           <CardContent className="space-y-4 p-4">

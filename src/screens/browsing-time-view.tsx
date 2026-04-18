@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   BarChart,
   Bar,
@@ -22,6 +23,17 @@ const periodOptions: Array<{ key: Period; label: string }> = [
   { key: 'all', label: '全期間' },
 ]
 
+function parseDateKey(dateKey: string): Date | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey)
+  if (!match) {
+    return null
+  }
+
+  const [, year, month, day] = match
+  const parsed = new Date(Number(year), Number(month) - 1, Number(day))
+  return Number.isNaN(parsed.getTime()) ? null : parsed
+}
+
 function getLocalDateString(date: Date): string {
   const y = date.getFullYear()
   const m = String(date.getMonth() + 1).padStart(2, '0')
@@ -29,19 +41,19 @@ function getLocalDateString(date: Date): string {
   return `${y}-${m}-${d}`
 }
 
-function getDateRange(period: Period): { from: string; to: string } {
-  const now = new Date()
-  const to = getLocalDateString(now)
+function getDateRange(period: Period, anchorDateKey: string): { from: string; to: string } {
+  const anchorDate = parseDateKey(anchorDateKey) ?? new Date()
+  const to = getLocalDateString(anchorDate)
 
   switch (period) {
     case 'day':
       return { from: to, to }
     case 'week': {
-      const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 6)
+      const from = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate() - 6)
       return { from: getLocalDateString(from), to }
     }
     case 'month': {
-      const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 29)
+      const from = new Date(anchorDate.getFullYear(), anchorDate.getMonth(), anchorDate.getDate() - 29)
       return { from: getLocalDateString(from), to }
     }
     case 'all':
@@ -59,16 +71,34 @@ function TooltipContent({ active, payload }: { active?: boolean; payload?: Array
 }
 
 export function BrowsingTimeView() {
-  const [period, setPeriod] = useState<Period>('day')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const requestedPeriod = searchParams.get('period')
+  const requestedDate = searchParams.get('date')
+  const period: Period =
+    requestedPeriod === 'week' || requestedPeriod === 'month' || requestedPeriod === 'all'
+      ? requestedPeriod
+      : 'day'
+  const anchorDate = requestedDate ?? getLocalDateString(new Date())
   const [data, setData] = useState<BrowsingTimeData[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (requestedPeriod === period && requestedDate === anchorDate) {
+      return
+    }
+
+    const next = new URLSearchParams(searchParams)
+    next.set('period', period)
+    next.set('date', anchorDate)
+    setSearchParams(next, { replace: true })
+  }, [anchorDate, period, requestedDate, requestedPeriod, searchParams, setSearchParams])
 
   const fetchData = useCallback(async (p: Period) => {
     setLoading(true)
     setError(null)
     try {
-      const { from, to } = getDateRange(p)
+      const { from, to } = getDateRange(p, anchorDate)
       const result = await getBrowsingTimes(from, to)
       setData(result)
     } catch {
@@ -77,7 +107,7 @@ export function BrowsingTimeView() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [anchorDate])
 
   useEffect(() => {
     fetchData(period)
@@ -95,7 +125,12 @@ export function BrowsingTimeView() {
           <button
             key={option.key}
             type="button"
-            onClick={() => setPeriod(option.key)}
+            onClick={() => {
+              const next = new URLSearchParams(searchParams)
+              next.set('period', option.key)
+              next.set('date', anchorDate)
+              setSearchParams(next)
+            }}
             className={`rounded-xl px-3 py-2 text-xs font-semibold transition ${
               period === option.key
                 ? 'bg-violet-600 text-white shadow-md shadow-violet-200'

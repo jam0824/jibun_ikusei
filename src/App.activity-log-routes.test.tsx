@@ -15,8 +15,6 @@ import * as api from '@/lib/api-client'
 import * as ai from '@/lib/ai'
 import { useAppStore } from '@/store/app-store'
 
-const LAST_RECORDS_ROUTE_KEY = 'app.records.lastRoute'
-
 function createQuest(id: string, title: string): Quest {
   const now = '2026-04-17T09:00:00+09:00'
   return {
@@ -393,6 +391,14 @@ describe('activity log routes', () => {
         linkedSessionIds: ['session_2'],
       }),
     ])
+    vi.spyOn(api, 'getBrowsingTimes').mockResolvedValue([])
+    vi.spyOn(api, 'getNutrition').mockResolvedValue({
+      daily: null,
+      breakfast: null,
+      lunch: null,
+      dinner: null,
+    })
+    vi.spyOn(api, 'getFitbitData').mockResolvedValue([])
 
     vi.spyOn(ai, 'generateDailyActivityLog').mockResolvedValue({
       provider: 'template',
@@ -412,25 +418,127 @@ describe('activity log routes', () => {
     vi.restoreAllMocks()
   })
 
-  it('redirects /records to the default quests route when no previous child route exists', async () => {
-    renderApp('/records')
-    await settleApp()
-
-    expect(screen.getByTestId('location')).toHaveTextContent('/records/quests?range=today')
-  })
-
-  it('restores the previously viewed child route from localStorage', async () => {
-    window.localStorage.setItem(LAST_RECORDS_ROUTE_KEY, '/records/activity/search')
+  it('renders the records hub at /records without restoring a previous child route', async () => {
+    window.localStorage.setItem('app.records.lastRoute', '/records/activity/search')
 
     renderApp('/records')
     await settleApp()
 
-    expect(screen.getByTestId('location')).toHaveTextContent('/records/activity/search')
+    expect(screen.getByTestId('location')).toHaveTextContent('/records')
+    expect(screen.getByText('見返したい記録の入口をここにまとめています。')).toBeInTheDocument()
   })
 
-  it('renders the quests route at /records/quests', () => {
+  it('redirects the legacy quest records route to the canonical growth route', async () => {
     renderApp('/records/quests?range=week')
+    await settleApp()
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/growth?range=week')
+  })
+
+  it('renders the growth records route at /records/growth', () => {
+    renderApp('/records/growth?range=week')
     expect(screen.getAllByText('今日の読書').length).toBeGreaterThan(0)
+  })
+
+  it('redirects the legacy browsing route under activity to the life browsing route', async () => {
+    renderApp('/records/activity/browsing?period=week&date=2026-04-17')
+    await settleApp()
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/life/browsing?period=week&date=2026-04-17')
+  })
+
+  it('reads the browsing period from query params on the life-log route and keeps the date anchor', async () => {
+    renderApp('/records/life/browsing?period=week&date=2026-04-17')
+    await settleApp()
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/life/browsing?period=week&date=2026-04-17')
+    expect(api.getBrowsingTimes).toHaveBeenCalledWith('2026-04-11', '2026-04-17')
+
+    fireEvent.click(screen.getByRole('button', { name: '全期間' }))
+    await settleApp()
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/life/browsing?period=all&date=2026-04-17')
+    expect(api.getBrowsingTimes).toHaveBeenLastCalledWith('2020-01-01', '2026-04-17')
+  })
+
+  it('reads the date query on the nutrition life-log route', async () => {
+    vi.mocked(api.getNutrition).mockResolvedValue({
+      daily: {
+        userId: 'user_1',
+        date: '2026-04-15',
+        mealType: 'daily',
+        nutrients: {
+          energy: { value: 500, unit: 'kcal', label: '適正', threshold: null },
+          protein: { value: 20, unit: 'g', label: '適正', threshold: null },
+          fat: { value: 10, unit: 'g', label: '適正', threshold: null },
+          carbs: { value: 60, unit: 'g', label: '適正', threshold: null },
+          potassium: { value: 1000, unit: 'mg', label: '不足', threshold: null },
+          calcium: { value: 700, unit: 'mg', label: '適正', threshold: null },
+          iron: { value: 8, unit: 'mg', label: '適正', threshold: null },
+          vitaminA: { value: 700, unit: 'µg', label: '適正', threshold: null },
+          vitaminE: { value: 6, unit: 'mg', label: '適正', threshold: null },
+          vitaminB1: { value: 0.8, unit: 'mg', label: '不足', threshold: null },
+          vitaminB2: { value: 1.2, unit: 'mg', label: '適正', threshold: null },
+          vitaminB6: { value: 1.1, unit: 'mg', label: '適正', threshold: null },
+          vitaminC: { value: 90, unit: 'mg', label: '適正', threshold: null },
+          fiber: { value: 15, unit: 'g', label: '不足', threshold: null },
+          saturatedFat: { value: 7, unit: 'g', label: '適正', threshold: null },
+          salt: { value: 9, unit: 'g', label: '過剰', threshold: null },
+        },
+        createdAt: '2026-04-15T12:00:00+09:00',
+        updatedAt: '2026-04-15T12:00:00+09:00',
+      },
+      breakfast: null,
+      lunch: null,
+      dinner: null,
+    })
+
+    renderApp('/records/life/nutrition?date=2026-04-15')
+    await settleApp()
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/life/nutrition?date=2026-04-15')
+    expect(api.getNutrition).toHaveBeenCalledWith('2026-04-15')
+    expect(screen.getByText('2026年4月15日')).toBeInTheDocument()
+    expect(screen.getByText('表示元: 1日分')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: '栄養' })).toHaveClass('bg-violet-50')
+    expect(screen.getByRole('link', { name: '栄養' })).toHaveClass('text-violet-700')
+    expect(screen.getByRole('link', { name: '栄養' })).toHaveClass('border-violet-200')
+    expect(screen.getByRole('link', { name: '閲覧' })).toHaveAttribute(
+      'href',
+      '/records/life/browsing?period=day&date=2026-04-15',
+    )
+  })
+
+  it('reads the date query on the health life-log route', async () => {
+    vi.mocked(api.getFitbitData).mockResolvedValue([
+      {
+        date: '2026-04-14',
+        heart: {
+          resting_heart_rate: 58,
+          intraday_points: 0,
+          heart_zones: [],
+        },
+        active_zone_minutes: null,
+        sleep: null,
+        activity: {
+          steps: 8123,
+          distance: 5.4,
+          calories: 2100,
+          very_active_minutes: 12,
+          fairly_active_minutes: 18,
+          lightly_active_minutes: 30,
+          sedentary_minutes: 500,
+        },
+      },
+    ])
+
+    renderApp('/records/life/health?date=2026-04-14')
+    await settleApp()
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/life/health?date=2026-04-14')
+    expect(api.getFitbitData).toHaveBeenCalledWith('2026-04-14', '2026-04-14')
+    expect(screen.getByText('2026年4月14日')).toBeInTheDocument()
+    expect(screen.getByText('8,123 歩')).toBeInTheDocument()
   })
 
   it('renders the today activity screen without generating a missing daily log', async () => {
