@@ -1,5 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getLocal } from '@ext/lib/storage'
+
+afterEach(() => {
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
 describe('recoverClassifications', () => {
   beforeEach(() => {
@@ -122,6 +127,237 @@ describe('message handling', () => {
 
     expect(response).toEqual({ ok: true })
     expect(await getLocal('dailyProgress')).toBeDefined()
+  })
+
+  it('FLUSH_AND_GET_PROGRESS で heartbeat を送る', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-17T00:00:00.000Z'))
+    vi.mocked(chrome.tabs.query).mockResolvedValue([])
+    vi.mocked(chrome.tabs.get).mockResolvedValue({
+      id: 1,
+      url: 'https://developer.mozilla.org/docs/Web',
+      title: 'MDN Web Docs',
+    } as chrome.tabs.Tab)
+
+    await import('./service-worker')
+    await Promise.resolve()
+
+    const { handlePageInfo } = await import('./message-handler')
+    await handlePageInfo(1, {
+      domain: 'developer.mozilla.org',
+      url: 'https://developer.mozilla.org/docs/Web',
+      title: 'MDN Web Docs',
+    })
+
+    const activatedListener = vi.mocked(chrome.tabs.onActivated.addListener).mock.calls[0]?.[0]
+    await activatedListener?.({ tabId: 1, windowId: 1 })
+
+    vi.mocked(globalThis.fetch).mockClear()
+    await vi.advanceTimersByTimeAsync(1000)
+
+    const listeners = vi.mocked(chrome.runtime.onMessage.addListener).mock.calls.map(([listener]) => listener)
+    const response = await new Promise<unknown>((resolve) => {
+      for (const listener of listeners) {
+        const keepAlive = listener(
+          { type: 'FLUSH_AND_GET_PROGRESS' },
+          {} as chrome.runtime.MessageSender,
+          resolve,
+        ) as unknown
+
+        if (keepAlive === true) {
+          return
+        }
+      }
+    })
+
+    expect(response).toEqual({ ok: true })
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(String(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.body)) as {
+      eventType: string
+      payload: { tabId: number; title: string | null }
+      metadata: { elapsedSeconds: number; trigger: string; category: string | null; isGrowth: boolean | null }
+    }
+    expect(body.eventType).toBe('heartbeat')
+    expect(body.payload).toMatchObject({
+      tabId: 1,
+      title: 'MDN Web Docs',
+    })
+    expect(body.metadata).toMatchObject({
+      elapsedSeconds: 1,
+      trigger: 'flush',
+    })
+  })
+})
+
+describe('browser action-log events', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-04-17T00:00:00.000Z'))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ ok: true }), { status: 202 }),
+    )
+  })
+
+  it('sends browser_page_changed on tab activation for active HTTP tabs', async () => {
+    vi.mocked(chrome.tabs.query).mockResolvedValue([])
+    vi.mocked(chrome.tabs.get).mockResolvedValue({
+      id: 10,
+      url: 'https://developer.mozilla.org/docs/Web',
+      title: 'MDN Web Docs',
+      incognito: false,
+      active: true,
+    } as chrome.tabs.Tab)
+
+    await import('./service-worker')
+    await Promise.resolve()
+
+    vi.mocked(globalThis.fetch).mockClear()
+
+    const listener = vi.mocked(chrome.tabs.onActivated.addListener).mock.calls[0]?.[0]
+    await listener?.({ tabId: 10, windowId: 1 })
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(String(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.body)) as {
+      eventType: string
+      payload: { tabId: number; url: string; domain: string; title: string | null }
+      metadata: { trigger: string }
+    }
+    expect(body.eventType).toBe('browser_page_changed')
+    expect(body.payload).toEqual({
+      tabId: 10,
+      url: 'https://developer.mozilla.org/docs/Web',
+      domain: 'developer.mozilla.org',
+      title: 'MDN Web Docs',
+    })
+    expect(body.metadata.trigger).toBe('tab_activated')
+  })
+
+  it('sends browser_page_changed on active tab URL change', async () => {
+    vi.mocked(chrome.tabs.query).mockResolvedValue([])
+
+    await import('./service-worker')
+    await Promise.resolve()
+
+    vi.mocked(globalThis.fetch).mockClear()
+
+    const listener = vi.mocked(chrome.tabs.onUpdated.addListener).mock.calls[0]?.[0]
+    await listener?.(
+      11,
+      { url: 'https://react.dev/learn' },
+      {
+        id: 11,
+        url: 'https://react.dev/learn',
+        title: 'React Learn',
+        active: true,
+        incognito: false,
+      } as chrome.tabs.Tab,
+    )
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(String(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.body)) as {
+      eventType: string
+      metadata: { trigger: string }
+      payload: { title: string | null }
+    }
+    expect(body.eventType).toBe('browser_page_changed')
+    expect(body.metadata.trigger).toBe('url_changed')
+    expect(body.payload.title).toBe('React Learn')
+  })
+
+  it('sends browser_page_changed on window focus restore', async () => {
+    vi.mocked(chrome.tabs.query).mockImplementation((queryInfo?: chrome.tabs.QueryInfo) => {
+      if (queryInfo?.windowId === 2) {
+        return Promise.resolve([
+          {
+            id: 12,
+            url: 'https://example.com/page',
+            title: 'Example Page',
+            active: true,
+            incognito: false,
+          } as chrome.tabs.Tab,
+        ])
+      }
+      return Promise.resolve([])
+    })
+
+    await import('./service-worker')
+    await Promise.resolve()
+
+    vi.mocked(globalThis.fetch).mockClear()
+
+    const listener = vi.mocked(chrome.windows.onFocusChanged.addListener).mock.calls[0]?.[0]
+    await listener?.(2)
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(String(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.body)) as {
+      eventType: string
+      metadata: { trigger: string }
+    }
+    expect(body.eventType).toBe('browser_page_changed')
+    expect(body.metadata.trigger).toBe('window_focus')
+  })
+
+  it('sends heartbeat on flush-tracker alarm with elapsedSeconds', async () => {
+    vi.mocked(chrome.tabs.query).mockResolvedValue([])
+    vi.mocked(chrome.tabs.get).mockResolvedValue({
+      id: 13,
+      url: 'https://example.com/page',
+      title: 'Example Page',
+      incognito: false,
+    } as chrome.tabs.Tab)
+
+    await import('./service-worker')
+    await Promise.resolve()
+
+    const { handlePageInfo } = await import('./message-handler')
+    await handlePageInfo(13, {
+      domain: 'example.com',
+      url: 'https://example.com/page',
+      title: 'Example Page',
+    })
+
+    const activatedListener = vi.mocked(chrome.tabs.onActivated.addListener).mock.calls[0]?.[0]
+    await activatedListener?.({ tabId: 13, windowId: 1 })
+    vi.mocked(globalThis.fetch).mockClear()
+
+    await vi.advanceTimersByTimeAsync(30_000)
+
+    const alarmListener = vi.mocked(chrome.alarms.onAlarm.addListener).mock.calls[0]?.[0]
+    await alarmListener?.({ name: 'flush-tracker', scheduledTime: Date.now() } as chrome.alarms.Alarm)
+
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(String(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.body)) as {
+      eventType: string
+      metadata: { trigger: string; elapsedSeconds: number }
+    }
+    expect(body.eventType).toBe('heartbeat')
+    expect(body.metadata.trigger).toBe('flush')
+    expect(body.metadata.elapsedSeconds).toBe(30)
+  })
+
+  it('skips browser action-log events for incognito tabs', async () => {
+    vi.mocked(chrome.tabs.query).mockResolvedValue([])
+    vi.mocked(chrome.tabs.get).mockResolvedValue({
+      id: 14,
+      url: 'https://example.com/private',
+      title: 'Private Page',
+      incognito: true,
+      active: true,
+    } as chrome.tabs.Tab)
+
+    await import('./service-worker')
+    await Promise.resolve()
+
+    vi.mocked(globalThis.fetch).mockClear()
+
+    const activatedListener = vi.mocked(chrome.tabs.onActivated.addListener).mock.calls[0]?.[0]
+    await activatedListener?.({ tabId: 14, windowId: 1 })
+    expect(globalThis.fetch).not.toHaveBeenCalled()
+
+    const alarmListener = vi.mocked(chrome.alarms.onAlarm.addListener).mock.calls[0]?.[0]
+    await alarmListener?.({ name: 'flush-tracker', scheduledTime: Date.now() } as chrome.alarms.Alarm)
+    expect(globalThis.fetch).not.toHaveBeenCalled()
   })
 })
 

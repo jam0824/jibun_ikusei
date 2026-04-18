@@ -1,13 +1,28 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Download, Eye, EyeOff, LogOut, Settings2, Trash2, Upload } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
+import type { Device, PrivacyRule } from '@/domain/action-log-types'
 import { GEMINI_VOICES } from '@/domain/constants'
 import { maskApiKey } from '@/domain/logic'
+import { toJstIso } from '@/lib/date'
 import { usePwaInstall } from '@/lib/pwa'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Select, Switch } from '@/components/ui'
 import { getUserEmail, logout } from '@/lib/auth'
+import {
+  getActionLogDevices,
+  getActionLogPrivacyRules,
+  putActionLogDevice,
+  putActionLogPrivacyRules,
+} from '@/lib/api-client'
 import { useAppStore } from '@/store/app-store'
+
+type UrlStorageMode = 'full_url' | 'domain_only'
+type AiHandlingMode = 'normal' | 'ai_summary_only' | 'ai_disabled'
+
+function normalizeRuleId(prefix: string, value: string) {
+  return `${prefix}_${value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_')}`.replace(/_+/g, '_')
+}
 
 export function SettingsScreen() {
   const navigate = useNavigate()
@@ -18,10 +33,177 @@ export function SettingsScreen() {
   const [importError, setImportError] = useState<string>()
   const [installMessage, setInstallMessage] = useState<string>()
   const [email, setEmail] = useState<string | null>(null)
+  const [actionLogDevices, setActionLogDevices] = useState<Device[]>([])
+  const [originalActionLogDevices, setOriginalActionLogDevices] = useState<Device[]>([])
+  const [excludedApps, setExcludedApps] = useState<string[]>([])
+  const [excludedDomains, setExcludedDomains] = useState<string[]>([])
+  const [excludedAppInput, setExcludedAppInput] = useState('')
+  const [excludedDomainInput, setExcludedDomainInput] = useState('')
+  const [urlStorageMode, setUrlStorageMode] = useState<UrlStorageMode>('full_url')
+  const [aiHandlingMode, setAiHandlingMode] = useState<AiHandlingMode>('normal')
+  const [actionLogLoading, setActionLogLoading] = useState(true)
+  const [actionLogError, setActionLogError] = useState<string>()
+  const [actionLogSaveMessage, setActionLogSaveMessage] = useState<string>()
 
   useEffect(() => {
     void getUserEmail().then(setEmail)
   }, [])
+
+  useEffect(() => {
+    let active = true
+    setActionLogLoading(true)
+    setActionLogError(undefined)
+
+    void Promise.all([getActionLogDevices(), getActionLogPrivacyRules()])
+      .then(([devices, rules]) => {
+        if (!active) {
+          return
+        }
+        setActionLogDevices(devices)
+        setOriginalActionLogDevices(devices)
+        setExcludedApps(
+          rules
+            .filter((rule) => rule.type === 'app' && rule.mode === 'exclude' && rule.enabled)
+            .map((rule) => rule.value),
+        )
+        setExcludedDomains(
+          rules
+            .filter((rule) => rule.type === 'domain' && rule.mode === 'exclude' && rule.enabled)
+            .map((rule) => rule.value),
+        )
+        const urlRule = rules.find(
+          (rule) =>
+            rule.type === 'storage_mode' &&
+            rule.value === 'default_url_storage' &&
+            rule.enabled,
+        )
+        setUrlStorageMode(urlRule?.mode === 'domain_only' ? 'domain_only' : 'full_url')
+        const aiRule = rules.find(
+          (rule) =>
+            rule.type === 'storage_mode' &&
+            rule.value === 'default_ai_handling' &&
+            rule.enabled,
+        )
+        if (aiRule?.mode === 'ai_summary_only' || aiRule?.mode === 'ai_disabled') {
+          setAiHandlingMode(aiRule.mode)
+        } else {
+          setAiHandlingMode('normal')
+        }
+      })
+      .catch((cause) => {
+        if (!active) {
+          return
+        }
+        setActionLogError(
+          cause instanceof Error ? cause.message : '行動ログ設定の読み込みに失敗しました。',
+        )
+      })
+      .finally(() => {
+        if (active) {
+          setActionLogLoading(false)
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  const addExcludedValue = (
+    value: string,
+    current: string[],
+    setter: (next: string[]) => void,
+    reset: () => void,
+  ) => {
+    const normalized = value.trim()
+    if (!normalized || current.includes(normalized)) {
+      reset()
+      return
+    }
+    setter([...current, normalized])
+    reset()
+  }
+
+  const removeExcludedValue = (
+    value: string,
+    current: string[],
+    setter: (next: string[]) => void,
+  ) => {
+    setter(current.filter((item) => item !== value))
+  }
+
+  const handleActionLogDeviceStateChange = (deviceId: string, captureState: Device['captureState']) => {
+    setActionLogDevices((current) =>
+      current.map((device) => (device.id === deviceId ? { ...device, captureState } : device)),
+    )
+  }
+
+  const handleSaveActionLogSettings = async () => {
+    setActionLogSaveMessage(undefined)
+    setActionLogError(undefined)
+
+    const changedDevices = actionLogDevices.filter((device) => {
+      const original = originalActionLogDevices.find((candidate) => candidate.id === device.id)
+      return original?.captureState !== device.captureState
+    })
+
+    const now = toJstIso()
+    const nextRules: PrivacyRule[] = [
+      ...excludedApps.map((value) => ({
+        id: normalizeRuleId('action_log_app_exclude', value),
+        type: 'app' as const,
+        value,
+        mode: 'exclude' as const,
+        enabled: true,
+        updatedAt: now,
+      })),
+      ...excludedDomains.map((value) => ({
+        id: normalizeRuleId('action_log_domain_exclude', value),
+        type: 'domain' as const,
+        value,
+        mode: 'exclude' as const,
+        enabled: true,
+        updatedAt: now,
+      })),
+      {
+        id: 'action_log_default_url_storage',
+        type: 'storage_mode' as const,
+        value: 'default_url_storage',
+        mode: urlStorageMode,
+        enabled: true,
+        updatedAt: now,
+      },
+      ...(aiHandlingMode === 'normal'
+        ? []
+        : [
+            {
+              id: 'action_log_default_ai_handling',
+              type: 'storage_mode' as const,
+              value: 'default_ai_handling',
+              mode: aiHandlingMode,
+              enabled: true,
+              updatedAt: now,
+            },
+          ]),
+    ]
+
+    try {
+      await Promise.all(
+        changedDevices.map((device) =>
+          putActionLogDevice(device.id, {
+            captureState: device.captureState,
+          }),
+        ),
+      )
+      await putActionLogPrivacyRules(nextRules)
+      setOriginalActionLogDevices(actionLogDevices)
+      setActionLogSaveMessage('行動ログ設定を保存しました。')
+    } catch (cause) {
+      setActionLogError(
+        cause instanceof Error ? cause.message : '行動ログ設定の保存に失敗しました。',
+      )
+    }
+  }
 
   const providerStatus = useMemo(
     () => ({
@@ -170,6 +352,158 @@ export function SettingsScreen() {
                 value={state.settings.reminderTime ?? ''}
                 onChange={(event) => state.setSettings({ reminderTime: event.target.value || undefined })}
               />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="space-y-4 p-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Action Log</div>
+            <h3 className="text-lg font-bold text-slate-900">行動ログ</h3>
+            {actionLogLoading ? (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-500">
+                行動ログ設定を読み込んでいます...
+              </div>
+            ) : null}
+            {actionLogError ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {actionLogError}
+              </div>
+            ) : null}
+            <div className="space-y-3">
+              <div className="text-sm font-semibold text-slate-900">Devices</div>
+              {actionLogDevices.map((device) => (
+                <div
+                  key={device.id}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                >
+                  <div className="mb-2 text-sm font-semibold text-slate-900">{device.name}</div>
+                  <Select
+                    aria-label={`Capture state ${device.name}`}
+                    value={device.captureState}
+                    onChange={(event) =>
+                      handleActionLogDeviceStateChange(
+                        device.id,
+                        event.target.value as Device['captureState'],
+                      )
+                    }
+                  >
+                    <option value="active">active</option>
+                    <option value="paused">paused</option>
+                    <option value="disabled">disabled</option>
+                  </Select>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-3">
+              <div className="text-sm font-semibold text-slate-900">Excluded Apps</div>
+              <div className="flex gap-2">
+                <Input
+                  aria-label="Excluded app input"
+                  value={excludedAppInput}
+                  onChange={(event) => setExcludedAppInput(event.target.value)}
+                  placeholder="Slack.exe"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    addExcludedValue(excludedAppInput, excludedApps, setExcludedApps, () =>
+                      setExcludedAppInput(''),
+                    )
+                  }
+                  aria-label="Add excluded app"
+                >
+                  Add
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {excludedApps.map((value) => (
+                  <Badge key={value} tone="outline" className="gap-2">
+                    {value}
+                    <button
+                      type="button"
+                      aria-label={`Remove excluded app ${value}`}
+                      onClick={() => removeExcludedValue(value, excludedApps, setExcludedApps)}
+                    >
+                      ×
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-3">
+              <div className="text-sm font-semibold text-slate-900">Excluded Domains</div>
+              <div className="flex gap-2">
+                <Input
+                  aria-label="Excluded domain input"
+                  value={excludedDomainInput}
+                  onChange={(event) => setExcludedDomainInput(event.target.value)}
+                  placeholder="mail.google.com"
+                />
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    addExcludedValue(
+                      excludedDomainInput,
+                      excludedDomains,
+                      setExcludedDomains,
+                      () => setExcludedDomainInput(''),
+                    )
+                  }
+                  aria-label="Add excluded domain"
+                >
+                  Add
+                </Button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {excludedDomains.map((value) => (
+                  <Badge key={value} tone="outline" className="gap-2">
+                    {value}
+                    <button
+                      type="button"
+                      aria-label={`Remove excluded domain ${value}`}
+                      onClick={() =>
+                        removeExcludedValue(value, excludedDomains, setExcludedDomains)
+                      }
+                    >
+                      ×
+                    </button>
+                  </Badge>
+                ))}
+              </div>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="space-y-2">
+                <span className="text-sm font-semibold text-slate-900">URL Storage</span>
+                <Select
+                  aria-label="URL storage mode"
+                  value={urlStorageMode}
+                  onChange={(event) => setUrlStorageMode(event.target.value as UrlStorageMode)}
+                >
+                  <option value="full_url">full_url</option>
+                  <option value="domain_only">domain_only</option>
+                </Select>
+              </label>
+              <label className="space-y-2">
+                <span className="text-sm font-semibold text-slate-900">AI Handling</span>
+                <Select
+                  aria-label="AI handling mode"
+                  value={aiHandlingMode}
+                  onChange={(event) => setAiHandlingMode(event.target.value as AiHandlingMode)}
+                >
+                  <option value="normal">normal</option>
+                  <option value="ai_summary_only">ai_summary_only</option>
+                  <option value="ai_disabled">ai_disabled</option>
+                </Select>
+              </label>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button onClick={() => void handleSaveActionLogSettings()} aria-label="Save action-log settings">
+                Save
+              </Button>
+              {actionLogSaveMessage ? (
+                <div className="text-sm text-emerald-700">{actionLogSaveMessage}</div>
+              ) : null}
             </div>
           </CardContent>
         </Card>

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { hydratePersistedState } from '@/domain/logic'
 import type { PersistedAppState } from '@/domain/types'
 import { WeeklyReflectionScreen } from '@/screens/weekly-reflection-screen'
@@ -40,11 +40,17 @@ function resetStore(partial: Partial<PersistedAppState>) {
 function renderWeeklyReflection() {
   return render(
     <MemoryRouter initialEntries={['/weekly-reflection']}>
+      <LocationDisplay />
       <Routes>
         <Route path="/weekly-reflection" element={<WeeklyReflectionScreen />} />
       </Routes>
     </MemoryRouter>,
   )
+}
+
+function LocationDisplay() {
+  const location = useLocation()
+  return <div data-testid="location">{`${location.pathname}${location.search}`}</div>
 }
 
 describe('weekly reflection screen', () => {
@@ -186,5 +192,73 @@ describe('weekly reflection screen', () => {
     })
 
     expect(screen.getByText('先週はクエスト記録がありませんでした。来週は小さな 1 件から始めましょう。')).toBeInTheDocument()
+  })
+
+  it('opens weekly quest records from the records action button', async () => {
+    const ensureWeeklyReflection = vi.fn().mockResolvedValue({ hasData: true, weekKey: '2026-W15' })
+
+    resetStore({
+      quests: [
+        {
+          id: 'quest_daily',
+          title: 'Morning stretch',
+          description: '',
+          questType: 'repeatable',
+          isDaily: true,
+          xpReward: 3,
+          category: 'Health',
+          skillMappingMode: 'fixed',
+          fixedSkillId: 'skill_habit',
+          cooldownMinutes: 0,
+          dailyCompletionCap: 7,
+          status: 'active',
+          privacyMode: 'normal',
+          pinned: false,
+          createdAt: '2026-04-01T09:00:00+09:00',
+          updatedAt: '2026-04-01T09:00:00+09:00',
+        },
+      ],
+      skills: [
+        {
+          id: 'skill_habit',
+          name: 'Habit',
+          normalizedName: 'habit',
+          category: 'Health',
+          level: 1,
+          totalXp: 0,
+          source: 'manual',
+          status: 'active',
+          createdAt: '2026-04-01T09:00:00+09:00',
+          updatedAt: '2026-04-01T09:00:00+09:00',
+        },
+      ],
+      completions: [
+        {
+          id: 'completion_monday',
+          questId: 'quest_daily',
+          clientRequestId: 'req_monday',
+          completedAt: '2026-04-06T08:00:00+09:00',
+          userXpAwarded: 3,
+          skillXpAwarded: 3,
+          resolvedSkillId: 'skill_habit',
+          skillResolutionStatus: 'resolved',
+          createdAt: '2026-04-06T08:00:00+09:00',
+        },
+      ],
+    })
+
+    useAppStore.setState((state) => ({
+      ...state,
+      ensureWeeklyReflection,
+    }))
+
+    renderWeeklyReflection()
+    await act(async () => {
+      await vi.runAllTimersAsync()
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '記録' }))
+
+    expect(screen.getByTestId('location')).toHaveTextContent('/records/quests?range=week')
   })
 })

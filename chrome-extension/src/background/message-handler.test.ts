@@ -35,7 +35,7 @@ describe('message-handler', () => {
         notificationsEnabled: true,
       })
 
-      const { handlePageInfo, getTabClassification } = await import('./message-handler')
+      const { handlePageInfo, getTabClassification, getTabPageInfo } = await import('./message-handler')
       await handlePageInfo(1, {
         domain: 'developer.mozilla.org',
         url: 'https://developer.mozilla.org/docs/Web',
@@ -47,6 +47,11 @@ describe('message-handler', () => {
       expect(result!.category).toBe('学習')
       expect(result!.isGrowth).toBe(true)
       expect(result!.cacheKey).toBe('developer.mozilla.org:/docs/Web')
+      expect(getTabPageInfo(1)).toEqual({
+        domain: 'developer.mozilla.org',
+        url: 'https://developer.mozilla.org/docs/Web',
+        title: 'MDN Web Docs',
+      })
     })
 
     it('キャッシュヒット時は AI を呼ばない', async () => {
@@ -175,7 +180,8 @@ describe('message-handler', () => {
         notificationsEnabled: true,
       })
 
-      const { clearTabClassification, getTabClassification, handlePageInfo } = await import('./message-handler')
+      const { clearTabClassification, clearTabPageInfo, getTabClassification, getTabPageInfo, handlePageInfo } =
+        await import('./message-handler')
       await handlePageInfo(6, {
         domain: 'example.com',
         url: 'https://example.com/',
@@ -183,8 +189,15 @@ describe('message-handler', () => {
       })
 
       expect(getTabClassification(6)).toBeDefined()
+      expect(getTabPageInfo(6)).toEqual({
+        domain: 'example.com',
+        url: 'https://example.com/',
+        title: 'Example',
+      })
       clearTabClassification(6)
+      clearTabPageInfo(6)
       expect(getTabClassification(6)).toBeUndefined()
+      expect(getTabPageInfo(6)).toBeUndefined()
     })
   })
 

@@ -12,18 +12,28 @@ const classificationCache = new ClassificationCache()
 
 // Rebuilt naturally when content scripts send PAGE_INFO after service worker restart.
 const tabClassifications = new Map<number, ClassificationResult>()
+const tabPageInfos = new Map<number, PageInfo>()
 
 export function getTabClassification(tabId: number): ClassificationResult | undefined {
   return tabClassifications.get(tabId)
+}
+
+export function getTabPageInfo(tabId: number): PageInfo | undefined {
+  return tabPageInfos.get(tabId)
 }
 
 export function clearTabClassification(tabId: number): void {
   tabClassifications.delete(tabId)
 }
 
+export function clearTabPageInfo(tabId: number): void {
+  tabPageInfos.delete(tabId)
+}
+
 export async function handlePageInfo(tabId: number, pageInfo: PageInfo): Promise<void> {
   const settings = (await getLocal<ExtensionSettings>('extensionSettings')) ?? createDefaultSettings()
   const notificationsEnabled = settings.notificationsEnabled ?? true
+  tabPageInfos.set(tabId, pageInfo)
 
   const cacheKey = buildCacheKey(pageInfo)
   const cached = await classificationCache.get(cacheKey)

@@ -235,12 +235,14 @@ Cognito で認証される利用アカウント。アプリのデータ分離単
   - 今日の行動ログ
 - `/records/activity/day/:dateKey?view=session|event`
   - 任意日の行動ログ詳細
-- `/records/activity/calendar`
+- `/records/activity/calendar?month=YYYY-MM`
   - 行動ログカレンダー
+- `/records/activity/review/year?year=YYYY`
+  - 週次行動レビュー一覧
 - `/records/activity/search`
   - 行動ログ検索
 - `/records/activity/review/week?weekKey=YYYY-Www`
-  - 週次行動レビュー
+  - 週次行動レビュー詳細
 - `/weekly-reflection`
   - 既存の週次ふりかえり
 - `/lily`
@@ -472,7 +474,8 @@ Cognito で認証される利用アカウント。アプリのデータ分離単
 - `activity`
   - `/records/activity/today?view=session|event`
   - `/records/activity/day/:dateKey?view=session|event`
-  - `/records/activity/calendar`
+  - `/records/activity/calendar?month=YYYY-MM`
+  - `/records/activity/review/year?year=YYYY`
   - `/records/activity/search`
   - `/records/activity/review/week?weekKey=YYYY-Www`
 
@@ -517,10 +520,16 @@ Cognito で認証される利用アカウント。アプリのデータ分離単
 
 - `行動ログ` タブを開くと `/records/activity/today` へ遷移する。
 - `今日` から特定日へ移動する時は `/records/activity/day/:dateKey` を使う。
-- `カレンダー` は `/records/activity/calendar`
+- `カレンダー` は `/records/activity/calendar?month=YYYY-MM`
 - `検索` は `/records/activity/search`
-- `週次レビュー` は `/records/activity/review/week`
+- `週次レビュー` は `/records/activity/review/year`
 - `session` / `event` 切り替えは `view` query で表現する。
+- `calendar` は `month` query を持てる。未指定時は JST 基準の当月を表示する。
+- `calendar` では 1 か月分を表示し、`前月` / `次月` / `年月ピッカー` で移動できる。
+- `review/year` は `year` query を持てる。未指定時は JST 基準の当年、または直近の利用可能年を表示する。
+- `review/year` では 1 年分の週次レビュー一覧を表示し、`前年` / `次年` / `年ピッカー` で移動できる。
+- `review/year` の各週を押すと `/records/activity/review/week?weekKey=YYYY-Www` の詳細へ遷移する。
+- `review/week` は個別週の詳細 route として扱い、本文やカテゴリ比率、OpenLoop を表示する。
 
 #### `activity` タブの補足
 

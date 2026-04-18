@@ -1,4 +1,8 @@
 import { z } from 'zod'
+import type {
+  ActivitySession,
+  OpenLoop,
+} from '@/domain/action-log-types'
 import {
   buildTemplateSkillResolution,
   getProviderConfig,
@@ -39,6 +43,17 @@ const lilyMessageSchema = z.object({
 const weeklyReflectionSchema = z.object({
   comment: z.string().min(1),
   recommendations: z.array(z.string().min(1)).min(1).max(3),
+})
+
+const dailyActivityLogSchema = z.object({
+  summary: z.string().min(1),
+  mainThemes: z.array(z.string().min(1)).min(1).max(5),
+  reviewQuestions: z.array(z.string().min(1)).min(1).max(3),
+})
+
+const weeklyActivityReviewSchema = z.object({
+  summary: z.string().min(1),
+  focusThemes: z.array(z.string().min(1)).min(1).max(5),
 })
 
 const skillResolutionJsonSchema = {
@@ -96,6 +111,42 @@ const weeklyReflectionJsonSchema = {
   required: ['comment', 'recommendations'],
 }
 
+const dailyActivityLogJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    summary: { type: 'string' },
+    mainThemes: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 1,
+      maxItems: 5,
+    },
+    reviewQuestions: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 1,
+      maxItems: 3,
+    },
+  },
+  required: ['summary', 'mainThemes', 'reviewQuestions'],
+}
+
+const weeklyActivityReviewJsonSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    summary: { type: 'string' },
+    focusThemes: {
+      type: 'array',
+      items: { type: 'string' },
+      minItems: 1,
+      maxItems: 5,
+    },
+  },
+  required: ['summary', 'focusThemes'],
+}
+
 const DEFAULT_JSON_SYSTEM_PROMPT =
   'You are the structured-output engine for a self-growth app. Return only valid JSON that strictly matches the provided schema. Do not include markdown or extra commentary.'
 
@@ -112,6 +163,28 @@ const WEEKLY_REFLECTION_SYSTEM_PROMPT = [
   'Structure it as: celebrate what went well, mention only one improvement point, then encourage next week.',
   'Keep the tone warm and non-judgmental.',
   'Recommendations must be 1 to 3 short Japanese suggestions.',
+].join(' ')
+
+const DAILY_ACTIVITY_LOG_SYSTEM_PROMPT = [
+  'You write a DailyActivityLog for a Japanese self-growth app called Lily.',
+  'Return only valid JSON that strictly matches the provided schema.',
+  'Write in Japanese.',
+  'The prose must read like リリィがユーザーをそっと見守って書いた観察日記風の地の文.',
+  '直接話しかける口調は禁止.',
+  'Do not use second-person coaching language.',
+  'Generate only summary, mainThemes, and reviewQuestions.',
+  'Use only the provided ActivitySession and OpenLoop summaries.',
+].join(' ')
+
+const WEEKLY_ACTIVITY_REVIEW_SYSTEM_PROMPT = [
+  'You write a WeeklyActivityReview for a Japanese self-growth app called Lily.',
+  'Return only valid JSON that strictly matches the provided schema.',
+  'Write in Japanese.',
+  'The prose must read like リリィがユーザーをそっと見守って書いた観察日記風の地の文.',
+  '直接話しかける口調は禁止.',
+  'Do not use second-person coaching language.',
+  'Generate only summary and focusThemes.',
+  'Use only the provided ActivitySession and OpenLoop summaries plus category durations.',
 ].join(' ')
 
 const RETRYABLE_STATUS_CODES = new Set([408, 409, 429, 500, 502, 503, 504])
@@ -630,6 +703,274 @@ export async function generateWeeklyReflection(params: {
     }
   } catch {
     return buildWeeklyReflectionFallback(summary)
+  }
+}
+
+export interface GeneratedDailyActivityLog {
+  provider: 'openai' | 'template'
+  summary: string
+  mainThemes: string[]
+  reviewQuestions: string[]
+}
+
+export interface GeneratedWeeklyActivityReview {
+  provider: 'openai' | 'template'
+  summary: string
+  focusThemes: string[]
+}
+
+function uniqueNonEmpty(values: Array<string | undefined>, limit = 5) {
+  const seen = new Set<string>()
+  const results: string[] = []
+
+  for (const value of values) {
+    const normalized = value?.trim()
+    if (!normalized || seen.has(normalized)) {
+      continue
+    }
+
+    seen.add(normalized)
+    results.push(normalized)
+    if (results.length >= limit) {
+      break
+    }
+  }
+
+  return results
+}
+
+function takeTopCounts(values: string[], limit = 5) {
+  const counts = new Map<string, number>()
+
+  for (const value of values) {
+    const normalized = value.trim()
+    if (!normalized) {
+      continue
+    }
+    counts.set(normalized, (counts.get(normalized) ?? 0) + 1)
+  }
+
+  return [...counts.entries()]
+    .sort((left, right) => {
+      if (right[1] === left[1]) {
+        return left[0].localeCompare(right[0], 'ja')
+      }
+      return right[1] - left[1]
+    })
+    .slice(0, limit)
+    .map(([value]) => value)
+}
+
+function summarizeSessionFocus(sessions: ActivitySession[]) {
+  if (sessions.length === 0) {
+    return '静かな整理'
+  }
+
+  const first = sessions[0]
+  const app = first.appNames[0]
+  const domain = first.domains[0]
+
+  if (app && domain) {
+    return `${app} と ${domain} を行き来する流れ`
+  }
+
+  if (first.title) {
+    return first.title
+  }
+
+  if (app) {
+    return `${app} での作業`
+  }
+
+  return '静かな整理'
+}
+
+function collectThemes(sessions: ActivitySession[], openLoops: OpenLoop[], limit = 5) {
+  const sessionThemes = takeTopCounts(
+    sessions.flatMap((session) => [
+      session.primaryCategory,
+      ...session.activityKinds,
+      ...session.domains,
+      ...session.projectNames,
+    ]),
+    limit,
+  )
+
+  return uniqueNonEmpty(
+    [
+      ...sessionThemes,
+      ...openLoops.map((openLoop) => openLoop.title),
+    ],
+    limit,
+  )
+}
+
+function sanitizeSessionsForActionLogAi(sessions: ActivitySession[]) {
+  return sessions.map((session) => ({
+    sessionId: session.id,
+    dateKey: session.dateKey,
+    startedAt: session.startedAt,
+    endedAt: session.endedAt,
+    title: session.title,
+    primaryCategory: session.primaryCategory,
+    activityKinds: session.activityKinds,
+    appNames: session.appNames,
+    domains: session.domains,
+    projectNames: session.projectNames,
+    summary: session.summary ?? null,
+  }))
+}
+
+function sanitizeOpenLoopsForActionLogAi(openLoops: OpenLoop[]) {
+  return openLoops.map((openLoop) => ({
+    id: openLoop.id,
+    dateKey: openLoop.dateKey,
+    title: openLoop.title,
+    description: openLoop.description ?? null,
+    status: openLoop.status,
+  }))
+}
+
+function buildDailyActivityLogFallback(params: {
+  dateKey: string
+  sessions: ActivitySession[]
+  openLoops: OpenLoop[]
+}): GeneratedDailyActivityLog {
+  const themes = collectThemes(params.sessions, params.openLoops, 3)
+  const themeText = themes.length > 0 ? themes.join('や') : '静かな整理'
+  const focus = summarizeSessionFocus(params.sessions)
+  const openLoop = params.openLoops[0]
+
+  return {
+    provider: 'template',
+    summary: [
+      `リリィの観察では、この日は${themeText}を軸に時間が流れていた。`,
+      `${focus}に向かう場面が中心で、`,
+      openLoop
+        ? `${openLoop.title}のように、まだ続きを気にしていることも残っていた。`
+        : '区切りをつけながら静かに進めていた。',
+    ].join(''),
+    mainThemes: themes.length > 0 ? themes : ['静かな整理'],
+    reviewQuestions: [
+      `${focus}のあとに、次の一歩として見えていたものは何だったか。`,
+      openLoop
+        ? `${openLoop.title}に手を戻すなら、最初に確かめたい点はどこか。`
+        : 'この日の流れの中で、もう少し深めたい部分はどこだったか。',
+    ],
+  }
+}
+
+function buildWeeklyActivityReviewFallback(params: {
+  weekKey: string
+  sessions: ActivitySession[]
+  openLoops: OpenLoop[]
+  categoryDurations: Record<string, number>
+}): GeneratedWeeklyActivityReview {
+  const themes = collectThemes(params.sessions, params.openLoops, 3)
+  const strongestCategory = Object.entries(params.categoryDurations)
+    .sort((left, right) => right[1] - left[1])[0]?.[0]
+  const openLoop = params.openLoops[0]
+
+  return {
+    provider: 'template',
+    summary: [
+      `リリィの観察では、この週は${themes.join('や') || '静かな整理'}がゆっくり積み重なっていた。`,
+      strongestCategory ? `${strongestCategory}に向かう時間が濃く、` : '',
+      openLoop
+        ? `${openLoop.title}のように、続きを抱えたまま次の週へ渡りそうなものも見えていた。`
+        : 'いくつかの区切りをつけながら、流れを整えていた。',
+    ].join(''),
+    focusThemes: themes.length > 0 ? themes : ['静かな整理'],
+  }
+}
+
+export async function generateDailyActivityLog(params: {
+  aiConfig: AiConfig
+  settings: UserSettings
+  dateKey: string
+  sessions: ActivitySession[]
+  openLoops: OpenLoop[]
+}): Promise<GeneratedDailyActivityLog> {
+  const { aiConfig, settings, dateKey, sessions, openLoops } = params
+  const openAiConfig = aiConfig.providers.openai
+
+  if (!settings.aiEnabled || !openAiConfig.apiKey || isOffline()) {
+    return buildDailyActivityLogFallback({ dateKey, sessions, openLoops })
+  }
+
+  try {
+    const result = await requestOpenAiJson<{
+      summary: string
+      mainThemes: string[]
+      reviewQuestions: string[]
+    }>({
+      apiKey: openAiConfig.apiKey,
+      model: OPENAI_MODELS.text,
+      schemaName: 'daily_activity_log',
+      schema: dailyActivityLogJsonSchema,
+      input: {
+        task: 'daily_activity_log',
+        dateKey,
+        sessions: sanitizeSessionsForActionLogAi(sessions),
+        openLoops: sanitizeOpenLoopsForActionLogAi(openLoops),
+      },
+      systemPrompt: DAILY_ACTIVITY_LOG_SYSTEM_PROMPT,
+    })
+
+    const parsed = dailyActivityLogSchema.parse(result)
+    return {
+      provider: 'openai',
+      summary: parsed.summary,
+      mainThemes: parsed.mainThemes,
+      reviewQuestions: parsed.reviewQuestions,
+    }
+  } catch {
+    return buildDailyActivityLogFallback({ dateKey, sessions, openLoops })
+  }
+}
+
+export async function generateWeeklyActivityReview(params: {
+  aiConfig: AiConfig
+  settings: UserSettings
+  weekKey: string
+  sessions: ActivitySession[]
+  openLoops: OpenLoop[]
+  categoryDurations: Record<string, number>
+}): Promise<GeneratedWeeklyActivityReview> {
+  const { aiConfig, settings, weekKey, sessions, openLoops, categoryDurations } = params
+  const openAiConfig = aiConfig.providers.openai
+
+  if (!settings.aiEnabled || !openAiConfig.apiKey || isOffline()) {
+    return buildWeeklyActivityReviewFallback({ weekKey, sessions, openLoops, categoryDurations })
+  }
+
+  try {
+    const result = await requestOpenAiJson<{
+      summary: string
+      focusThemes: string[]
+    }>({
+      apiKey: openAiConfig.apiKey,
+      model: OPENAI_MODELS.text,
+      schemaName: 'weekly_activity_review',
+      schema: weeklyActivityReviewJsonSchema,
+      input: {
+        task: 'weekly_activity_review',
+        weekKey,
+        categoryDurations,
+        sessions: sanitizeSessionsForActionLogAi(sessions),
+        openLoops: sanitizeOpenLoopsForActionLogAi(openLoops),
+      },
+      systemPrompt: WEEKLY_ACTIVITY_REVIEW_SYSTEM_PROMPT,
+    })
+
+    const parsed = weeklyActivityReviewSchema.parse(result)
+    return {
+      provider: 'openai',
+      summary: parsed.summary,
+      focusThemes: parsed.focusThemes,
+    }
+  } catch {
+    return buildWeeklyActivityReviewFallback({ weekKey, sessions, openLoops, categoryDurations })
   }
 }
 

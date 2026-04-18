@@ -125,6 +125,12 @@ export class JibunIkuseiStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/activityLogHandler')),
     })
 
+    const actionLogFn = new lambda.Function(this, 'ActionLogHandler', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-actionLogHandler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/actionLogHandler')),
+    })
+
     const browsingTimeFn = new lambda.Function(this, 'BrowsingTimeHandler', {
       ...lambdaDefaults,
       functionName: 'jibun-ikusei-browsingTimeHandler',
@@ -168,7 +174,7 @@ export class JibunIkuseiStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/fitbitDataHandler')),
     })
 
-    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, healthDataFn, activityLogFn, situationLogFn, chatFn, migrateStateFn, nutritionFn, fitbitDataFn]) {
+    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, healthDataFn, activityLogFn, actionLogFn, situationLogFn, chatFn, migrateStateFn, nutritionFn, fitbitDataFn]) {
       table.grantReadWriteData(fn)
     }
 
@@ -255,6 +261,29 @@ export class JibunIkuseiStack extends cdk.Stack {
     const activityLogIntegration = new integrations.HttpLambdaIntegration('ActivityLogIntegration', activityLogFn)
     api.addRoutes({ path: '/activity-logs', methods: [apigwv2.HttpMethod.GET], integration: activityLogIntegration })
     api.addRoutes({ path: '/activity-logs', methods: [apigwv2.HttpMethod.POST], integration: activityLogIntegration })
+
+    // Action Logs
+    const actionLogIntegration = new integrations.HttpLambdaIntegration('ActionLogIntegration', actionLogFn)
+    api.addRoutes({ path: '/action-log/raw-events', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/raw-events', methods: [apigwv2.HttpMethod.POST], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/sessions', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/sessions', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/sessions/{id}/hidden', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/daily', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/daily/{dateKey}', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/daily/{dateKey}', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/weekly', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/weekly/{weekKey}', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/weekly/{weekKey}', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/devices', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/devices/{id}', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/privacy-rules', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/privacy-rules', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/open-loops', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/open-loops', methods: [apigwv2.HttpMethod.PUT], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/range', methods: [apigwv2.HttpMethod.DELETE], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/deletion-requests', methods: [apigwv2.HttpMethod.GET], integration: actionLogIntegration })
+    api.addRoutes({ path: '/action-log/deletion-requests/{id}/ack', methods: [apigwv2.HttpMethod.POST], integration: actionLogIntegration })
 
     // Situation Logs
     const situationLogIntegration = new integrations.HttpLambdaIntegration('SituationLogIntegration', situationLogFn)

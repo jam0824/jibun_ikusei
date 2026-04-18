@@ -12,6 +12,7 @@ from ui.character_widget import CharacterWidget
 from ui.input_widget import InputWidget
 from ui.mic_button import MicButton
 from ui.user_balloon_widget import UserBalloonWidget
+from ui.web_links import WEB_LINK_ITEMS, open_web_path
 
 # ドラッグ判定の閾値（ピクセル）— これ以上動いたらドラッグとみなす
 _DRAG_THRESHOLD = 5
@@ -223,6 +224,9 @@ class MainWindow(QWidget):
         ub.move(x, y)
 
     def contextMenuEvent(self, event) -> None:
+        self.build_context_menu().exec(event.globalPos())
+
+    def build_context_menu(self) -> QMenu:
         menu = QMenu(self)
         menu.setStyleSheet(
             "QMenu { background: white; border: 1px solid #ccc; border-radius: 4px; padding: 4px; }"
@@ -288,6 +292,20 @@ class MainWindow(QWidget):
 
         menu.addSeparator()
 
+        web_menu = menu.addMenu("Web を開く")
+        web_menu.setStyleSheet(menu.styleSheet())
+        for item in WEB_LINK_ITEMS:
+            action = QAction(item.label, self)
+            action.triggered.connect(
+                lambda _checked=False, path=item.path: open_web_path(
+                    self._config.web.base_url,
+                    path,
+                )
+            )
+            web_menu.addAction(action)
+
+        menu.addSeparator()
+
         hide_action = QAction("非表示", self)
         hide_action.triggered.connect(self.hide)
         menu.addAction(hide_action)
@@ -296,4 +314,4 @@ class MainWindow(QWidget):
         quit_action.triggered.connect(QApplication.quit)
         menu.addAction(quit_action)
 
-        menu.exec(event.globalPos())
+        return menu

@@ -11,6 +11,16 @@ import type {
   Skill,
   UserSettings,
 } from '@/domain/types'
+import type {
+  ActivitySession,
+  ActionLogDeletionRequest,
+  DailyActivityLog,
+  Device,
+  OpenLoop,
+  PrivacyRule,
+  RawEvent,
+  WeeklyActivityReview,
+} from '@/domain/action-log-types'
 import { getIdToken } from '@/lib/auth'
 
 const BASE_URL = import.meta.env.VITE_API_BASE_URL as string
@@ -291,6 +301,130 @@ export interface ActivityLogEntry {
 
 export function getActivityLogs(from: string, to: string) {
   return request<ActivityLogEntry[]>(`/activity-logs?from=${from}&to=${to}`)
+}
+
+export function postActionLogRawEvents(input: { deviceId: string; events: RawEvent[] }) {
+  return request<{ logged: number }>('/action-log/raw-events', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function getActionLogRawEvents(from: string, to: string) {
+  return request<RawEvent[]>(`/action-log/raw-events?from=${from}&to=${to}`)
+}
+
+export function putActionLogSessions(input: {
+  deviceId: string
+  dateKeys?: string[]
+  sessions: ActivitySession[]
+}) {
+  return request<{ updated: number }>('/action-log/sessions', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
+}
+
+export function putActionLogSessionHidden(
+  id: string,
+  input: { dateKey: string; hidden: boolean },
+) {
+  return request<ActivitySession>(`/action-log/sessions/${id}/hidden`, {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
+}
+
+export function getActionLogSessions(from: string, to: string) {
+  return request<ActivitySession[]>(`/action-log/sessions?from=${from}&to=${to}`)
+}
+
+export function getActionLogDailyActivityLogs(from: string, to: string) {
+  return request<DailyActivityLog[]>(`/action-log/daily?from=${from}&to=${to}`)
+}
+
+export function getActionLogDailyActivityLog(dateKey: string) {
+  return request<DailyActivityLog | null>(`/action-log/daily/${dateKey}`)
+}
+
+export function putActionLogDailyActivityLog(log: DailyActivityLog) {
+  return request<DailyActivityLog>(`/action-log/daily/${log.dateKey}`, {
+    method: 'PUT',
+    body: JSON.stringify(log),
+  })
+}
+
+export function getActionLogWeeklyActivityReview(weekKey: string) {
+  return request<WeeklyActivityReview | null>(`/action-log/weekly/${weekKey}`)
+}
+
+export function getActionLogWeeklyActivityReviews(year: number) {
+  return request<WeeklyActivityReview[]>(`/action-log/weekly?year=${year}`)
+}
+
+export function putActionLogWeeklyActivityReview(review: WeeklyActivityReview) {
+  return request<WeeklyActivityReview>(`/action-log/weekly/${review.weekKey}`, {
+    method: 'PUT',
+    body: JSON.stringify(review),
+  })
+}
+
+export function getActionLogDevices() {
+  return request<Device[]>('/action-log/devices')
+}
+
+export function putActionLogDevice(id: string, updates: Partial<Device>) {
+  return request<Device>(`/action-log/devices/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  })
+}
+
+export function getActionLogPrivacyRules() {
+  return request<PrivacyRule[]>('/action-log/privacy-rules')
+}
+
+export function putActionLogPrivacyRules(rules: PrivacyRule[]) {
+  return request<{ updated: number }>('/action-log/privacy-rules', {
+    method: 'PUT',
+    body: JSON.stringify({ rules }),
+  })
+}
+
+export function getActionLogOpenLoops(from: string, to: string) {
+  return request<OpenLoop[]>(`/action-log/open-loops?from=${from}&to=${to}`)
+}
+
+export function putActionLogOpenLoops(input: { dateKeys: string[]; openLoops: OpenLoop[] }) {
+  return request<{ updated: number }>('/action-log/open-loops', {
+    method: 'PUT',
+    body: JSON.stringify(input),
+  })
+}
+
+export function deleteActionLogRange(from: string, to: string) {
+  return request<{
+    deleted: {
+      rawEvents: number
+      sessions: number
+      dailyLogs: number
+      weeklyReviews: number
+      openLoops: number
+    }
+    deletionRequestId: string
+  }>(`/action-log/range?from=${from}&to=${to}`, {
+    method: 'DELETE',
+  })
+}
+
+export function getActionLogDeletionRequests() {
+  return request<ActionLogDeletionRequest[]>('/action-log/deletion-requests')
+}
+
+export function postActionLogDeletionRequestAck(id: string) {
+  return request<{ acked: string }>(`/action-log/deletion-requests/${id}/ack`, {
+    method: 'POST',
+  })
 }
 
 // ---- 状況ログ ----

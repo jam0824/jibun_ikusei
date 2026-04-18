@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 import httpx
 
+from ai.action_log_context import fetch_activity_log_entries, format_activity_log_lines
 from api.api_client import ApiClient
 from core.config import AppConfig
 from core.skill_resolution import resolve_skill_for_completion
@@ -882,6 +883,13 @@ class ToolExecutor:
                 date_filter = _resolve_jst_date_filter(args, "week")
             except ValueError as exc:
                 return str(exc)
+
+            logs = await fetch_activity_log_entries(
+                self._api,
+                date_filter.from_date,
+                date_filter.to_date,
+            )
+            return format_activity_log_lines(logs, date_filter.label)
 
             logs = await self._api.get_activity_logs(date_filter.from_date, date_filter.to_date)
             if not logs:

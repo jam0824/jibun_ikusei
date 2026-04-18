@@ -1,0 +1,277 @@
+from __future__ import annotations
+
+from unittest.mock import AsyncMock
+
+import pytest
+
+from api.api_client import ApiClient
+
+
+@pytest.mark.asyncio
+async def test_action_log_methods_use_expected_paths_and_payloads():
+    client = object.__new__(ApiClient)
+    client._request = AsyncMock(return_value={})
+
+    await client.post_action_log_raw_events(
+        {
+            "deviceId": "device_1",
+            "events": [
+                {
+                    "id": "raw_1",
+                    "deviceId": "device_1",
+                    "source": "desktop_agent",
+                    "eventType": "active_window_changed",
+                    "occurredAt": "2026-04-17T09:00:00+09:00",
+                }
+            ],
+        }
+    )
+    await client.put_action_log_sessions(
+        {
+            "deviceId": "device_1",
+            "dateKeys": ["2026-04-16", "2026-04-17"],
+            "sessions": [
+                {
+                    "id": "session_1",
+                    "deviceId": "device_1",
+                    "startedAt": "2026-04-17T09:00:00+09:00",
+                    "endedAt": "2026-04-17T10:00:00+09:00",
+                    "dateKey": "2026-04-17",
+                    "title": "Chrome拡張の調査",
+                    "primaryCategory": "学習",
+                    "activityKinds": ["調査"],
+                    "appNames": ["Chrome"],
+                    "domains": ["developer.chrome.com"],
+                    "projectNames": [],
+                    "summary": "summary",
+                    "searchKeywords": ["Chrome拡張", "developer.chrome.com"],
+                    "noteIds": [],
+                    "openLoopIds": ["loop_1"],
+                    "hidden": False,
+                }
+            ],
+        }
+    )
+    await client.get_action_log_raw_events("2026-04-01", "2026-04-17")
+    await client.get_action_log_sessions("2026-04-01", "2026-04-17")
+    await client.get_action_log_daily_logs("2026-04-01", "2026-04-17")
+    await client.get_action_log_daily_log("2026-04-16")
+    await client.put_action_log_daily_log(
+        {
+            "id": "daily_2026-04-16",
+            "dateKey": "2026-04-16",
+            "summary": "daily summary",
+            "mainThemes": ["Chrome拡張"],
+            "noteIds": [],
+            "openLoopIds": ["loop_1"],
+            "reviewQuestions": ["次に何を確認したいか。"],
+            "generatedAt": "2026-04-17T08:00:00+09:00",
+        }
+    )
+    await client.get_action_log_weekly_reviews(2026)
+    await client.get_action_log_weekly_review("2026-W15")
+    await client.put_action_log_weekly_review(
+        {
+            "id": "weekly_2026-W15",
+            "weekKey": "2026-W15",
+            "summary": "weekly summary",
+            "categoryDurations": {"学習": 45},
+            "focusThemes": ["Chrome拡張"],
+            "openLoopIds": ["loop_1"],
+            "generatedAt": "2026-04-17T08:00:00+09:00",
+        }
+    )
+    await client.get_action_log_devices()
+    await client.put_action_log_device("device_1", {"name": "main-pc"})
+    await client.get_action_log_privacy_rules()
+    await client.put_action_log_privacy_rules(
+        [
+            {
+                "id": "rule_1",
+                "type": "domain",
+                "value": "example.com",
+                "mode": "domain_only",
+                "enabled": True,
+            }
+        ]
+    )
+    await client.get_action_log_open_loops("2026-04-01", "2026-04-17")
+    await client.put_action_log_open_loops(
+        {
+            "dateKeys": ["2026-04-17"],
+            "openLoops": [
+                {
+                    "id": "loop_1",
+                    "createdAt": "2026-04-17T10:00:00+09:00",
+                    "updatedAt": "2026-04-17T10:05:00+09:00",
+                    "dateKey": "2026-04-17",
+                    "title": "manifestの確認",
+                    "description": "manifest v3 を見直す",
+                    "status": "open",
+                    "linkedSessionIds": ["session_1"],
+                }
+            ],
+        }
+    )
+    await client.put_action_log_session_hidden(
+        "session_1",
+        {"dateKey": "2026-04-17", "hidden": True},
+    )
+    await client.delete_action_log_range("2026-04-01", "2026-04-17")
+    await client.get_action_log_deletion_requests()
+    await client.ack_action_log_deletion_request("delete_1")
+
+    client._request.assert_any_await(
+        "POST",
+        "/action-log/raw-events",
+        json={
+            "deviceId": "device_1",
+            "events": [
+                {
+                    "id": "raw_1",
+                    "deviceId": "device_1",
+                    "source": "desktop_agent",
+                    "eventType": "active_window_changed",
+                    "occurredAt": "2026-04-17T09:00:00+09:00",
+                }
+            ],
+        },
+    )
+    client._request.assert_any_await(
+        "PUT",
+        "/action-log/sessions",
+        json={
+            "deviceId": "device_1",
+            "dateKeys": ["2026-04-16", "2026-04-17"],
+            "sessions": [
+                {
+                    "id": "session_1",
+                    "deviceId": "device_1",
+                    "startedAt": "2026-04-17T09:00:00+09:00",
+                    "endedAt": "2026-04-17T10:00:00+09:00",
+                    "dateKey": "2026-04-17",
+                    "title": "Chrome拡張の調査",
+                    "primaryCategory": "学習",
+                    "activityKinds": ["調査"],
+                    "appNames": ["Chrome"],
+                    "domains": ["developer.chrome.com"],
+                    "projectNames": [],
+                    "summary": "summary",
+                    "searchKeywords": ["Chrome拡張", "developer.chrome.com"],
+                    "noteIds": [],
+                    "openLoopIds": ["loop_1"],
+                    "hidden": False,
+                }
+            ],
+        },
+    )
+    client._request.assert_any_await(
+        "GET",
+        "/action-log/raw-events",
+        params={"from": "2026-04-01", "to": "2026-04-17"},
+    )
+    client._request.assert_any_await(
+        "GET",
+        "/action-log/sessions",
+        params={"from": "2026-04-01", "to": "2026-04-17"},
+    )
+    client._request.assert_any_await(
+        "GET",
+        "/action-log/daily",
+        params={"from": "2026-04-01", "to": "2026-04-17"},
+    )
+    client._request.assert_any_await("GET", "/action-log/daily/2026-04-16")
+    client._request.assert_any_await(
+        "PUT",
+        "/action-log/daily/2026-04-16",
+        json={
+            "id": "daily_2026-04-16",
+            "dateKey": "2026-04-16",
+            "summary": "daily summary",
+            "mainThemes": ["Chrome拡張"],
+            "noteIds": [],
+            "openLoopIds": ["loop_1"],
+            "reviewQuestions": ["次に何を確認したいか。"],
+            "generatedAt": "2026-04-17T08:00:00+09:00",
+        },
+    )
+    client._request.assert_any_await(
+        "GET",
+        "/action-log/weekly",
+        params={"year": "2026"},
+    )
+    client._request.assert_any_await("GET", "/action-log/weekly/2026-W15")
+    client._request.assert_any_await(
+        "PUT",
+        "/action-log/weekly/2026-W15",
+        json={
+            "id": "weekly_2026-W15",
+            "weekKey": "2026-W15",
+            "summary": "weekly summary",
+            "categoryDurations": {"学習": 45},
+            "focusThemes": ["Chrome拡張"],
+            "openLoopIds": ["loop_1"],
+            "generatedAt": "2026-04-17T08:00:00+09:00",
+        },
+    )
+    client._request.assert_any_await("GET", "/action-log/devices")
+    client._request.assert_any_await(
+        "PUT",
+        "/action-log/devices/device_1",
+        json={"name": "main-pc"},
+    )
+    client._request.assert_any_await("GET", "/action-log/privacy-rules")
+    client._request.assert_any_await(
+        "PUT",
+        "/action-log/privacy-rules",
+        json={
+            "rules": [
+                {
+                    "id": "rule_1",
+                    "type": "domain",
+                    "value": "example.com",
+                    "mode": "domain_only",
+                    "enabled": True,
+                }
+            ]
+        },
+    )
+    client._request.assert_any_await(
+        "GET",
+        "/action-log/open-loops",
+        params={"from": "2026-04-01", "to": "2026-04-17"},
+    )
+    client._request.assert_any_await(
+        "PUT",
+        "/action-log/open-loops",
+        json={
+            "dateKeys": ["2026-04-17"],
+            "openLoops": [
+                {
+                    "id": "loop_1",
+                    "createdAt": "2026-04-17T10:00:00+09:00",
+                    "updatedAt": "2026-04-17T10:05:00+09:00",
+                    "dateKey": "2026-04-17",
+                    "title": "manifestの確認",
+                    "description": "manifest v3 を見直す",
+                    "status": "open",
+                    "linkedSessionIds": ["session_1"],
+                }
+            ],
+        },
+    )
+    client._request.assert_any_await(
+        "PUT",
+        "/action-log/sessions/session_1/hidden",
+        json={"dateKey": "2026-04-17", "hidden": True},
+    )
+    client._request.assert_any_await(
+        "DELETE",
+        "/action-log/range",
+        params={"from": "2026-04-01", "to": "2026-04-17"},
+    )
+    client._request.assert_any_await("GET", "/action-log/deletion-requests")
+    client._request.assert_any_await(
+        "POST",
+        "/action-log/deletion-requests/delete_1/ack",
+    )

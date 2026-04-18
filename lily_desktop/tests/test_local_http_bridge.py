@@ -111,6 +111,57 @@ def test_validate_chrome_audible_tabs_event_accepts_full_snapshot():
     assert accepted.internal_user_message == ""
 
 
+def test_validate_browser_page_changed_event_accepts_action_log_payload():
+    accepted = validate_http_bridge_event(
+        {
+            "eventType": "browser_page_changed",
+            "source": "chrome_extension",
+            "occurredAt": "2026-04-17T09:15:00+09:00",
+            "payload": {
+                "tabId": 12,
+                "url": "https://developer.chrome.com/docs/extensions/",
+                "domain": "developer.chrome.com",
+                "title": "Chrome Extensions",
+            },
+            "metadata": {
+                "trigger": "tab_activated",
+                "category": "学習",
+            },
+        },
+        received_at=datetime(2026, 4, 17, 9, 15, tzinfo=JST),
+    )
+
+    assert accepted.event_type == "browser_page_changed"
+    assert accepted.payload["tabId"] == 12
+    assert accepted.payload["domain"] == "developer.chrome.com"
+    assert accepted.metadata["trigger"] == "tab_activated"
+    assert accepted.internal_user_message == ""
+
+
+def test_validate_browser_heartbeat_event_accepts_elapsed_seconds():
+    accepted = validate_http_bridge_event(
+        {
+            "eventType": "heartbeat",
+            "source": "chrome_extension",
+            "occurredAt": "2026-04-17T09:15:00+09:00",
+            "payload": {
+                "tabId": 12,
+                "url": "https://developer.chrome.com/docs/extensions/",
+                "domain": "developer.chrome.com",
+                "title": "Chrome Extensions",
+            },
+            "metadata": {
+                "trigger": "flush",
+                "elapsedSeconds": 42,
+            },
+        },
+        received_at=datetime(2026, 4, 17, 9, 15, tzinfo=JST),
+    )
+
+    assert accepted.event_type == "heartbeat"
+    assert accepted.metadata["elapsedSeconds"] == 42
+
+
 @pytest.mark.parametrize(
     "payload",
     [
@@ -324,6 +375,59 @@ def test_local_http_bridge_dispatches_chrome_audible_tabs_without_user_message()
         {"tabId": 1, "domain": "youtube.com"},
         {"tabId": 2, "domain": "netflix.com"},
     ]
+
+
+def test_local_http_bridge_dispatches_browser_action_log_event_to_capture_callback():
+    received_messages: list[str] = []
+    received_system_messages: list[str] = []
+    browser_events: list[dict[str, object]] = []
+    bridge = LocalHttpBridge(
+        port=0,
+        event_loop=_ImmediateLoop(),
+        emit_user_message=received_messages.append,
+        emit_system_message=received_system_messages.append,
+        ingest_browser_event=lambda **kwargs: browser_events.append(kwargs),
+    )
+    bridge.start()
+
+    try:
+        conn = http.client.HTTPConnection(bridge.host, bridge.port, timeout=5)
+        conn.request(
+            "POST",
+            "/v1/events",
+            body=json.dumps(
+                {
+                    "eventType": "browser_page_changed",
+                    "source": "chrome_extension",
+                    "occurredAt": "2026-04-17T09:15:00+09:00",
+                    "payload": {
+                        "tabId": 99,
+                        "url": "https://developer.chrome.com/docs/extensions/",
+                        "domain": "developer.chrome.com",
+                        "title": "Chrome Extensions",
+                    },
+                    "metadata": {
+                        "trigger": "tab_activated",
+                    },
+                },
+                ensure_ascii=False,
+            ).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        response = conn.getresponse()
+        payload = json.loads(response.read().decode("utf-8"))
+        conn.close()
+    finally:
+        bridge.stop()
+
+    assert response.status == 202
+    assert payload["ok"] is True
+    assert payload["eventType"] == "browser_page_changed"
+    assert received_messages == []
+    assert received_system_messages == []
+    assert len(browser_events) == 1
+    assert browser_events[0]["event_type"] == "browser_page_changed"
+    assert browser_events[0]["payload"]["tabId"] == 99
 
 
 def test_local_http_bridge_returns_not_found_for_unknown_path():

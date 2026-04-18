@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { useEffect, useMemo, useState } from 'react'
+import { HashRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { ClearEffectScreen } from '@/screens/clear-effect-screen'
 import { HomeScreen } from '@/screens/home-screen'
 import { LilyChatScreen } from '@/screens/lily-chat-screen'
@@ -15,8 +15,89 @@ import { SkillsScreen } from '@/screens/skills-screen'
 import { StatusScreen } from '@/screens/status-screen'
 import { WeeklyReflectionScreen } from '@/screens/weekly-reflection-screen'
 import { ScrollToTopOnRouteChange } from '@/components/scroll-to-top-on-route-change'
+import { ActivityLogScreen } from '@/screens/activity-log-screen'
+import { getDefaultRecordsRoute, readLastRecordsRoute } from '@/lib/records-route-state'
 import { useAppStore } from '@/store/app-store'
 import { isLoggedIn } from '@/lib/auth'
+
+function normalizeLoginReturnTarget(target: string | null | undefined): string {
+  if (!target) {
+    return '/'
+  }
+
+  const raw = target.startsWith('#') ? target.slice(1) : target
+  if (!raw || !raw.startsWith('/') || raw.startsWith('//') || raw.startsWith('/login')) {
+    return '/'
+  }
+  return raw
+}
+
+function buildLoginHash(hashValue: string): string {
+  const raw = hashValue.startsWith('#') ? hashValue.slice(1) : hashValue
+  if (raw.startsWith('/login')) {
+    return hashValue || '#/login'
+  }
+
+  const returnTo = encodeURIComponent(normalizeLoginReturnTarget(raw))
+  return `#/login?returnTo=${returnTo}`
+}
+
+function resolveLoginReturnTarget(hashValue: string): string {
+  const raw = hashValue.startsWith('#') ? hashValue.slice(1) : hashValue
+  if (!raw.startsWith('/login')) {
+    return normalizeLoginReturnTarget(raw)
+  }
+
+  const [, query = ''] = raw.split('?')
+  const returnTo = new URLSearchParams(query).get('returnTo')
+  return normalizeLoginReturnTarget(returnTo)
+}
+
+function RecordsRouteHub() {
+  const location = useLocation()
+  const target = useMemo(() => {
+    const params = new URLSearchParams(location.search)
+    const legacyRange = params.get('range') ?? params.get('filter')
+
+    if (legacyRange === 'today' || legacyRange === 'week' || legacyRange === 'all') {
+      return `/records/quests?range=${legacyRange}`
+    }
+
+    return readLastRecordsRoute() || getDefaultRecordsRoute()
+  }, [location.search])
+
+  return <Navigate to={target} replace />
+}
+
+export function AppShellRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<HomeScreen />} />
+      <Route path="/status" element={<StatusScreen />} />
+      <Route path="/quests" element={<QuestListScreen />} />
+      <Route path="/quests/new" element={<QuestFormScreen />} />
+      <Route path="/skills" element={<SkillsScreen />} />
+      <Route path="/records" element={<Outlet />}>
+        <Route index element={<RecordsRouteHub />} />
+        <Route path="quests" element={<RecordsScreen />} />
+        <Route path="activity/today" element={<ActivityLogScreen variant="today" />} />
+        <Route path="activity/day/:dateKey" element={<ActivityLogScreen variant="day" />} />
+        <Route path="activity/calendar" element={<ActivityLogScreen variant="calendar" />} />
+        <Route path="activity/search" element={<ActivityLogScreen variant="search" />} />
+        <Route path="activity/review/year" element={<ActivityLogScreen variant="review-year" />} />
+        <Route path="activity/review/week" element={<ActivityLogScreen variant="review-week" />} />
+      </Route>
+      <Route path="/weekly-reflection" element={<WeeklyReflectionScreen />} />
+      <Route path="/lily" element={<LilyChatScreen />} />
+      <Route path="/settings" element={<SettingsScreen />} />
+      <Route path="/clear/:completionId" element={<ClearEffectScreen />} />
+      <Route path="/meal" element={<MealRegisterScreen />} />
+      <Route path="/meal/analyze" element={<MealAnalyzeScreen />} />
+      <Route path="/meal/confirm" element={<MealConfirmScreen />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
+  )
+}
 
 function AppRoutes() {
   const initialize = useAppStore((state) => state.initialize)
@@ -31,6 +112,17 @@ function AppRoutes() {
     })
   }, [initialize])
 
+  useEffect(() => {
+    if (!authChecked || loggedIn) {
+      return
+    }
+
+    const loginHash = buildLoginHash(window.location.hash)
+    if (window.location.hash !== loginHash) {
+      window.location.hash = loginHash
+    }
+  }, [authChecked, loggedIn])
+
   if (!authChecked) {
     return (
       <div className="min-h-screen bg-slate-900 flex items-center justify-center">
@@ -43,31 +135,16 @@ function AppRoutes() {
     return (
       <LoginScreen
         onLogin={() => {
+          const targetPath = resolveLoginReturnTarget(window.location.hash)
           setLoggedIn(true)
           initialize()
+          window.location.hash = `#${targetPath}`
         }}
       />
     )
   }
 
-  return (
-    <Routes>
-      <Route path="/" element={<HomeScreen />} />
-      <Route path="/status" element={<StatusScreen />} />
-      <Route path="/quests" element={<QuestListScreen />} />
-      <Route path="/quests/new" element={<QuestFormScreen />} />
-      <Route path="/skills" element={<SkillsScreen />} />
-      <Route path="/records" element={<RecordsScreen />} />
-      <Route path="/weekly-reflection" element={<WeeklyReflectionScreen />} />
-      <Route path="/lily" element={<LilyChatScreen />} />
-      <Route path="/settings" element={<SettingsScreen />} />
-      <Route path="/clear/:completionId" element={<ClearEffectScreen />} />
-      <Route path="/meal" element={<MealRegisterScreen />} />
-      <Route path="/meal/analyze" element={<MealAnalyzeScreen />} />
-      <Route path="/meal/confirm" element={<MealConfirmScreen />} />
-      <Route path="*" element={<Navigate to="/" replace />} />
-    </Routes>
-  )
+  return <AppShellRoutes />
 }
 
 export default function App() {

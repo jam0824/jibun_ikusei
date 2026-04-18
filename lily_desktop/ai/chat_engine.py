@@ -14,6 +14,7 @@ from ai.openai_client import (
     ToolCallsResult,
     send_chat_message,
 )
+from ai.action_log_context import fetch_activity_log_entries
 from ai.system_prompts import build_haruka_system_prompt, build_lily_system_prompt
 from api.api_client import ApiClient
 from core.config import AppConfig
@@ -250,7 +251,7 @@ class ChatEngine:
             self._api.get_skills(),
             self._api.get_quests(),
             self._api.get_completions(),
-            self._api.get_activity_logs(from_date, to_date),
+            fetch_activity_log_entries(self._api, from_date, to_date),
             return_exceptions=True,
         )
 

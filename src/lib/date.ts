@@ -4,8 +4,6 @@ import {
   differenceInMinutes,
   endOfDay,
   format,
-  getISOWeek,
-  getISOWeekYear,
   isAfter,
   isBefore,
   isSameDay,
@@ -18,8 +16,42 @@ import {
 } from 'date-fns'
 import { ja } from 'date-fns/locale'
 
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000
+
+function pad2(value: number) {
+  return String(value).padStart(2, '0')
+}
+
+function toJstComparableDate(value: string | Date) {
+  return new Date(parseDate(value).getTime() + JST_OFFSET_MS)
+}
+
+function getUtcIsoWeekInfo(date: Date) {
+  const target = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+  const dayOfWeek = target.getUTCDay() || 7
+  target.setUTCDate(target.getUTCDate() + 4 - dayOfWeek)
+
+  const weekYear = target.getUTCFullYear()
+  const yearStart = new Date(Date.UTC(weekYear, 0, 1))
+  const week = Math.ceil(((target.getTime() - yearStart.getTime()) / 86400000 + 1) / 7)
+
+  return { weekYear, week }
+}
+
 export function nowIso() {
   return new Date().toISOString()
+}
+
+export function toJstIso(value: string | Date = new Date()) {
+  const date = parseDate(value)
+  const jst = new Date(date.getTime() + JST_OFFSET_MS)
+  const year = jst.getUTCFullYear()
+  const month = pad2(jst.getUTCMonth() + 1)
+  const day = pad2(jst.getUTCDate())
+  const hours = pad2(jst.getUTCHours())
+  const minutes = pad2(jst.getUTCMinutes())
+  const seconds = pad2(jst.getUTCSeconds())
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}+09:00`
 }
 
 export function parseDate(value: string | Date) {
@@ -80,12 +112,13 @@ export function isUndoable(completedAt: string, undoneAt?: string) {
 }
 
 export function getDayKey(value: string | Date) {
-  return format(parseDate(value), 'yyyy-MM-dd')
+  const jst = toJstComparableDate(value)
+  return `${jst.getUTCFullYear()}-${pad2(jst.getUTCMonth() + 1)}-${pad2(jst.getUTCDate())}`
 }
 
 export function getWeekKey(value: string | Date) {
-  const date = parseDate(value)
-  return `${getISOWeekYear(date)}-W${String(getISOWeek(date)).padStart(2, '0')}`
+  const { weekYear, week } = getUtcIsoWeekInfo(toJstComparableDate(value))
+  return `${weekYear}-W${pad2(week)}`
 }
 
 export function getWeekDateRange(value: string | Date) {

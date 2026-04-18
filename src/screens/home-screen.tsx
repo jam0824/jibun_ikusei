@@ -173,7 +173,7 @@ export function HomeScreen() {
             type="button"
             aria-label="今日のクリア回数を記録で見る"
             className="text-left transition"
-            onClick={() => navigate('/records?filter=today')}
+            onClick={() => navigate('/records/quests?range=today')}
           >
             <Card className="h-full hover:border-violet-200 hover:bg-violet-50/40">
               <CardContent className="p-4">

@@ -9,6 +9,8 @@ import pytest
 
 import main as main_mod
 from core.domain_events import (
+    ActionLogOrganizeRequested,
+    ActionLogSyncRequested,
     AppStarted,
     CaptureSnapshotRequested,
     CaptureSummaryDue,
@@ -123,6 +125,248 @@ def test_memory_talk_request_publishes_forced_memory_event():
     assert event.forced_source == "memory"
 
 
+def test_start_http_bridge_connects_capture_service_to_bridge(monkeypatch):
+    captured_kwargs = {}
+    bridge_instance = object()
+
+    def _fake_start_local_http_bridge(*_args, **kwargs):
+        captured_kwargs.update(kwargs)
+        return bridge_instance
+
+    monkeypatch.setattr(main_mod, "start_local_http_bridge", _fake_start_local_http_bridge)
+
+    activity_capture_service = SimpleNamespace(ingest_browser_event=Mock())
+    app = SimpleNamespace(
+        config=SimpleNamespace(http_bridge=SimpleNamespace(enabled=True, port=18765)),
+        activity_capture_service=activity_capture_service,
+        chrome_audible_tabs_tracker=SimpleNamespace(update=Mock()),
+        http_bridge=None,
+    )
+
+    main_mod.App.start_http_bridge(app, asyncio.get_event_loop())
+
+    assert app.http_bridge is bridge_instance
+    assert captured_kwargs["ingest_browser_event"] is activity_capture_service.ingest_browser_event
+
+
+def test_start_activity_capture_service_does_not_start_when_initial_state_is_disabled(monkeypatch):
+    start_calls: list[object] = []
+
+    class _FakeCaptureService:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+        def start(self):
+            start_calls.append(self.kwargs["initial_state"])
+            return False
+
+    monkeypatch.setattr(main_mod, "ActivityCaptureService", _FakeCaptureService)
+
+    app = SimpleNamespace(
+        config=SimpleNamespace(
+            activity_capture=SimpleNamespace(
+                enabled=True,
+                initial_state="disabled",
+                poll_interval_seconds=2,
+                privacy_rules=[],
+            )
+        ),
+        activity_capture_service=None,
+    )
+
+    main_mod.App.start_activity_capture_service(app)
+
+    assert start_calls == ["disabled"]
+
+
+def test_start_action_log_sync_timer_uses_config_interval_when_enabled():
+    class _FakeTimer:
+        def __init__(self) -> None:
+            self.started_with: list[int] = []
+
+        def start(self, interval_ms: int) -> None:
+            self.started_with.append(interval_ms)
+
+        def stop(self) -> None:
+            return None
+
+    timer = _FakeTimer()
+    app = SimpleNamespace(
+        config=SimpleNamespace(
+            activity_capture=SimpleNamespace(
+                enabled=True,
+                sync_interval_seconds=30,
+            )
+        ),
+        _action_log_sync_timer=timer,
+    )
+
+    main_mod.App.start_action_log_sync_timer(app)
+
+    assert timer.started_with == [30000]
+
+
+def test_start_action_log_sync_timer_is_noop_when_activity_capture_disabled():
+    class _FakeTimer:
+        def __init__(self) -> None:
+            self.started_with: list[int] = []
+
+        def start(self, interval_ms: int) -> None:
+            self.started_with.append(interval_ms)
+
+        def stop(self) -> None:
+            return None
+
+    timer = _FakeTimer()
+    app = SimpleNamespace(
+        config=SimpleNamespace(
+            activity_capture=SimpleNamespace(
+                enabled=False,
+                sync_interval_seconds=30,
+            )
+        ),
+        _action_log_sync_timer=timer,
+    )
+
+    main_mod.App.start_action_log_sync_timer(app)
+
+    assert timer.started_with == []
+
+
+def test_action_log_sync_timer_publishes_sync_and_organize_events_when_event_hub_exists():
+    hub = _CaptureHub()
+    app = SimpleNamespace(event_hub=hub)
+
+    main_mod.App._on_action_log_sync_timer(app)
+
+    assert len(hub.events) == 2
+    assert isinstance(hub.events[0], ActionLogSyncRequested)
+    assert isinstance(hub.events[1], ActionLogOrganizeRequested)
+
+
+@pytest.mark.asyncio
+async def test_handle_action_log_sync_request_applies_server_device_state_and_privacy_rules():
+    capture_service = SimpleNamespace(
+        device_id="device_1",
+        set_capture_state=Mock(),
+        set_privacy_rules=Mock(),
+        snapshot_pending_raw_events=Mock(return_value=[]),
+    )
+    app = SimpleNamespace(
+        activity_capture_service=capture_service,
+        auth=SimpleNamespace(is_configured=True),
+        config=SimpleNamespace(
+            activity_capture=SimpleNamespace(
+                enabled=True,
+                initial_state="active",
+                privacy_rules=[],
+            )
+        ),
+        api_client=SimpleNamespace(
+            get_action_log_devices=AsyncMock(
+                return_value=[
+                    {"id": "device_1", "captureState": "paused", "name": "main-pc"}
+                ]
+            ),
+            put_action_log_device=AsyncMock(),
+            get_action_log_privacy_rules=AsyncMock(
+                return_value=[
+                    {
+                        "id": "rule_1",
+                        "type": "domain",
+                        "value": "example.com",
+                        "mode": "domain_only",
+                        "enabled": True,
+                    }
+                ]
+            ),
+            get_action_log_deletion_requests=AsyncMock(return_value=[]),
+            post_action_log_raw_events=AsyncMock(),
+            ack_action_log_deletion_request=AsyncMock(),
+        ),
+    )
+
+    await main_mod.App.handle_action_log_sync_request(app)
+
+    capture_service.set_capture_state.assert_called_once_with("paused")
+    capture_service.set_privacy_rules.assert_called_once()
+    app.api_client.put_action_log_device.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_handle_action_log_sync_request_registers_device_when_missing():
+    capture_service = SimpleNamespace(
+        device_id="device_1",
+        capture_state="active",
+        set_capture_state=Mock(),
+        set_privacy_rules=Mock(),
+        snapshot_pending_raw_events=Mock(return_value=[]),
+    )
+    app = SimpleNamespace(
+        activity_capture_service=capture_service,
+        auth=SimpleNamespace(is_configured=True),
+        config=SimpleNamespace(
+            activity_capture=SimpleNamespace(
+                enabled=True,
+                initial_state="active",
+                privacy_rules=[],
+            )
+        ),
+        api_client=SimpleNamespace(
+            get_action_log_devices=AsyncMock(return_value=[]),
+            put_action_log_device=AsyncMock(return_value={"id": "device_1"}),
+            get_action_log_privacy_rules=AsyncMock(return_value=[]),
+            get_action_log_deletion_requests=AsyncMock(return_value=[]),
+            post_action_log_raw_events=AsyncMock(),
+            ack_action_log_deletion_request=AsyncMock(),
+        ),
+    )
+
+    await main_mod.App.handle_action_log_sync_request(app)
+
+    app.api_client.put_action_log_device.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_handle_action_log_sync_request_purges_and_acks_deletion_requests(monkeypatch):
+    purge_calls = []
+
+    def _fake_purge(*, from_date: str, to_date: str):
+        purge_calls.append((from_date, to_date))
+
+    monkeypatch.setattr(main_mod, "purge_raw_event_range", _fake_purge)
+
+    app = SimpleNamespace(
+        activity_capture_service=None,
+        auth=SimpleNamespace(is_configured=True),
+        config=SimpleNamespace(
+            activity_capture=SimpleNamespace(
+                enabled=True,
+                initial_state="disabled",
+                privacy_rules=[],
+            )
+        ),
+        api_client=SimpleNamespace(
+            get_action_log_devices=AsyncMock(return_value=[]),
+            put_action_log_device=AsyncMock(return_value={"id": "device_1"}),
+            get_action_log_privacy_rules=AsyncMock(return_value=[]),
+            get_action_log_deletion_requests=AsyncMock(
+                return_value=[
+                    {"id": "delete_1", "from": "2026-04-16", "to": "2026-04-16"}
+                ]
+            ),
+            post_action_log_raw_events=AsyncMock(),
+            ack_action_log_deletion_request=AsyncMock(),
+        ),
+        start_activity_capture_service=Mock(),
+    )
+
+    await main_mod.App.handle_action_log_sync_request(app)
+
+    assert purge_calls == [("2026-04-16", "2026-04-16")]
+    app.api_client.ack_action_log_deletion_request.assert_awaited_once_with("delete_1")
+
+
 @pytest.mark.asyncio
 async def test_async_init_publishes_app_started_without_direct_startup_sync():
     hub = _CaptureHub()
@@ -142,6 +386,7 @@ async def test_async_init_publishes_app_started_without_direct_startup_sync():
         start_camera_system=Mock(),
         start_healthplanet_timer=Mock(),
         start_level_watch_timer=Mock(),
+        start_action_log_sync_timer=Mock(),
         start_healthplanet_sync=Mock(),
         voice_pipeline=None,
         tts_engine=None,
@@ -152,6 +397,7 @@ async def test_async_init_publishes_app_started_without_direct_startup_sync():
     app.auto_conversation.start.assert_called_once()
     app.start_healthplanet_timer.assert_called_once()
     app.start_level_watch_timer.assert_called_once()
+    app.start_action_log_sync_timer.assert_called_once()
     app.start_healthplanet_sync.assert_not_called()
     fitbit_sync.run.assert_not_awaited()
     assert len(hub.events) == 1

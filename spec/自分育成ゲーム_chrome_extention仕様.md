@@ -75,6 +75,11 @@
 - タブ単位・ページ単位のブラウザ滞在時間は Chrome 拡張が正本として計測する。
 - `DailyProgress` と `domainTimes` は `閲覧クエスト`, `警告`, `ペナルティ`, `今日の進捗` の判定に使う一次データとする。
 - 行動ログ基盤は、Chrome 拡張から受け取る `browser_page_changed`, `heartbeat`, `elapsedSeconds` などのブラウザ行動イベントを、PC 全体の `RawEvent` / `ActivitySession` に統合する役割を持つ。
+- Chrome 拡張は `browser_page_changed` を `tabs.onActivated`, アクティブタブの `url_changed`, `window_focus` 復帰時に送ってよい。
+- Chrome 拡張は `heartbeat` を `flush-tracker` alarm と `FLUSH_AND_GET_PROGRESS` の flush 経路で送ってよい。
+- これらの browser 行動ログイベントは `POST /v1/events` に best-effort で送る。desktop 側の正式な受理と `RawEvent` 正規化は Phase 3 で行う。
+- `browser_page_changed` / `heartbeat` には JST の `occurredAt` を付け、`payload` には `tabId`, `url`, `domain`, `title`、`metadata` には `trigger`, `elapsedSeconds`, `category`, `isGrowth`, `cacheKey` を持ってよい。
+- シークレット / プライベートブラウジング (`tab.incognito === true`) では、Chrome 拡張は `browser_page_changed` / `heartbeat` を送らない。
 - `lily_desktop` / `Activity Capture Service` は、Chrome が前面だった時間だけを使ってページ単位の滞在時間を別実装で再集計しない。
 - つまり、`閲覧クエスト` の時間正本は Chrome 拡張、`行動ログ` の長期的な振り返り正本は `ActivitySession` 以上、という住み分けにする。
 - Chrome 拡張が利用できない環境では、行動ログ基盤側にブラウザ前面化の粗い文脈だけが残る場合があるが、それを `閲覧クエスト` の正確な閲覧時間としては使わない。

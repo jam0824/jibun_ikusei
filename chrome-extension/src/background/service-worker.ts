@@ -1,10 +1,21 @@
 import { TabTracker } from './tab-tracker'
 import type { TabElapsedResult } from './tab-tracker'
 import { setupAlarms, handleAlarm } from './alarm-handlers'
-import { getTabClassification, setupMessageListener } from './message-handler'
+import {
+  clearTabClassification,
+  clearTabPageInfo,
+  getTabClassification,
+  getTabPageInfo,
+  setupMessageListener,
+} from './message-handler'
 import { recordElapsed } from './record-elapsed'
 import { logError } from '@ext/lib/activity-logger'
-import { sendChromeAudibleTabsToLilyDesktop } from '@ext/lib/lily-desktop-bridge'
+import {
+  sendBrowserHeartbeatToLilyDesktop,
+  sendBrowserPageChangedToLilyDesktop,
+  sendChromeAudibleTabsToLilyDesktop,
+  type BrowserActionLogTrigger,
+} from '@ext/lib/lily-desktop-bridge'
 import { timeAccumulator } from './shared-instances'
 
 self.addEventListener('error', (event) => {
@@ -38,6 +49,91 @@ async function collectAudibleTabsSnapshot(): Promise<Array<{ tabId: number; doma
     const domain = normalizeAudibleDomain(tab.url)
     if (!domain) return []
     return [{ tabId: tab.id, domain }]
+  })
+}
+
+function isTrackableHttpUrl(url?: string | null): url is string {
+  return Boolean(url && (url.startsWith('http://') || url.startsWith('https://')))
+}
+
+function extractBrowserDomain(url: string): string | null {
+  try {
+    const parsed = new URL(url)
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return null
+    }
+    return parsed.hostname
+  } catch {
+    return null
+  }
+}
+
+function buildBrowserMetadata(tabId: number, trigger: BrowserActionLogTrigger, elapsedSeconds?: number) {
+  const classification = getTabClassification(tabId)
+  return {
+    trigger,
+    ...(typeof elapsedSeconds === 'number' ? { elapsedSeconds } : {}),
+    category: classification?.category ?? null,
+    isGrowth: classification?.isGrowth ?? null,
+    cacheKey: classification?.cacheKey ?? null,
+  }
+}
+
+async function sendBrowserPageChangedForTab(
+  tab: chrome.tabs.Tab,
+  trigger: Exclude<BrowserActionLogTrigger, 'flush'>,
+): Promise<void> {
+  if (tab.id == null || tab.incognito || !isTrackableHttpUrl(tab.url)) {
+    return
+  }
+
+  const pageInfo = getTabPageInfo(tab.id)
+  const url = pageInfo?.url ?? tab.url
+  const domain = pageInfo?.domain ?? extractBrowserDomain(url)
+  if (!domain) {
+    return
+  }
+
+  await sendBrowserPageChangedToLilyDesktop({
+    tabId: tab.id,
+    url,
+    domain,
+    title: pageInfo?.title ?? tab.title ?? null,
+    ...buildBrowserMetadata(tab.id, trigger),
+  })
+}
+
+async function sendBrowserHeartbeatForElapsed(result: TabElapsedResult | null): Promise<void> {
+  if (!result || result.elapsedSeconds <= 0) {
+    return
+  }
+
+  const pageInfo = getTabPageInfo(result.tabId)
+  let url = pageInfo?.url ?? result.url
+  let domain = pageInfo?.domain ?? result.domain
+  let title = pageInfo?.title ?? null
+  let incognito = false
+
+  try {
+    const tab = await chrome.tabs.get(result.tabId)
+    url = pageInfo?.url ?? tab.url ?? url
+    domain = pageInfo?.domain ?? extractBrowserDomain(url) ?? domain
+    title = pageInfo?.title ?? tab.title ?? title
+    incognito = tab.incognito ?? false
+  } catch {
+    // Tab may have been closed. Fall back to the tracked context.
+  }
+
+  if (incognito || !isTrackableHttpUrl(url) || !domain) {
+    return
+  }
+
+  await sendBrowserHeartbeatToLilyDesktop({
+    tabId: result.tabId,
+    url,
+    domain,
+    title,
+    ...buildBrowserMetadata(result.tabId, 'flush', result.elapsedSeconds),
   })
 }
 
@@ -78,17 +174,21 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     if (!tab.url) return
     const result = tabTracker.onTabActivated(activeInfo.tabId, tab.url)
     await handleElapsed(result)
+    await sendBrowserPageChangedForTab(tab, 'tab_activated')
   } catch {
     // Tab may have been closed
   }
 })
 
 // Tab URL change / audible state change
-chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   try {
     if (changeInfo.url) {
       const result = tabTracker.onUrlChanged(tabId, changeInfo.url)
       await handleElapsed(result)
+      if (tab.active) {
+        await sendBrowserPageChangedForTab(tab, 'url_changed')
+      }
     }
     if (changeInfo.url || 'audible' in changeInfo) {
       await syncAudibleTabsSnapshot()
@@ -98,7 +198,9 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
   }
 })
 
-chrome.tabs.onRemoved.addListener(async () => {
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  clearTabClassification(tabId)
+  clearTabPageInfo(tabId)
   await syncAudibleTabsSnapshot()
 })
 
@@ -112,6 +214,7 @@ chrome.windows.onFocusChanged.addListener(async (windowId) => {
       const [tab] = await chrome.tabs.query({ active: true, windowId })
       if (tab?.id && tab.url) {
         tabTracker.onWindowFocus(tab.id, tab.url)
+        await sendBrowserPageChangedForTab(tab, 'window_focus')
       }
     } catch {
       // Ignore
@@ -159,6 +262,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   ;(async () => {
     const result = tabTracker.flush()
     await handleElapsed(result)
+    await sendBrowserHeartbeatForElapsed(result)
     await timeAccumulator.getDailyProgress()
     sendResponse({ ok: true })
   })().catch(() => sendResponse({ ok: false }))
@@ -179,6 +283,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'flush-tracker') {
     const result = tabTracker.flush()
     await handleElapsed(result)
+    await sendBrowserHeartbeatForElapsed(result)
     await syncAudibleTabsSnapshot()
   } else {
     await handleAlarm(alarm)

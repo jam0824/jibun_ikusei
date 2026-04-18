@@ -16,6 +16,13 @@ from ai.tool_definitions import CHAT_TOOLS
 from ai.tool_executor import ToolExecutor
 from api.api_client import ApiClient
 from api.auth import CognitoAuth
+from core.action_log_organizer import ActionLogOrganizer
+from core.action_log_summary_backfill_service import ActionLogSummaryBackfillService
+from core.activity_capture_service import (
+    ActivityCaptureService,
+    default_device_id,
+    purge_raw_event_range,
+)
 from core.background_event_runtime import register_background_event_handlers
 from core.camera import find_camera_index
 from core.chrome_audible_tabs import ChromeAudibleTabsTracker
@@ -27,6 +34,9 @@ from core.config import (
 )
 from core.desktop_context import format_context_log
 from core.domain_events import (
+    ActionLogOrganizeRequested,
+    ActionLogSummaryBackfillRequested,
+    ActionLogSyncRequested,
     AppStarted,
     CaptureSnapshotRequested,
     CaptureSummaryDue,
@@ -102,6 +112,9 @@ class App:
         self.pending_periodic_expires_at: datetime | None = None
         self.chrome_audible_tabs_tracker = ChromeAudibleTabsTracker()
         self.level_watch = LevelWatchService()
+        self.activity_capture_service: ActivityCaptureService | None = None
+        self.action_log_organizer: ActionLogOrganizer | None = None
+        self.action_log_summary_backfill_service: ActionLogSummaryBackfillService | None = None
 
         # Fitbit 同期
         self.fitbit_sync: FitbitSync | None = None
@@ -124,6 +137,9 @@ class App:
         self._level_watch_timer = QTimer()
         self._level_watch_timer.setSingleShot(False)
         self._level_watch_timer.timeout.connect(self._on_level_watch_timer)
+        self._action_log_sync_timer = QTimer()
+        self._action_log_sync_timer.setSingleShot(False)
+        self._action_log_sync_timer.timeout.connect(self._on_action_log_sync_timer)
         self._healthplanet_timer = QTimer()
         self._healthplanet_timer.setSingleShot(False)
         self._healthplanet_timer.timeout.connect(self._on_healthplanet_timer)
@@ -534,6 +550,8 @@ class App:
 
     def start_http_bridge(self, event_loop: asyncio.AbstractEventLoop) -> None:
         """Local HTTP Bridge を起動する。"""
+        if self.activity_capture_service is None:
+            self.start_activity_capture_service()
         self.http_bridge = start_local_http_bridge(
             self.config.http_bridge,
             event_loop=event_loop,
@@ -542,6 +560,11 @@ class App:
             update_chrome_audible_tabs=lambda received_at, audible_tabs: self.chrome_audible_tabs_tracker.update(
                 received_at=received_at,
                 audible_tabs=audible_tabs,
+            ),
+            ingest_browser_event=(
+                self.activity_capture_service.ingest_browser_event
+                if self.activity_capture_service is not None
+                else None
             ),
             logger_instance=logger,
         )
@@ -552,6 +575,41 @@ class App:
             return
         self.http_bridge.stop()
         self.http_bridge = None
+
+    def start_activity_capture_service(self) -> None:
+        cfg = self.config.activity_capture
+        if not cfg.enabled:
+            logger.info("Activity capture is disabled by config")
+            self.activity_capture_service = None
+            return
+        if self.activity_capture_service is not None:
+            return
+
+        service = ActivityCaptureService(
+            device_id=default_device_id(),
+            initial_state=cfg.initial_state,
+            poll_interval_seconds=cfg.poll_interval_seconds,
+            privacy_rules=cfg.privacy_rules,
+            logger_instance=logger,
+        )
+        service.start()
+        self.activity_capture_service = service
+
+    def stop_activity_capture_service(self) -> None:
+        if self.activity_capture_service is None:
+            return
+        self.activity_capture_service.stop()
+        self.activity_capture_service = None
+
+    def start_action_log_sync_timer(self) -> None:
+        if not self.config.activity_capture.enabled:
+            return
+        self._action_log_sync_timer.start(
+            self.config.activity_capture.sync_interval_seconds * 1000
+        )
+
+    def stop_action_log_sync_timer(self) -> None:
+        self._action_log_sync_timer.stop()
 
     def stop_camera_system(self) -> None:
         """カメラシステムを停止する"""
@@ -566,6 +624,181 @@ class App:
     def _on_summary_timer(self) -> None:
         """30分間隔のサーバー要約"""
         asyncio.ensure_future(self._generate_and_send_summary())
+
+    def _on_action_log_sync_timer(self) -> None:
+        if getattr(self, "event_hub", None) is not None:
+            self.event_hub.publish(ActionLogSyncRequested(source="action_log.sync.timer"))
+            self.event_hub.publish(
+                ActionLogOrganizeRequested(source="action_log.organize.timer")
+            )
+            return
+        asyncio.ensure_future(self.handle_action_log_sync_request())
+        asyncio.ensure_future(self.handle_action_log_organize_request())
+
+    async def handle_action_log_sync_request(self) -> None:
+        if not self.config.activity_capture.enabled:
+            return
+        if not getattr(self.auth, "is_configured", False):
+            logger.info("Action log sync skipped: Cognito not configured")
+            return
+
+        capture_service = self.activity_capture_service
+        device_id = (
+            capture_service.device_id if capture_service is not None else default_device_id()
+        )
+        current_capture_state = (
+            getattr(capture_service, "capture_state", self.config.activity_capture.initial_state)
+            if capture_service is not None
+            else self.config.activity_capture.initial_state
+        )
+
+        try:
+            devices = await self.api_client.get_action_log_devices()
+        except Exception:
+            logger.exception("Action log device sync failed")
+            return
+
+        matched_device = next(
+            (
+                device
+                for device in devices
+                if str(device.get("id", "")).strip() == device_id
+            ),
+            None,
+        )
+        if matched_device is None:
+            try:
+                await self.api_client.put_action_log_device(
+                    device_id,
+                    {
+                        "id": device_id,
+                        "name": device_id,
+                        "captureState": current_capture_state,
+                    },
+                )
+            except Exception:
+                logger.exception("Action log device registration failed")
+                return
+            effective_capture_state = current_capture_state
+        else:
+            effective_capture_state = str(
+                matched_device.get("captureState", current_capture_state)
+            ).strip() or current_capture_state
+
+        if effective_capture_state not in {"active", "paused", "disabled"}:
+            effective_capture_state = current_capture_state
+
+        if effective_capture_state == "disabled":
+            stop_capture = getattr(self, "stop_activity_capture_service", None)
+            if callable(stop_capture):
+                stop_capture()
+            capture_service = self.activity_capture_service
+        else:
+            if capture_service is None:
+                self.config.activity_capture.initial_state = effective_capture_state
+                start_capture = getattr(self, "start_activity_capture_service", None)
+                if callable(start_capture):
+                    start_capture()
+                capture_service = self.activity_capture_service
+            if capture_service is not None:
+                capture_service.set_capture_state(effective_capture_state)
+
+        try:
+            privacy_rules = await self.api_client.get_action_log_privacy_rules()
+        except Exception:
+            logger.exception("Action log privacy rule sync failed")
+            return
+
+        if capture_service is not None:
+            capture_service.set_privacy_rules(privacy_rules)
+
+        try:
+            deletion_requests = await self.api_client.get_action_log_deletion_requests()
+        except Exception:
+            logger.exception("Action log deletion-request sync failed")
+            return
+
+        for request in deletion_requests:
+            request_id = str(request.get("id", "")).strip()
+            from_date = str(request.get("from", "")).strip()
+            to_date = str(request.get("to", "")).strip()
+            if not request_id or not from_date or not to_date:
+                continue
+            purge_raw_event_range(from_date=from_date, to_date=to_date)
+            try:
+                await self.api_client.ack_action_log_deletion_request(request_id)
+            except Exception:
+                logger.exception(
+                    "Action log deletion-request ack failed: %s",
+                    request_id,
+                )
+
+        if capture_service is None:
+            return
+
+        while True:
+            pending = capture_service.snapshot_pending_raw_events(limit=100)
+            if not pending:
+                return
+
+            try:
+                await self.api_client.post_action_log_raw_events(
+                    {
+                        "deviceId": capture_service.device_id,
+                        "events": [entry["event"] for entry in pending],
+                    }
+                )
+            except Exception:
+                logger.exception("Action log raw-event sync failed")
+                return
+
+            capture_service.ack_pending_raw_events(pending)
+
+    async def handle_action_log_organize_request(self) -> None:
+        if not self.config.activity_capture.enabled:
+            return
+        if not getattr(self.auth, "is_configured", False):
+            logger.info("Action log organize skipped: Cognito not configured")
+            return
+
+        organizer = self._get_action_log_organizer()
+        await organizer.organize_and_sync()
+
+    async def handle_action_log_summary_backfill_request(self) -> None:
+        if not self.config.activity_capture.enabled:
+            return
+        if not getattr(self.auth, "is_configured", False):
+            logger.info("Action log summary backfill skipped: Cognito not configured")
+            return
+
+        service = self._get_action_log_summary_backfill_service()
+        await service.backfill_missing_summaries()
+
+    def _get_action_log_organizer(self) -> ActionLogOrganizer:
+        if self.action_log_organizer is None:
+            self.action_log_organizer = ActionLogOrganizer(
+                device_id=(
+                    self.activity_capture_service.device_id
+                    if self.activity_capture_service is not None
+                    else default_device_id()
+                ),
+                api_client=self.api_client,
+                processing_config=self.config.activity_processing,
+                openai_api_key=self.config.openai.api_key,
+                logger_instance=logger,
+            )
+        return self.action_log_organizer
+
+    def _get_action_log_summary_backfill_service(
+        self,
+    ) -> ActionLogSummaryBackfillService:
+        if self.action_log_summary_backfill_service is None:
+            self.action_log_summary_backfill_service = ActionLogSummaryBackfillService(
+                api_client=self.api_client,
+                openai_api_key=self.config.openai.api_key,
+                logger_instance=logger,
+            )
+        return self.action_log_summary_backfill_service
 
     async def run_level_watch_job(self) -> None:
         if not getattr(self.auth, "is_configured", False):
@@ -982,6 +1215,7 @@ async def async_init(app_instance: App) -> None:
     if app_instance.config.healthplanet.client_id:
         app_instance.start_healthplanet_timer()
     app_instance.start_level_watch_timer()
+    app_instance.start_action_log_sync_timer()
 
     if getattr(app_instance, "event_hub", None) is not None:
         app_instance.event_hub.publish(AppStarted(source="async_init"))
@@ -1039,6 +1273,8 @@ def main() -> None:
         if app_instance.tts_engine is not None:
             app_instance.tts_engine.clear_queue()
         app_instance.stop_http_bridge()
+        app_instance.stop_action_log_sync_timer()
+        app_instance.stop_activity_capture_service()
         app_instance.stop_camera_system()
         app_instance.stop_level_watch_timer()
 

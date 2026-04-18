@@ -88,3 +88,16 @@ fitbit:
 http_bridge:
   enabled: true
   port: 18765
+web:
+  base_url: http://127.0.0.1:5173/#
+activity_capture:
+  enabled: true
+  initial_state: active
+  poll_interval_seconds: 2
+  sync_interval_seconds: 30
+activity_processing:
+  enabled: true
+  provider: openai
+  base_url: http://127.0.0.1:11434
+  model: gpt-5-nano
+  max_completion_tokens: 1200

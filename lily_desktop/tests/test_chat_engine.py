@@ -19,6 +19,9 @@ def _make_api() -> AsyncMock:
     api.get_quests = AsyncMock(return_value=[{"id": "quest_1"}])
     api.get_completions = AsyncMock(return_value=[{"id": "completion_1"}])
     api.get_activity_logs = AsyncMock(return_value=[{"id": "log_1"}])
+    api.get_action_log_sessions = AsyncMock(return_value=[])
+    api.get_action_log_daily_logs = AsyncMock(return_value=[])
+    api.get_action_log_open_loops = AsyncMock(return_value=[])
     api.post_quest = AsyncMock()
     api.put_quest = AsyncMock()
     api.delete_quest = AsyncMock()
@@ -47,7 +50,10 @@ async def test_fetch_context_uses_ttl_cache():
     api.get_skills.assert_awaited_once()
     api.get_quests.assert_awaited_once()
     api.get_completions.assert_awaited_once()
-    api.get_activity_logs.assert_awaited_once()
+    api.get_action_log_sessions.assert_awaited_once()
+    api.get_action_log_daily_logs.assert_awaited_once()
+    api.get_action_log_open_loops.assert_awaited_once()
+    api.get_activity_logs.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -80,7 +86,9 @@ async def test_fetch_context_reuses_last_successful_values_on_partial_failure():
     api.get_skills.side_effect = RuntimeError("boom")
     api.get_quests.return_value = [{"id": "quest_2"}]
     api.get_completions.return_value = [{"id": "completion_2"}]
-    api.get_activity_logs.return_value = [{"id": "log_2"}]
+    api.get_action_log_sessions.return_value = [{"id": "session_2", "hidden": False}]
+    api.get_action_log_daily_logs.return_value = [{"id": "daily_2"}]
+    api.get_action_log_open_loops.return_value = [{"id": "loop_2"}]
 
     second = await engine._fetch_context()
 
@@ -88,7 +96,80 @@ async def test_fetch_context_reuses_last_successful_values_on_partial_failure():
     assert second[1] == first[1]
     assert second[2] == [{"id": "quest_2"}]
     assert second[3] == [{"id": "completion_2"}]
-    assert second[4] == [{"id": "log_2"}]
+    assert second[4] == [
+        {
+            "kind": "session",
+            "category": "other",
+            "title": "",
+            "summary": "",
+            "timestamp": "",
+            "activityKinds": [],
+            "searchKeywords": [],
+            "appNames": [],
+            "domains": [],
+            "projectNames": [],
+        },
+        {
+            "kind": "daily",
+            "category": "daily_summary",
+            "title": "その日のまとめ",
+            "summary": "",
+            "timestamp": "",
+            "dateKey": "",
+        },
+        {
+            "kind": "open_loop",
+            "category": "open_loop",
+            "title": "",
+            "summary": "",
+            "timestamp": "",
+            "status": "open",
+        },
+    ]
+
+
+@pytest.mark.asyncio
+async def test_fetch_context_excludes_hidden_sessions_from_activity_logs():
+    api = _make_api()
+    api.get_action_log_sessions.return_value = [
+        {"id": "session_visible", "hidden": False, "primaryCategory": "学習", "title": "Chrome 拡張の調査"},
+        {"id": "session_hidden", "hidden": True, "primaryCategory": "仕事", "title": "隠しセッション"},
+    ]
+    api.get_action_log_daily_logs.return_value = [{"id": "daily_1", "summary": "summary"}]
+    api.get_action_log_open_loops.return_value = [{"id": "loop_1", "title": "権限設定の確認"}]
+    engine = _make_engine(api)
+
+    context = await engine._fetch_context()
+
+    assert {
+        "kind": "session",
+        "category": "学習",
+        "title": "Chrome 拡張の調査",
+        "summary": "",
+        "timestamp": "",
+        "activityKinds": [],
+        "searchKeywords": [],
+        "appNames": [],
+        "domains": [],
+        "projectNames": [],
+    } in context[4]
+    assert {
+        "kind": "daily",
+        "category": "daily_summary",
+        "title": "その日のまとめ",
+        "summary": "summary",
+        "timestamp": "",
+        "dateKey": "",
+    } in context[4]
+    assert {
+        "kind": "open_loop",
+        "category": "open_loop",
+        "title": "権限設定の確認",
+        "summary": "",
+        "timestamp": "",
+        "status": "open",
+    } in context[4]
+    assert not any(entry.get("title") == "隠しセッション" for entry in context[4])
 
 
 @pytest.mark.asyncio
