@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from hashlib import sha1
@@ -23,7 +24,8 @@ from core.activity_capture_service import _RAW_EVENT_LOG_DIR
 JST = timezone(timedelta(hours=9))
 SESSION_GAP_SECONDS = 5 * 60
 HTTP_TIMEOUT_SECONDS = 30.0
-OPENAI_BATCH_SIZE = 1
+OPENAI_BATCH_SIZE = 8
+OPENAI_ENRICHMENT_BUDGET_SECONDS = 60.0
 DEFAULT_ACTIVITY_PROCESSING_CONFIG = {
     "enabled": True,
     "provider": "openai",
@@ -455,16 +457,21 @@ class ActionLogOrganizer:
             existing_sessions,
             existing_open_loops_by_id,
         )
-        ai_results, batch_count = (
-            await self._organize_with_llm(uncached_candidates) if uncached_candidates else ({}, 0)
+        ai_results, batch_count, budget_exhausted = (
+            await self._organize_with_llm(uncached_candidates)
+            if uncached_candidates
+            else ({}, 0, False)
         )
         llm_results = {**reused_results, **ai_results}
+        fallback_count = len(candidates) - len(reused_results) - len(ai_results)
         self._logger.info(
-            "Action-log organizer stats: total_candidates=%d reused_count=%d ai_count=%d batch_count=%d",
+            "Action-log organizer stats: total_candidates=%d reused_count=%d ai_count=%d fallback_count=%d batch_count=%d budget_exhausted=%s",
             len(candidates),
             len(reused_results),
             len(ai_results),
+            fallback_count,
             batch_count,
+            budget_exhausted,
         )
         sessions: list[dict[str, Any]] = []
         open_loops: list[dict[str, Any]] = []
@@ -520,9 +527,9 @@ class ActionLogOrganizer:
     async def _organize_with_llm(
         self,
         candidates: list[dict[str, Any]],
-    ) -> tuple[dict[str, dict[str, Any]], int]:
+    ) -> tuple[dict[str, dict[str, Any]], int, bool]:
         if not self.processing_config["enabled"]:
-            return {}, 0
+            return {}, 0, False
 
         provider = normalize_provider(self.processing_config["provider"], default="ollama")
         if provider == "openai":
@@ -671,10 +678,10 @@ class ActionLogOrganizer:
     async def _organize_with_openai(
         self,
         candidates: list[dict[str, Any]],
-    ) -> tuple[dict[str, dict[str, Any]], int]:
+    ) -> tuple[dict[str, dict[str, Any]], int, bool]:
         if not self.openai_api_key:
             self._logger.info("Action-log organizer OpenAI skipped: OPENAI_API_KEY unavailable")
-            return {}, 0
+            return {}, 0, False
 
         system_prompt = (
             "You organize desktop activity sessions for a Japanese self-growth app called Lily. "
@@ -684,9 +691,27 @@ class ActionLogOrganizer:
         )
         results: dict[str, dict[str, Any]] = {}
         batch_count = 0
+        budget_exhausted = False
+        prioritized_candidates = sorted(
+            candidates,
+            key=lambda candidate: str(candidate.get("startedAt") or ""),
+            reverse=True,
+        )
+        started_at = time.monotonic()
 
-        for start in range(0, len(candidates), OPENAI_BATCH_SIZE):
-            batch = candidates[start : start + OPENAI_BATCH_SIZE]
+        for start in range(0, len(prioritized_candidates), OPENAI_BATCH_SIZE):
+            elapsed_seconds = time.monotonic() - started_at
+            if elapsed_seconds >= OPENAI_ENRICHMENT_BUDGET_SECONDS:
+                budget_exhausted = True
+                remaining_candidates = len(prioritized_candidates) - start
+                self._logger.warning(
+                    "Action-log organizer OpenAI budget exhausted: processed_batches=%d remaining_candidates=%d elapsed_seconds=%.2f",
+                    batch_count,
+                    remaining_candidates,
+                    elapsed_seconds,
+                )
+                break
+            batch = prioritized_candidates[start : start + OPENAI_BATCH_SIZE]
             batch_count += 1
             try:
                 response = await request_openai_json_with_usage(
@@ -714,12 +739,12 @@ class ActionLogOrganizer:
             )
             results.update(self._parse_enrichment_payload(response.output))
 
-        return results, batch_count
+        return results, batch_count, budget_exhausted
 
     async def _organize_with_ollama(
         self,
         candidates: list[dict[str, Any]],
-    ) -> tuple[dict[str, dict[str, Any]], int]:
+    ) -> tuple[dict[str, dict[str, Any]], int, bool]:
         user_text = json.dumps(self._build_llm_input_payload(candidates), ensure_ascii=False)
         system_prompt = (
             "You organize desktop activity sessions. Return only JSON with this shape: "
@@ -751,7 +776,7 @@ class ActionLogOrganizer:
                 raise RuntimeError(f"Activity organizer failed: {response.status_code}")
             text = extract_chat_response_text("ollama", response.json())
             payload = self._parse_json(text)
-            return self._parse_enrichment_payload(payload), 1
+            return self._parse_enrichment_payload(payload), 1, False
         except Exception:
             if text:
                 self._logger.exception(
@@ -760,7 +785,7 @@ class ActionLogOrganizer:
                 )
             else:
                 self._logger.exception("Action-log organizer LLM enrichment failed")
-            return {}, 1
+            return {}, 1, False
 
     def _parse_json(self, raw: str) -> dict[str, Any]:
         cleaned = raw.strip()

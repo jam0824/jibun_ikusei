@@ -360,7 +360,63 @@ async def test_organizer_reuses_existing_enrichment_and_excludes_it_from_openai_
 
 
 @pytest.mark.asyncio
-async def test_organizer_batches_uncached_candidates_one_by_one(tmp_path, monkeypatch):
+async def test_organizer_prioritizes_newest_uncached_candidates_for_openai_requests(
+    tmp_path, monkeypatch
+):
+    log_dir = tmp_path / "raw_events"
+    events = []
+    base_time = datetime(2026, 4, 17, 9, 0, tzinfo=JST)
+    for index in range(3):
+        events.append(
+            _event(
+                f"raw_{index}",
+                base_time + timedelta(minutes=index * 10),
+                app_name=f"App{index}.exe",
+                window_title=f"Window {index}",
+                file_name=f"file_{index}.txt",
+            )
+        )
+    _write_spool(log_dir, "2026-04-17", events)
+
+    probe_organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=_FakeApiClient(),
+        raw_event_log_dir=log_dir,
+        processing_config=_make_processing_config(),
+        openai_api_key="test-key",
+    )
+    candidates = probe_organizer.build_candidate_sessions(
+        probe_organizer.load_recent_raw_events(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+    )
+    newest_first_ids = [candidate["id"] for candidate in reversed(candidates)]
+
+    api_client = _FakeApiClient()
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=log_dir,
+        processing_config=_make_processing_config(),
+        openai_api_key="test-key",
+    )
+    request_payloads: list[dict] = []
+
+    async def _fake_request_openai_json_with_usage(**kwargs):
+        request_payloads.append(kwargs["input_payload"])
+        session_ids = _extract_session_ids(kwargs["input_payload"])
+        return _build_result_for_ids(session_ids)
+
+    monkeypatch.setattr(
+        "core.action_log_organizer.request_openai_json_with_usage",
+        _fake_request_openai_json_with_usage,
+    )
+
+    await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    assert _extract_session_ids(request_payloads[0]) == newest_first_ids
+
+
+@pytest.mark.asyncio
+async def test_organizer_batches_uncached_candidates_eight_then_one(tmp_path, monkeypatch):
     log_dir = tmp_path / "raw_events"
     events = []
     base_time = datetime(2026, 4, 17, 9, 0, tzinfo=JST)
@@ -375,6 +431,19 @@ async def test_organizer_batches_uncached_candidates_one_by_one(tmp_path, monkey
             )
         )
     _write_spool(log_dir, "2026-04-17", events)
+
+    probe_organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=_FakeApiClient(),
+        raw_event_log_dir=log_dir,
+        processing_config=_make_processing_config(),
+        openai_api_key="test-key",
+    )
+    candidates = probe_organizer.build_candidate_sessions(
+        probe_organizer.load_recent_raw_events(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+    )
+    newest_first_ids = [candidate["id"] for candidate in reversed(candidates)]
+
     api_client = _FakeApiClient()
     organizer = ActionLogOrganizer(
         device_id="device_1",
@@ -384,10 +453,12 @@ async def test_organizer_batches_uncached_candidates_one_by_one(tmp_path, monkey
         openai_api_key="test-key",
     )
     batch_sizes: list[int] = []
+    requested_batches: list[list[str]] = []
 
     async def _fake_request_openai_json_with_usage(**kwargs):
         session_ids = _extract_session_ids(kwargs["input_payload"])
         batch_sizes.append(len(session_ids))
+        requested_batches.append(session_ids)
         return _build_result_for_ids(session_ids)
 
     monkeypatch.setattr(
@@ -397,5 +468,78 @@ async def test_organizer_batches_uncached_candidates_one_by_one(tmp_path, monkey
 
     await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
 
-    assert batch_sizes == [1, 1, 1, 1, 1, 1, 1, 1, 1]
+    assert batch_sizes == [8, 1]
+    assert requested_batches == [newest_first_ids[:8], newest_first_ids[8:]]
     assert len(api_client.put_sessions_calls[0]["sessions"]) == 9
+
+
+@pytest.mark.asyncio
+async def test_organizer_budget_exhaustion_falls_back_and_still_syncs(
+    tmp_path, monkeypatch
+):
+    log_dir = tmp_path / "raw_events"
+    events = []
+    base_time = datetime(2026, 4, 17, 9, 0, tzinfo=JST)
+    for index in range(9):
+        events.append(
+            _event(
+                f"raw_{index}",
+                base_time + timedelta(minutes=index * 10),
+                app_name=f"App{index}.exe",
+                window_title=f"Window {index}",
+                file_name=f"file_{index}.txt",
+            )
+        )
+    _write_spool(log_dir, "2026-04-17", events)
+
+    probe_organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=_FakeApiClient(),
+        raw_event_log_dir=log_dir,
+        processing_config=_make_processing_config(),
+        openai_api_key="test-key",
+    )
+    candidates = probe_organizer.build_candidate_sessions(
+        probe_organizer.load_recent_raw_events(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+    )
+    oldest_candidate = candidates[0]
+    newest_first_ids = [candidate["id"] for candidate in reversed(candidates)]
+
+    api_client = _FakeApiClient()
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=log_dir,
+        processing_config=_make_processing_config(),
+        openai_api_key="test-key",
+    )
+    requested_batches: list[list[str]] = []
+    monotonic_values = [0.0, 0.0, 61.0]
+
+    def _fake_monotonic():
+        if monotonic_values:
+            return monotonic_values.pop(0)
+        return 61.0
+
+    async def _fake_request_openai_json_with_usage(**kwargs):
+        session_ids = _extract_session_ids(kwargs["input_payload"])
+        requested_batches.append(session_ids)
+        return _build_result_for_ids(session_ids)
+
+    monkeypatch.setattr(
+        "core.action_log_organizer.request_openai_json_with_usage",
+        _fake_request_openai_json_with_usage,
+    )
+    monkeypatch.setattr("core.action_log_organizer.time.monotonic", _fake_monotonic)
+
+    await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    assert requested_batches == [newest_first_ids[:8]]
+    assert len(api_client.put_sessions_calls) == 1
+    assert len(api_client.put_open_loops_calls) == 1
+    saved_sessions = {
+        session["id"]: session for session in api_client.put_sessions_calls[0]["sessions"]
+    }
+    assert len(saved_sessions) == 9
+    assert saved_sessions[oldest_candidate["id"]]["title"] == "App0.exe / Window 0"
+    assert saved_sessions[newest_first_ids[0]]["title"] == "AI title 1"
