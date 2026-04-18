@@ -153,13 +153,17 @@ async def test_fetch_context_excludes_hidden_sessions_from_activity_logs():
 
 
 @pytest.mark.asyncio
-async def test_handle_system_message_saves_system_role_and_sends_only_runtime_notice(monkeypatch):
+async def test_handle_system_message_saves_system_role_and_uses_isolated_prompt(monkeypatch):
     api = _make_api()
     session_mgr = SimpleNamespace(current_session_id="chat_1", save_message=AsyncMock())
     engine = ChatEngine(
         config=SimpleNamespace(openai=SimpleNamespace(api_key="sk-test", chat_model="gpt-5.4")),
         api_client=api,
         session_mgr=session_mgr,
+    )
+    engine.set_tools(
+        [{"type": "function", "function": {"name": "complete_quest"}}],
+        AsyncMock(),
     )
     engine._history = [
         {"role": "user", "content": "前のユーザー発話"},
@@ -191,10 +195,11 @@ async def test_handle_system_message_saves_system_role_and_sends_only_runtime_no
     assert len(system_messages) == 2
     assert system_messages[1]["content"] == "システム通知: 学習クエスト達成です。+2 XP 獲得しました。"
     assert [message for message in messages if message["role"] == "system" and message["content"] == "過去のシステム通知"] == []
+    assert [message for message in messages if message["role"] in {"user", "assistant"}] == []
+    assert send_chat_message.await_args.kwargs["tools"] is None
     assert engine._history == [
         {"role": "user", "content": "前のユーザー発話"},
         {"role": "assistant", "content": "前のリリィ応答"},
-        {"role": "assistant", "content": "了解したよ"},
     ]
 
 
