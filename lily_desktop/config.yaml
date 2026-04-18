@@ -89,7 +89,7 @@ http_bridge:
   enabled: true
   port: 18765
 web:
-  base_url: http://127.0.0.1:5173/#
+  base_url: https://jam0824.github.io/jibun_ikusei/#
 activity_capture:
   enabled: true
   initial_state: active

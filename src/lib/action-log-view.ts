@@ -355,6 +355,10 @@ function filterDayOpenLoops(openLoops: OpenLoop[], dateKey: string) {
   return openLoops.filter((openLoop) => openLoop.dateKey === dateKey)
 }
 
+function filterOpenOpenLoops(openLoops: OpenLoop[]) {
+  return openLoops.filter((openLoop) => openLoop.status === 'open')
+}
+
 export async function fetchActivityDayView(dateKey: string): Promise<ActivityDayViewData> {
   const [sessions, rawEvents, dailyLog, openLoops] = await Promise.all([
     getActionLogSessions(dateKey, dateKey),
@@ -368,7 +372,7 @@ export async function fetchActivityDayView(dateKey: string): Promise<ActivityDay
     sessions: sortSessionsNewestFirst(filterDaySessions(sessions, dateKey)),
     rawEvents: sortRawEventsNewestFirst(filterDayRawEvents(rawEvents, dateKey)),
     dailyLog: dailyLog?.dateKey === dateKey ? dailyLog : null,
-    openLoops: filterDayOpenLoops(openLoops, dateKey),
+    openLoops: filterOpenOpenLoops(filterDayOpenLoops(openLoops, dateKey)),
   }
 }
 
@@ -389,7 +393,7 @@ export async function ensurePreviousDayDailyActivityLog(params: {
 
   const filteredSessions = sortSessionsNewestFirst(filterDaySessions(sessions, dateKey))
   const filteredRawEvents = sortRawEventsNewestFirst(filterDayRawEvents(rawEvents, dateKey))
-  const filteredOpenLoops = filterDayOpenLoops(openLoops, dateKey)
+  const filteredOpenLoops = filterOpenOpenLoops(filterDayOpenLoops(openLoops, dateKey))
   let resolvedDailyLog = dailyLog?.dateKey === dateKey ? dailyLog : null
 
   if (!resolvedDailyLog && dateKey === getYesterdayDateKeyJst(now)) {
@@ -449,7 +453,7 @@ export async function fetchActivityReviewWeek(weekKey: string): Promise<Activity
 
   return {
     review,
-    openLoops: openLoops.filter((openLoop) =>
+    openLoops: filterOpenOpenLoops(openLoops).filter((openLoop) =>
       isWithinDateRange(openLoop.dateKey, range.from, range.to),
     ),
     topApps: buildUsageSummaries(weeklySessions, (session) => session.appNames),
@@ -491,7 +495,7 @@ export async function ensurePreviousWeekReviewForWeb(params: {
     getActionLogSessions(range.from, range.to),
     getActionLogOpenLoops(range.from, range.to),
   ])
-  const filteredOpenLoops = openLoops.filter((openLoop) =>
+  const filteredOpenLoops = filterOpenOpenLoops(openLoops).filter((openLoop) =>
     isWithinDateRange(openLoop.dateKey, range.from, range.to),
   )
   const categoryDurations = buildCategoryDurations(sessions)

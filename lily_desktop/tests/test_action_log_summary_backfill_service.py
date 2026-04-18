@@ -255,3 +255,82 @@ async def test_backfill_uses_template_fallback_when_openai_fails(monkeypatch):
 
     assert api_client.put_daily_calls[0]["summary"].startswith("リリィ")
     assert api_client.put_weekly_calls[0]["summary"].startswith("リリィ")
+
+
+@pytest.mark.asyncio
+async def test_backfill_excludes_closed_open_loops_from_inputs_and_saved_ids(monkeypatch):
+    api_client = _FakeApiClient(
+        daily_sessions={
+            "2026-04-16": [
+                _session(
+                    "session_daily",
+                    date_key="2026-04-16",
+                    started_at="2026-04-16T09:00:00+09:00",
+                    ended_at="2026-04-16T09:40:00+09:00",
+                    title="前日の調査",
+                )
+            ]
+        },
+        weekly_sessions={
+            ("2026-04-06", "2026-04-12"): [
+                _session(
+                    "session_weekly",
+                    date_key="2026-04-10",
+                    started_at="2026-04-10T10:00:00+09:00",
+                    ended_at="2026-04-10T10:45:00+09:00",
+                    title="前週の調査",
+                )
+            ]
+        },
+        daily_open_loops={
+            "2026-04-16": [
+                _open_loop("loop_daily_open", date_key="2026-04-16", title="権限設定の確認"),
+                {
+                    **_open_loop("loop_daily_closed", date_key="2026-04-16", title="完了した確認"),
+                    "status": "closed",
+                },
+            ]
+        },
+        weekly_open_loops={
+            ("2026-04-06", "2026-04-12"): [
+                _open_loop("loop_weekly_open", date_key="2026-04-10", title="manifest の再確認"),
+                {
+                    **_open_loop("loop_weekly_closed", date_key="2026-04-10", title="終わった週次確認"),
+                    "status": "closed",
+                },
+            ]
+        },
+    )
+    captured_inputs: list[dict] = []
+
+    async def _fake_request_openai_json(**kwargs):
+        captured_inputs.append(kwargs["input_payload"])
+        if kwargs["schema_name"] == "daily_activity_log":
+            return {
+                "summary": "リリィは、前日の調査の流れを静かに見つめていた。",
+                "mainThemes": ["Chrome拡張", "調査"],
+                "reviewQuestions": ["次に確認したい仕様はどこだったか。"],
+            }
+        return {
+            "summary": "リリィは、前週の調査と実装の往復を見つめていた。",
+            "focusThemes": ["Chrome拡張", "開発"],
+        }
+
+    monkeypatch.setattr(
+        "core.action_log_summary_backfill_service.request_openai_json",
+        _fake_request_openai_json,
+    )
+
+    service = ActionLogSummaryBackfillService(
+        api_client=api_client,
+        openai_api_key="sk-test",
+    )
+
+    await service.backfill_missing_summaries(
+        now=datetime(2026, 4, 17, 9, 0, tzinfo=JST)
+    )
+
+    assert [item["title"] for item in captured_inputs[0]["openLoops"]] == ["権限設定の確認"]
+    assert [item["title"] for item in captured_inputs[1]["openLoops"]] == ["manifest の再確認"]
+    assert api_client.put_daily_calls[0]["openLoopIds"] == ["loop_daily_open"]
+    assert api_client.put_weekly_calls[0]["openLoopIds"] == ["loop_weekly_open"]

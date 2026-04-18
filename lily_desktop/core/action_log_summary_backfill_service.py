@@ -161,6 +161,14 @@ def _sanitize_open_loops(open_loops: list[dict[str, Any]]) -> list[dict[str, Any
     ]
 
 
+def _filter_open_open_loops(open_loops: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        open_loop
+        for open_loop in open_loops
+        if str(open_loop.get("status") or "open") == "open"
+    ]
+
+
 def _build_daily_fallback(
     *,
     date_key: str,
@@ -236,7 +244,9 @@ class ActionLogSummaryBackfillService:
             return
 
         sessions = await self.api_client.get_action_log_sessions(yesterday_key, yesterday_key)
-        open_loops = await self.api_client.get_action_log_open_loops(yesterday_key, yesterday_key)
+        open_loops = _filter_open_open_loops(
+            await self.api_client.get_action_log_open_loops(yesterday_key, yesterday_key)
+        )
         daily_input = {
             "task": "daily_activity_log",
             "dateKey": yesterday_key,
@@ -283,7 +293,9 @@ class ActionLogSummaryBackfillService:
 
         from_date, to_date = _week_range_from_key(week_key)
         sessions = await self.api_client.get_action_log_sessions(from_date, to_date)
-        open_loops = await self.api_client.get_action_log_open_loops(from_date, to_date)
+        open_loops = _filter_open_open_loops(
+            await self.api_client.get_action_log_open_loops(from_date, to_date)
+        )
         category_durations: dict[str, int] = {}
         for session in sessions:
             category = str(session.get("primaryCategory") or "").strip()

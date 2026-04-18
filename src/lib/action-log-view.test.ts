@@ -261,6 +261,45 @@ describe('action log view orchestration', () => {
     expect(result.rawEvents.map((event) => event.id)).toEqual(['event_new', 'event_old'])
   })
 
+  it('shows only open open loops in day views and daily log generation input', async () => {
+    const state = hydratePersistedState()
+    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
+      createOpenLoop('open_loop_open'),
+      createOpenLoop('open_loop_closed', {
+        id: 'open_loop_closed',
+        title: 'Already resolved loop',
+        status: 'closed',
+      }),
+    ])
+    vi.mocked(ai.generateDailyActivityLog).mockResolvedValue({
+      provider: 'template',
+      summary: 'Daily summary based on open loops only.',
+      mainThemes: ['Chrome docs'],
+      reviewQuestions: ['What remains open?'],
+    })
+
+    const fetched = await fetchActivityDayView('2026-04-16')
+
+    expect(fetched.openLoops.map((openLoop) => openLoop.id)).toEqual(['open_loop_open'])
+
+    const generated = await ensurePreviousDayDailyActivityLog({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      dateKey: '2026-04-16',
+      now: new Date('2026-04-17T09:00:00+09:00'),
+    })
+
+    expect(vi.mocked(ai.generateDailyActivityLog).mock.calls[0][0]).toMatchObject({
+      openLoops: [createOpenLoop('open_loop_open')],
+    })
+    expect(api.putActionLogDailyActivityLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openLoopIds: ['open_loop_open'],
+      }),
+    )
+    expect(generated.openLoops.map((openLoop) => openLoop.id)).toEqual(['open_loop_open'])
+  })
+
   it('does not generate a DailyActivityLog for today even when it is missing', async () => {
     const state = hydratePersistedState()
 
@@ -291,6 +330,14 @@ describe('action log view orchestration', () => {
 
   it('generates a missing WeeklyActivityReview only on Monday for the previous week from the week screen', async () => {
     const state = hydratePersistedState()
+    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
+      createOpenLoop('open_loop_open'),
+      createOpenLoop('open_loop_closed', {
+        id: 'open_loop_closed',
+        title: 'Resolved weekly loop',
+        status: 'closed',
+      }),
+    ])
     vi.mocked(ai.generateWeeklyActivityReview).mockResolvedValue({
       provider: 'template',
       summary: 'Lily observed a week centered on research and implementation.',
@@ -309,14 +356,14 @@ describe('action log view orchestration', () => {
     expect(ai.generateWeeklyActivityReview).toHaveBeenCalledTimes(1)
     expect(vi.mocked(ai.generateWeeklyActivityReview).mock.calls[0][0]).toMatchObject({
       weekKey: '2026-W16',
-      openLoops: [createOpenLoop()],
+      openLoops: [createOpenLoop('open_loop_open')],
       categoryDurations: { study: 40, work: 20 },
     })
     expect(api.putActionLogWeeklyActivityReview).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'weekly_2026-W16',
         weekKey: '2026-W16',
-        openLoopIds: ['open_loop_1'],
+        openLoopIds: ['open_loop_open'],
       }),
     )
   })
@@ -453,10 +500,17 @@ describe('action log view orchestration', () => {
     vi.mocked(api.getActionLogWeeklyActivityReview).mockResolvedValue(createWeeklyReview('2026-W16'))
     vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
       createOpenLoop('week_loop', { dateKey: '2026-04-14' }),
+      createOpenLoop('week_loop_closed', {
+        id: 'week_loop_closed',
+        dateKey: '2026-04-14',
+        title: 'Already resolved weekly loop',
+        status: 'closed',
+      }),
     ])
 
     const result = await fetchActivityReviewWeek('2026-W16')
 
+    expect(result.openLoops.map((openLoop) => openLoop.id)).toEqual(['week_loop'])
     expect(result.topApps).toEqual([
       { label: 'Chrome', minutes: 60 },
       { label: 'Code', minutes: 30 },
@@ -489,6 +543,12 @@ describe('action log view orchestration', () => {
         title: 'Chrome task',
         dateKey: '2026-04-16',
       }),
+      createOpenLoop('loop_closed', {
+        id: 'loop_closed',
+        title: 'Resolved code task',
+        dateKey: '2026-04-16',
+        status: 'closed',
+      }),
     ])
 
     const filtered = await searchActivityLogs({
@@ -517,7 +577,7 @@ describe('action log view orchestration', () => {
     })
 
     expect(withHidden.sessions.map((session) => session.id)).toEqual(['hidden_code'])
-    expect(withHidden.openLoops.map((openLoop) => openLoop.id)).toEqual([])
+    expect(withHidden.openLoops.map((openLoop) => openLoop.id)).toEqual(['loop_closed'])
   })
 
   it('exports an action-log bundle with overlapping weekly reviews only', async () => {

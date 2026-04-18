@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from ai.provider_chat import ChatRequest
-from core.action_log_organizer import ActionLogOrganizer
+from core.action_log_organizer import ActionLogOrganizer, _open_loop_id
 
 
 JST = timezone(timedelta(hours=9))
@@ -126,6 +126,58 @@ def _make_organizer(
         api_client=api_client or _FakeApiClient(),
         raw_event_log_dir=tmp_path / "raw_events",
     )
+
+
+def _existing_session(
+    session_id: str,
+    *,
+    date_key: str,
+    started_at: str,
+    ended_at: str,
+    title: str,
+    search_keywords: list[str],
+    open_loop_ids: list[str],
+    app_names: list[str] | None = None,
+    domains: list[str] | None = None,
+    project_names: list[str] | None = None,
+) -> dict:
+    return {
+        "id": session_id,
+        "deviceId": "device_1",
+        "startedAt": started_at,
+        "endedAt": ended_at,
+        "dateKey": date_key,
+        "title": title,
+        "primaryCategory": "仕事",
+        "activityKinds": ["開発"],
+        "appNames": app_names or ["Code.exe"],
+        "domains": domains or [],
+        "projectNames": project_names or ["self-growth-app"],
+        "summary": f"{title} を進めていた。",
+        "searchKeywords": search_keywords,
+        "noteIds": [],
+        "openLoopIds": open_loop_ids,
+        "hidden": False,
+    }
+
+
+def _existing_open_loop(
+    title: str,
+    *,
+    date_key: str,
+    linked_session_ids: list[str],
+    status: str = "open",
+) -> dict:
+    return {
+        "id": _open_loop_id("device_1", date_key, title),
+        "createdAt": f"{date_key}T20:10:00+09:00",
+        "updatedAt": f"{date_key}T20:10:00+09:00",
+        "dateKey": date_key,
+        "title": title,
+        "description": f"{title} を次に確認する。",
+        "status": status,
+        "linkedSessionIds": linked_session_ids,
+    }
 
 
 def test_candidate_sessions_group_nearby_events_into_one_session(tmp_path):
@@ -503,6 +555,290 @@ async def test_organize_and_sync_full_replaces_today_and_yesterday_even_without_
             "openLoops": [],
         }
     ]
+
+
+@pytest.mark.asyncio
+async def test_organize_and_sync_auto_closes_matching_open_loop_on_completion(
+    tmp_path, caplog
+):
+    log_dir = tmp_path / "raw_events"
+    _write_spool(
+        log_dir,
+        "2026-04-16",
+        [
+            _event(
+                "origin_raw",
+                datetime(2026, 4, 16, 20, 0, tzinfo=JST),
+                app_name="Code.exe",
+                window_title="Manifest permissions TODO",
+                project_name="self-growth-app",
+                file_name="manifest.json",
+                metadata={"openLoopHint": True},
+            )
+        ],
+    )
+    _write_spool(
+        log_dir,
+        "2026-04-17",
+        [
+            _event(
+                "resolver_raw",
+                datetime(2026, 4, 17, 9, 0, tzinfo=JST),
+                app_name="Code.exe",
+                window_title="Manifest permissions 修正完了",
+                project_name="self-growth-app",
+                file_name="manifest.json",
+            )
+        ],
+    )
+    existing_loop = _existing_open_loop(
+        "Manifest permissions TODO",
+        date_key="2026-04-16",
+        linked_session_ids=["session_origin"],
+    )
+    api_client = _FakeApiClient(
+        existing_sessions=[
+            _existing_session(
+                "session_origin",
+                date_key="2026-04-16",
+                started_at="2026-04-16T20:00:00+09:00",
+                ended_at="2026-04-16T20:00:00+09:00",
+                title="Code.exe / Manifest permissions TODO",
+                search_keywords=["Manifest permissions TODO", "manifest.json"],
+                open_loop_ids=[existing_loop["id"]],
+            )
+        ],
+        existing_open_loops=[existing_loop],
+    )
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=log_dir,
+        processing_config=_processing_disabled(),
+    )
+
+    with caplog.at_level("INFO"):
+        await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    saved_loops = {
+        loop["id"]: loop for loop in api_client.put_open_loops_calls[0]["openLoops"]
+    }
+    assert saved_loops[existing_loop["id"]]["status"] == "closed"
+    assert saved_loops[existing_loop["id"]]["updatedAt"] == "2026-04-17T12:00:00+09:00"
+    assert "auto_closed_count=1" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_organize_and_sync_keeps_loop_open_when_completion_session_creates_new_open_loop(
+    tmp_path,
+):
+    log_dir = tmp_path / "raw_events"
+    _write_spool(
+        log_dir,
+        "2026-04-16",
+        [
+            _event(
+                "origin_raw",
+                datetime(2026, 4, 16, 20, 0, tzinfo=JST),
+                app_name="Code.exe",
+                window_title="Manifest permissions TODO",
+                project_name="self-growth-app",
+                file_name="manifest.json",
+                metadata={"openLoopHint": True},
+            )
+        ],
+    )
+    _write_spool(
+        log_dir,
+        "2026-04-17",
+        [
+            _event(
+                "resolver_raw",
+                datetime(2026, 4, 17, 9, 0, tzinfo=JST),
+                app_name="Code.exe",
+                window_title="Manifest permissions 修正完了 TODO",
+                project_name="self-growth-app",
+                file_name="manifest.json",
+                metadata={"openLoopHint": True},
+            )
+        ],
+    )
+    existing_loop = _existing_open_loop(
+        "Manifest permissions TODO",
+        date_key="2026-04-16",
+        linked_session_ids=["session_origin"],
+    )
+    api_client = _FakeApiClient(
+        existing_sessions=[
+            _existing_session(
+                "session_origin",
+                date_key="2026-04-16",
+                started_at="2026-04-16T20:00:00+09:00",
+                ended_at="2026-04-16T20:00:00+09:00",
+                title="Code.exe / Manifest permissions TODO",
+                search_keywords=["Manifest permissions TODO", "manifest.json"],
+                open_loop_ids=[existing_loop["id"]],
+            )
+        ],
+        existing_open_loops=[existing_loop],
+    )
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=log_dir,
+        processing_config=_processing_disabled(),
+    )
+
+    await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    saved_loops = {
+        loop["id"]: loop for loop in api_client.put_open_loops_calls[0]["openLoops"]
+    }
+    assert saved_loops[existing_loop["id"]]["status"] == "open"
+
+
+@pytest.mark.asyncio
+async def test_organize_and_sync_keeps_loop_open_without_completion_terms(tmp_path):
+    log_dir = tmp_path / "raw_events"
+    _write_spool(
+        log_dir,
+        "2026-04-16",
+        [
+            _event(
+                "origin_raw",
+                datetime(2026, 4, 16, 20, 0, tzinfo=JST),
+                app_name="Code.exe",
+                window_title="Manifest permissions TODO",
+                project_name="self-growth-app",
+                file_name="manifest.json",
+                metadata={"openLoopHint": True},
+            )
+        ],
+    )
+    _write_spool(
+        log_dir,
+        "2026-04-17",
+        [
+            _event(
+                "resolver_raw",
+                datetime(2026, 4, 17, 9, 0, tzinfo=JST),
+                app_name="Code.exe",
+                window_title="Manifest permissions を確認",
+                project_name="self-growth-app",
+                file_name="manifest.json",
+            )
+        ],
+    )
+    existing_loop = _existing_open_loop(
+        "Manifest permissions TODO",
+        date_key="2026-04-16",
+        linked_session_ids=["session_origin"],
+    )
+    api_client = _FakeApiClient(
+        existing_sessions=[
+            _existing_session(
+                "session_origin",
+                date_key="2026-04-16",
+                started_at="2026-04-16T20:00:00+09:00",
+                ended_at="2026-04-16T20:00:00+09:00",
+                title="Code.exe / Manifest permissions TODO",
+                search_keywords=["Manifest permissions TODO", "manifest.json"],
+                open_loop_ids=[existing_loop["id"]],
+            )
+        ],
+        existing_open_loops=[existing_loop],
+    )
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=log_dir,
+        processing_config=_processing_disabled(),
+    )
+
+    await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    saved_loops = {
+        loop["id"]: loop for loop in api_client.put_open_loops_calls[0]["openLoops"]
+    }
+    assert saved_loops[existing_loop["id"]]["status"] == "open"
+
+
+@pytest.mark.asyncio
+async def test_organize_and_sync_preserves_closed_and_ignored_open_loop_statuses(tmp_path):
+    log_dir = tmp_path / "raw_events"
+    _write_spool(
+        log_dir,
+        "2026-04-16",
+        [
+            _event(
+                "closed_raw",
+                datetime(2026, 4, 16, 20, 0, tzinfo=JST),
+                app_name="Code.exe",
+                window_title="Done manifest TODO",
+                project_name="self-growth-app",
+                file_name="manifest.json",
+                metadata={"openLoopHint": True},
+            ),
+            _event(
+                "ignored_raw",
+                datetime(2026, 4, 16, 20, 10, tzinfo=JST),
+                app_name="Code.exe",
+                window_title="Skipped checklist TODO",
+                project_name="self-growth-app",
+                file_name="notes.md",
+                metadata={"openLoopHint": True},
+            ),
+        ],
+    )
+    closed_loop = _existing_open_loop(
+        "Done manifest TODO",
+        date_key="2026-04-16",
+        linked_session_ids=["session_closed"],
+        status="closed",
+    )
+    ignored_loop = _existing_open_loop(
+        "Skipped checklist TODO",
+        date_key="2026-04-16",
+        linked_session_ids=["session_ignored"],
+        status="ignored",
+    )
+    api_client = _FakeApiClient(
+        existing_sessions=[
+            _existing_session(
+                "session_closed",
+                date_key="2026-04-16",
+                started_at="2026-04-16T20:00:00+09:00",
+                ended_at="2026-04-16T20:00:00+09:00",
+                title="Code.exe / Done manifest TODO",
+                search_keywords=["Done manifest TODO", "manifest.json"],
+                open_loop_ids=[closed_loop["id"]],
+            ),
+            _existing_session(
+                "session_ignored",
+                date_key="2026-04-16",
+                started_at="2026-04-16T20:10:00+09:00",
+                ended_at="2026-04-16T20:10:00+09:00",
+                title="Code.exe / Skipped checklist TODO",
+                search_keywords=["Skipped checklist TODO", "notes.md"],
+                open_loop_ids=[ignored_loop["id"]],
+            ),
+        ],
+        existing_open_loops=[closed_loop, ignored_loop],
+    )
+    organizer = ActionLogOrganizer(
+        device_id="device_1",
+        api_client=api_client,
+        raw_event_log_dir=log_dir,
+        processing_config=_processing_disabled(),
+    )
+
+    await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    saved_loops = {
+        loop["id"]: loop for loop in api_client.put_open_loops_calls[0]["openLoops"]
+    }
+    assert saved_loops[closed_loop["id"]]["status"] == "closed"
+    assert saved_loops[ignored_loop["id"]]["status"] == "ignored"
 
 
 @pytest.mark.asyncio

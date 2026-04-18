@@ -713,6 +713,48 @@ describe('activity log routes', () => {
     expect(screen.getAllByText('20分')).toHaveLength(2)
   })
 
+  it('does not show closed open loops on the day view', async () => {
+    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
+      createOpenLoop('open_loop_open', {
+        id: 'open_loop_open',
+        title: 'Still open loop',
+      }),
+      createOpenLoop('open_loop_closed', {
+        id: 'open_loop_closed',
+        title: 'Resolved loop',
+        status: 'closed',
+      }),
+    ])
+
+    renderApp('/records/activity/day/2026-04-17')
+    await settleApp()
+
+    expect(screen.getByText('Still open loop')).toBeInTheDocument()
+    expect(screen.queryByText('Resolved loop')).not.toBeInTheDocument()
+  })
+
+  it('does not show closed open loops on the weekly detail view', async () => {
+    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
+      createOpenLoop('open_loop_open', {
+        id: 'open_loop_open',
+        title: 'Weekly open loop',
+        dateKey: '2026-04-14',
+      }),
+      createOpenLoop('open_loop_closed', {
+        id: 'open_loop_closed',
+        title: 'Weekly resolved loop',
+        dateKey: '2026-04-15',
+        status: 'closed',
+      }),
+    ])
+
+    renderApp('/records/activity/review/week?weekKey=2026-W16')
+    await settleApp()
+
+    expect(screen.getByText('Weekly open loop')).toBeInTheDocument()
+    expect(screen.queryByText('Weekly resolved loop')).not.toBeInTheDocument()
+  })
+
   it.skip('filters search results on the search screen', async () => {
     renderApp('/records/activity/search')
     await settleApp()

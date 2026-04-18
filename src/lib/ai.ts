@@ -831,6 +831,10 @@ function sanitizeOpenLoopsForActionLogAi(openLoops: OpenLoop[]) {
   }))
 }
 
+function filterOpenOpenLoops(openLoops: OpenLoop[]) {
+  return openLoops.filter((openLoop) => openLoop.status === 'open')
+}
+
 function buildDailyActivityLogFallback(params: {
   dateKey: string
   sessions: ActivitySession[]
@@ -893,9 +897,10 @@ export async function generateDailyActivityLog(params: {
 }): Promise<GeneratedDailyActivityLog> {
   const { aiConfig, settings, dateKey, sessions, openLoops } = params
   const openAiConfig = aiConfig.providers.openai
+  const visibleOpenLoops = filterOpenOpenLoops(openLoops)
 
   if (!settings.aiEnabled || !openAiConfig.apiKey || isOffline()) {
-    return buildDailyActivityLogFallback({ dateKey, sessions, openLoops })
+    return buildDailyActivityLogFallback({ dateKey, sessions, openLoops: visibleOpenLoops })
   }
 
   try {
@@ -912,7 +917,7 @@ export async function generateDailyActivityLog(params: {
         task: 'daily_activity_log',
         dateKey,
         sessions: sanitizeSessionsForActionLogAi(sessions),
-        openLoops: sanitizeOpenLoopsForActionLogAi(openLoops),
+        openLoops: sanitizeOpenLoopsForActionLogAi(visibleOpenLoops),
       },
       systemPrompt: DAILY_ACTIVITY_LOG_SYSTEM_PROMPT,
     })
@@ -925,7 +930,7 @@ export async function generateDailyActivityLog(params: {
       reviewQuestions: parsed.reviewQuestions,
     }
   } catch {
-    return buildDailyActivityLogFallback({ dateKey, sessions, openLoops })
+    return buildDailyActivityLogFallback({ dateKey, sessions, openLoops: visibleOpenLoops })
   }
 }
 
@@ -939,9 +944,15 @@ export async function generateWeeklyActivityReview(params: {
 }): Promise<GeneratedWeeklyActivityReview> {
   const { aiConfig, settings, weekKey, sessions, openLoops, categoryDurations } = params
   const openAiConfig = aiConfig.providers.openai
+  const visibleOpenLoops = filterOpenOpenLoops(openLoops)
 
   if (!settings.aiEnabled || !openAiConfig.apiKey || isOffline()) {
-    return buildWeeklyActivityReviewFallback({ weekKey, sessions, openLoops, categoryDurations })
+    return buildWeeklyActivityReviewFallback({
+      weekKey,
+      sessions,
+      openLoops: visibleOpenLoops,
+      categoryDurations,
+    })
   }
 
   try {
@@ -958,7 +969,7 @@ export async function generateWeeklyActivityReview(params: {
         weekKey,
         categoryDurations,
         sessions: sanitizeSessionsForActionLogAi(sessions),
-        openLoops: sanitizeOpenLoopsForActionLogAi(openLoops),
+        openLoops: sanitizeOpenLoopsForActionLogAi(visibleOpenLoops),
       },
       systemPrompt: WEEKLY_ACTIVITY_REVIEW_SYSTEM_PROMPT,
     })
@@ -970,7 +981,12 @@ export async function generateWeeklyActivityReview(params: {
       focusThemes: parsed.focusThemes,
     }
   } catch {
-    return buildWeeklyActivityReviewFallback({ weekKey, sessions, openLoops, categoryDurations })
+    return buildWeeklyActivityReviewFallback({
+      weekKey,
+      sessions,
+      openLoops: visibleOpenLoops,
+      categoryDurations,
+    })
   }
 }
 
