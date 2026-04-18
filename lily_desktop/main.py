@@ -784,6 +784,7 @@ class App:
                 ),
                 api_client=self.api_client,
                 processing_config=self.config.activity_processing,
+                openai_api_key=self.config.openai.api_key,
                 logger_instance=logger,
             )
         return self.action_log_organizer

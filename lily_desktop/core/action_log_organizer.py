@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 
+from ai.openai_client import request_openai_json_with_usage
 from ai.provider_chat import (
     build_text_chat_request,
     extract_chat_response_text,
@@ -22,6 +23,7 @@ from core.activity_capture_service import _RAW_EVENT_LOG_DIR
 JST = timezone(timedelta(hours=9))
 SESSION_GAP_SECONDS = 5 * 60
 HTTP_TIMEOUT_SECONDS = 30.0
+OPENAI_BATCH_SIZE = 8
 DEFAULT_ACTIVITY_PROCESSING_CONFIG = {
     "enabled": True,
     "provider": "ollama",
@@ -34,6 +36,56 @@ _LEARNING_HINTS = ("docs", "developer", "tutorial", "article", "reference", "gui
 _OPEN_LOOP_HINTS = ("todo", "wip", "fixme", "unfinished", "残", "未完")
 
 logger = logging.getLogger(__name__)
+
+_ORGANIZER_OPENAI_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "sessions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "sessionId": {"type": "string"},
+                    "title": {"type": "string"},
+                    "primaryCategory": {"type": "string"},
+                    "activityKinds": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "summary": {"type": "string"},
+                    "searchKeywords": {
+                        "type": "array",
+                        "items": {"type": "string"},
+                    },
+                    "openLoops": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "additionalProperties": False,
+                            "properties": {
+                                "title": {"type": "string"},
+                                "description": {"type": ["string", "null"]},
+                            },
+                            "required": ["title", "description"],
+                        },
+                    },
+                },
+                "required": [
+                    "sessionId",
+                    "title",
+                    "primaryCategory",
+                    "activityKinds",
+                    "summary",
+                    "searchKeywords",
+                    "openLoops",
+                ],
+            },
+        }
+    },
+    "required": ["sessions"],
+}
 
 
 def _now_jst() -> datetime:
@@ -149,6 +201,7 @@ class ActionLogOrganizer:
         api_client,
         raw_event_log_dir: Path | None = None,
         processing_config: Any | None = None,
+        openai_api_key: str = "",
         logger_instance: logging.Logger | None = None,
     ) -> None:
         self.device_id = device_id
@@ -170,6 +223,7 @@ class ActionLogOrganizer:
                 }
             )
         self.processing_config = config
+        self.openai_api_key = openai_api_key
         self._logger = logger_instance or logger
 
     def load_recent_raw_events(self, *, now: datetime | None = None) -> list[dict[str, Any]]:
@@ -284,6 +338,94 @@ class ActionLogOrganizer:
             "eventTypeCounts": dict(event_type_counts),
         }
 
+    def _candidate_match_key(self, candidate: dict[str, Any]) -> tuple[Any, ...]:
+        return _session_hidden_match_key(
+            {
+                "deviceId": self.device_id,
+                "dateKey": candidate["dateKey"],
+                "startedAt": candidate["startedAt"],
+                "appNames": candidate["appNames"],
+                "domains": candidate["domains"],
+                "projectNames": candidate["projectNames"],
+            }
+        )
+
+    def _candidate_payload(self, candidate: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "sessionId": candidate["id"],
+            "timeRange": f'{candidate["startedAt"]} - {candidate["endedAt"]}',
+            "appNames": candidate["appNames"],
+            "domains": candidate["domains"],
+            "projectNames": candidate["projectNames"],
+            "representativeTitle": candidate["representativeTitle"],
+            "eventTypeCounts": candidate["eventTypeCounts"],
+        }
+
+    def _build_reused_enrichment(
+        self,
+        session: dict[str, Any],
+        existing_open_loops_by_id: dict[str, dict[str, Any]],
+    ) -> dict[str, Any]:
+        open_loops: list[dict[str, Any]] = []
+        for loop_id in session.get("openLoopIds", []):
+            loop = existing_open_loops_by_id.get(str(loop_id))
+            if not loop:
+                continue
+            title = str(loop.get("title") or "").strip()
+            if not title:
+                continue
+            description = str(loop.get("description") or "").strip() or None
+            open_loops.append(
+                {
+                    "title": title,
+                    "description": description,
+                }
+            )
+
+        return {
+            "title": str(session.get("title") or "").strip(),
+            "primaryCategory": str(session.get("primaryCategory") or "").strip(),
+            "activityKinds": [
+                str(value).strip()
+                for value in session.get("activityKinds", [])
+                if str(value).strip()
+            ],
+            "summary": str(session.get("summary") or "").strip(),
+            "searchKeywords": [
+                str(value).strip()
+                for value in session.get("searchKeywords", [])
+                if str(value).strip()
+            ],
+            "openLoops": open_loops,
+        }
+
+    def _build_reused_results(
+        self,
+        candidates: list[dict[str, Any]],
+        existing_sessions: list[dict[str, Any]],
+        existing_open_loops_by_id: dict[str, dict[str, Any]],
+    ) -> tuple[dict[str, dict[str, Any]], list[dict[str, Any]]]:
+        existing_session_by_match_key: dict[tuple[Any, ...], dict[str, Any]] = {}
+        for session in existing_sessions:
+            match_key = _session_hidden_match_key(session)
+            existing_session_by_match_key.setdefault(match_key, session)
+
+        reused_results: dict[str, dict[str, Any]] = {}
+        uncached_candidates: list[dict[str, Any]] = []
+        for candidate in candidates:
+            existing_session = existing_session_by_match_key.get(
+                self._candidate_match_key(candidate)
+            )
+            if existing_session is None:
+                uncached_candidates.append(candidate)
+                continue
+            reused_results[candidate["id"]] = self._build_reused_enrichment(
+                existing_session,
+                existing_open_loops_by_id,
+            )
+
+        return reused_results, uncached_candidates
+
     async def organize_and_sync(self, *, now: datetime | None = None) -> None:
         reference = _normalize_jst(now)
         managed_date_keys = _managed_date_keys(reference)
@@ -292,6 +434,10 @@ class ActionLogOrganizer:
         from_date = managed_date_keys[0]
         to_date = managed_date_keys[-1]
         existing_sessions = await self.api_client.get_action_log_sessions(from_date, to_date)
+        existing_open_loops = await self.api_client.get_action_log_open_loops(from_date, to_date)
+        existing_open_loops_by_id = {
+            str(open_loop.get("id")): open_loop for open_loop in existing_open_loops
+        }
         existing_hidden_by_id = {
             str(session.get("id")): bool(session.get("hidden", False))
             for session in existing_sessions
@@ -304,7 +450,22 @@ class ActionLogOrganizer:
                 or bool(session.get("hidden", False))
             )
 
-        llm_results = await self._organize_with_llm(candidates) if candidates else {}
+        reused_results, uncached_candidates = self._build_reused_results(
+            candidates,
+            existing_sessions,
+            existing_open_loops_by_id,
+        )
+        ai_results, batch_count = (
+            await self._organize_with_llm(uncached_candidates) if uncached_candidates else ({}, 0)
+        )
+        llm_results = {**reused_results, **ai_results}
+        self._logger.info(
+            "Action-log organizer stats: total_candidates=%d reused_count=%d ai_count=%d batch_count=%d",
+            len(candidates),
+            len(reused_results),
+            len(ai_results),
+            batch_count,
+        )
         sessions: list[dict[str, Any]] = []
         open_loops: list[dict[str, Any]] = []
         organized_at = reference.isoformat(timespec="seconds")
@@ -316,16 +477,7 @@ class ActionLogOrganizer:
                 updated_at=organized_at,
             )
             open_loops.extend(session_open_loops)
-            candidate_match_key = _session_hidden_match_key(
-                {
-                    "deviceId": self.device_id,
-                    "dateKey": candidate["dateKey"],
-                    "startedAt": candidate["startedAt"],
-                    "appNames": candidate["appNames"],
-                    "domains": candidate["domains"],
-                    "projectNames": candidate["projectNames"],
-                }
-            )
+            candidate_match_key = self._candidate_match_key(candidate)
             sessions.append(
                 {
                     "id": candidate["id"],
@@ -368,9 +520,14 @@ class ActionLogOrganizer:
     async def _organize_with_llm(
         self,
         candidates: list[dict[str, Any]],
-    ) -> dict[str, dict[str, Any]]:
+    ) -> tuple[dict[str, dict[str, Any]], int]:
         if not self.processing_config["enabled"]:
-            return {}
+            return {}, 0
+
+        provider = normalize_provider(self.processing_config["provider"], default="ollama")
+        if provider == "openai":
+            return await self._organize_with_openai(candidates)
+        return await self._organize_with_ollama(candidates)
 
         sessions_by_date: dict[str, list[dict[str, Any]]] = {}
         for candidate in candidates:
@@ -402,6 +559,7 @@ class ActionLogOrganizer:
             '"openLoops":[{"title":"...","description":"..."}]}]}. '
             "Keep titles and summaries concise natural Japanese. Use only the provided metadata."
         )
+        text = ""
         try:
             request = build_text_chat_request(
                 provider=normalize_provider(self.processing_config["provider"], default="ollama"),
@@ -454,8 +612,154 @@ class ActionLogOrganizer:
                 }
             return results
         except Exception:
-            self._logger.exception("Action-log organizer LLM enrichment failed")
+            if text:
+                self._logger.exception(
+                    "Action-log organizer LLM enrichment failed; raw response:\n%s",
+                    text,
+                )
+            else:
+                self._logger.exception("Action-log organizer LLM enrichment failed")
             return {}
+
+    def _build_llm_input_payload(self, candidates: list[dict[str, Any]]) -> dict[str, Any]:
+        sessions_by_date: dict[str, list[dict[str, Any]]] = {}
+        for candidate in candidates:
+            sessions_by_date.setdefault(candidate["dateKey"], []).append(
+                self._candidate_payload(candidate)
+            )
+        return {
+            "dateSessions": [
+                {"dateKey": date_key, "sessions": sessions}
+                for date_key, sessions in sorted(sessions_by_date.items())
+            ]
+        }
+
+    def _parse_enrichment_payload(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, dict[str, Any]]:
+        results: dict[str, dict[str, Any]] = {}
+        for session in payload.get("sessions", []):
+            session_id = str(session.get("sessionId") or "").strip()
+            if not session_id:
+                continue
+            results[session_id] = {
+                "title": str(session.get("title") or "").strip(),
+                "primaryCategory": str(session.get("primaryCategory") or "").strip(),
+                "activityKinds": [
+                    str(value).strip()
+                    for value in session.get("activityKinds", [])
+                    if str(value).strip()
+                ],
+                "summary": str(session.get("summary") or "").strip(),
+                "searchKeywords": [
+                    str(value).strip()
+                    for value in session.get("searchKeywords", [])
+                    if str(value).strip()
+                ],
+                "openLoops": [
+                    {
+                        "title": str(item.get("title") or "").strip(),
+                        "description": str(item.get("description") or "").strip() or None,
+                    }
+                    for item in session.get("openLoops", [])
+                    if str(item.get("title") or "").strip()
+                ],
+            }
+        return results
+
+    async def _organize_with_openai(
+        self,
+        candidates: list[dict[str, Any]],
+    ) -> tuple[dict[str, dict[str, Any]], int]:
+        if not self.openai_api_key:
+            self._logger.info("Action-log organizer OpenAI skipped: OPENAI_API_KEY unavailable")
+            return {}, 0
+
+        system_prompt = (
+            "You organize desktop activity sessions for a Japanese self-growth app called Lily. "
+            "Return only valid JSON that strictly matches the provided schema. "
+            "Write concise natural Japanese titles and summaries. "
+            "Use only the provided metadata."
+        )
+        results: dict[str, dict[str, Any]] = {}
+        batch_count = 0
+
+        for start in range(0, len(candidates), OPENAI_BATCH_SIZE):
+            batch = candidates[start : start + OPENAI_BATCH_SIZE]
+            batch_count += 1
+            try:
+                response = await request_openai_json_with_usage(
+                    api_key=self.openai_api_key,
+                    model=self.processing_config["model"],
+                    schema_name="action_log_organizer",
+                    schema=_ORGANIZER_OPENAI_SCHEMA,
+                    input_payload=self._build_llm_input_payload(batch),
+                    system_prompt=system_prompt,
+                    max_output_tokens=self.processing_config["max_completion_tokens"],
+                )
+            except Exception:
+                self._logger.exception("Action-log organizer OpenAI enrichment failed")
+                continue
+
+            usage = response.usage or {}
+            self._logger.info(
+                "Action-log organizer OpenAI usage: model=%s batch_size=%d input_tokens=%s output_tokens=%s total_tokens=%s",
+                self.processing_config["model"],
+                len(batch),
+                usage.get("input_tokens", "unknown"),
+                usage.get("output_tokens", "unknown"),
+                usage.get("total_tokens", "unknown"),
+            )
+            results.update(self._parse_enrichment_payload(response.output))
+
+        return results, batch_count
+
+    async def _organize_with_ollama(
+        self,
+        candidates: list[dict[str, Any]],
+    ) -> tuple[dict[str, dict[str, Any]], int]:
+        user_text = json.dumps(self._build_llm_input_payload(candidates), ensure_ascii=False)
+        system_prompt = (
+            "You organize desktop activity sessions. Return only JSON with this shape: "
+            '{"sessions":[{"sessionId":"...","title":"...","primaryCategory":"蟄ｦ鄙竹莉穂ｺ弓蛛･蠎ｷ|逕滓ｴｻ|蜑ｵ菴忿蟇ｾ莠ｺ|螽ｯ讌ｽ|縺昴・莉・,'
+            '"activityKinds":["..."],"summary":"...","searchKeywords":["..."],'
+            '"openLoops":[{"title":"...","description":"..."}]}]}. '
+            "Keep titles and summaries concise natural Japanese. Use only the provided metadata."
+        )
+        text = ""
+        try:
+            request = build_text_chat_request(
+                provider="ollama",
+                api_key="",
+                model=self.processing_config["model"],
+                base_url=self.processing_config["base_url"],
+                system_prompt=system_prompt,
+                user_text=user_text,
+                max_completion_tokens=self.processing_config["max_completion_tokens"],
+            )
+            request.body["think"] = False
+            request.body["format"] = "json"
+            async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as client:
+                response = await client.post(
+                    request.url,
+                    headers=request.headers,
+                    json=request.body,
+                )
+            if not response.is_success:
+                raise RuntimeError(f"Activity organizer failed: {response.status_code}")
+            text = extract_chat_response_text("ollama", response.json())
+            payload = self._parse_json(text)
+            return self._parse_enrichment_payload(payload), 1
+        except Exception:
+            if text:
+                self._logger.exception(
+                    "Action-log organizer LLM enrichment failed; raw response:\n%s",
+                    text,
+                )
+            else:
+                self._logger.exception("Action-log organizer LLM enrichment failed")
+            return {}, 1
 
     def _parse_json(self, raw: str) -> dict[str, Any]:
         cleaned = raw.strip()

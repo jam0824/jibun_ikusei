@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -12,6 +13,16 @@ from core.action_log_organizer import ActionLogOrganizer
 
 
 JST = timezone(timedelta(hours=9))
+
+
+def _processing_disabled():
+    return SimpleNamespace(
+        enabled=False,
+        provider="ollama",
+        base_url="http://127.0.0.1:11434",
+        model="gemma4:e4b",
+        max_completion_tokens=400,
+    )
 
 
 def _event(
@@ -65,19 +76,27 @@ def _write_spool(log_dir: Path, date_key: str, events: list[dict]) -> None:
 @dataclass
 class _FakeApiClient:
     existing_sessions: list[dict] | None = None
+    existing_open_loops: list[dict] | None = None
     put_sessions_calls: list[dict] | None = None
     put_open_loops_calls: list[dict] | None = None
     get_session_calls: list[tuple[str, str]] | None = None
+    get_open_loop_calls: list[tuple[str, str]] | None = None
 
     def __post_init__(self) -> None:
         self.existing_sessions = list(self.existing_sessions or [])
+        self.existing_open_loops = list(self.existing_open_loops or [])
         self.put_sessions_calls = []
         self.put_open_loops_calls = []
         self.get_session_calls = []
+        self.get_open_loop_calls = []
 
     async def get_action_log_sessions(self, from_date: str, to_date: str) -> list[dict]:
         self.get_session_calls.append((from_date, to_date))
         return list(self.existing_sessions)
+
+    async def get_action_log_open_loops(self, from_date: str, to_date: str) -> list[dict]:
+        self.get_open_loop_calls.append((from_date, to_date))
+        return list(self.existing_open_loops)
 
     async def put_action_log_sessions(self, payload: dict) -> dict:
         self.put_sessions_calls.append(payload)
@@ -268,6 +287,7 @@ async def test_organize_and_sync_reads_only_today_and_yesterday_and_preserves_hi
         device_id="device_1",
         api_client=api_client,
         raw_event_log_dir=log_dir,
+        processing_config=_processing_disabled(),
     )
 
     await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
@@ -402,6 +422,7 @@ async def test_organize_and_sync_full_replaces_today_and_yesterday_even_without_
         device_id="device_1",
         api_client=api_client,
         raw_event_log_dir=tmp_path / "raw_events",
+        processing_config=_processing_disabled(),
     )
 
     await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
