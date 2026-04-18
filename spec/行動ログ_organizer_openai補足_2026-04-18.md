@@ -8,6 +8,7 @@
 - checked-in の organizer 既定値は `activity_processing.provider=openai`、`activity_processing.model=gpt-5-nano`、`activity_processing.max_completion_tokens=1200` とする。
 - `activity_processing.base_url` は既存どおり保持するが、provider が `openai` のとき organizer では使わない。
 - 日次 `DailyActivityLog` と週次 `WeeklyActivityReview` の backfill は従来どおり `gpt-5.4` を使う。
+- 日次 `DailyActivityLog` と週次 `WeeklyActivityReview` の backfill は `max_output_tokens=1600` を明示して送る。
 
 ## OpenAI organizer 契約
 

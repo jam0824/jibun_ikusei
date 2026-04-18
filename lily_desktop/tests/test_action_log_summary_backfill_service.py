@@ -97,7 +97,10 @@ async def test_backfill_generates_missing_yesterday_daily_and_previous_week_week
         },
     )
 
+    request_calls: list[dict] = []
+
     async def _fake_request_openai_json(**kwargs):
+        request_calls.append(kwargs)
         if kwargs["schema_name"] == "daily_activity_log":
             return {
                 "summary": "リリィは、前日の調査の流れを静かに見つめていた。",
@@ -127,6 +130,10 @@ async def test_backfill_generates_missing_yesterday_daily_and_previous_week_week
         ("2026-04-16", "2026-04-16"),
         ("2026-04-06", "2026-04-12"),
     ]
+    assert request_calls[0]["schema_name"] == "daily_activity_log"
+    assert request_calls[0]["max_output_tokens"] == 1600
+    assert request_calls[1]["schema_name"] == "weekly_activity_review"
+    assert request_calls[1]["max_output_tokens"] == 1600
     assert api_client.put_daily_calls[0]["id"] == "daily_2026-04-16"
     assert api_client.put_daily_calls[0]["summary"] == "リリィは、前日の調査の流れを静かに見つめていた。"
     assert api_client.put_weekly_calls[0]["id"] == "weekly_2026-W15"

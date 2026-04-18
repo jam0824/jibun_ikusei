@@ -10,6 +10,8 @@ from ai.openai_client import request_openai_json
 logger = logging.getLogger(__name__)
 JST = timezone(timedelta(hours=9))
 OPENAI_MODEL = "gpt-5.4"
+DAILY_ACTIVITY_LOG_MAX_OUTPUT_TOKENS = 1600
+WEEKLY_ACTIVITY_REVIEW_MAX_OUTPUT_TOKENS = 1600
 
 _DAILY_ACTIVITY_LOG_SCHEMA = {
     "type": "object",
@@ -229,6 +231,7 @@ class ActionLogSummaryBackfillService:
                 schema=_DAILY_ACTIVITY_LOG_SCHEMA,
                 input_payload=daily_input,
                 system_prompt=_DAILY_SYSTEM_PROMPT,
+                max_output_tokens=DAILY_ACTIVITY_LOG_MAX_OUTPUT_TOKENS,
             )
         except Exception:
             self._logger.exception("DailyActivityLog backfill fell back to template")
@@ -283,6 +286,7 @@ class ActionLogSummaryBackfillService:
                 schema=_WEEKLY_ACTIVITY_REVIEW_SCHEMA,
                 input_payload=weekly_input,
                 system_prompt=_WEEKLY_SYSTEM_PROMPT,
+                max_output_tokens=WEEKLY_ACTIVITY_REVIEW_MAX_OUTPUT_TOKENS,
             )
         except Exception:
             self._logger.exception("WeeklyActivityReview backfill fell back to template")
