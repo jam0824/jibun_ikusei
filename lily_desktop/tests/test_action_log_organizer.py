@@ -157,6 +157,57 @@ def test_candidate_sessions_group_nearby_events_into_one_session(tmp_path):
     assert sessions[0]["dateKey"] == "2026-04-17"
 
 
+def test_candidate_sessions_group_browser_processes_and_extension_by_domain(tmp_path):
+    organizer = _make_organizer(tmp_path)
+    events = [
+        _event(
+            "raw_1",
+            datetime(2026, 4, 17, 9, 0, tzinfo=JST),
+            app_name="chrome.exe",
+            window_title="Ancient Egypt - YouTube",
+        ),
+        _event(
+            "raw_2",
+            datetime(2026, 4, 17, 9, 0, 20, tzinfo=JST),
+            source="chrome_extension",
+            event_type="browser_page_changed",
+            url="https://www.youtube.com/watch?v=aircAruvnKk",
+            domain="www.youtube.com",
+            window_title="Ancient Egypt - YouTube",
+        ),
+        _event(
+            "raw_3",
+            datetime(2026, 4, 17, 9, 0, 40, tzinfo=JST),
+            event_type="heartbeat",
+            app_name="msedge.exe",
+            window_title="Ancient Egypt - YouTube",
+        ),
+        _event(
+            "raw_4",
+            datetime(2026, 4, 17, 9, 1, tzinfo=JST),
+            source="chrome_extension",
+            event_type="browser_page_changed",
+            url="https://docs.python.org/3/",
+            domain="docs.python.org",
+            window_title="Python Docs",
+        ),
+        _event(
+            "raw_5",
+            datetime(2026, 4, 17, 9, 1, 20, tzinfo=JST),
+            event_type="heartbeat",
+            app_name="firefox.exe",
+            window_title="Python Docs",
+        ),
+    ]
+
+    sessions = organizer.build_candidate_sessions(events)
+
+    assert [session["rawEventIds"] for session in sessions] == [
+        ["raw_1", "raw_2", "raw_3"],
+        ["raw_4", "raw_5"],
+    ]
+
+
 def test_candidate_sessions_split_on_gap_idle_app_domain_and_file_context(tmp_path):
     organizer = _make_organizer(tmp_path)
     events = [
@@ -404,7 +455,7 @@ async def test_organize_and_sync_full_replaces_today_and_yesterday_even_when_one
         device_id="device_1",
         api_client=api_client,
         raw_event_log_dir=log_dir,
-        processing_config=_processing_ollama(),
+        processing_config=_processing_disabled(),
     )
 
     await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))

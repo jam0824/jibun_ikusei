@@ -19,6 +19,7 @@ from ai.provider_chat import (
     normalize_provider,
 )
 from core.activity_capture_service import _RAW_EVENT_LOG_DIR
+from core.browser_processes import is_browser_process
 
 
 JST = timezone(timedelta(hours=9))
@@ -131,15 +132,19 @@ def _first_seen(values: list[str]) -> list[str]:
 
 
 def _browser_like(event: dict[str, Any]) -> bool:
-    return bool(event.get("domain")) or event.get("source") == "chrome_extension"
+    return (
+        is_browser_process(event.get("appName"))
+        or bool(event.get("domain"))
+        or event.get("source") == "chrome_extension"
+    )
 
 
 def _event_app_key(event: dict[str, Any]) -> str:
     app_name = str(event.get("appName") or "").strip()
-    if app_name:
-        return app_name
     if _browser_like(event):
         return "__browser__"
+    if app_name:
+        return app_name
     return ""
 
 

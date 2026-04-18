@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 
 from PIL import ImageGrab
 
+from core.browser_processes import BROWSER_PROCESS_NAMES, is_browser_process
+
 logger = logging.getLogger(__name__)
 
 # ------------------------------------------------------------------
@@ -37,11 +39,7 @@ _EXCLUDED_TITLE_PATTERNS: list[re.Pattern] = [
     re.compile(r"(?i)2fa"),
 ]
 
-# ブラウザのプロセス名
-_BROWSER_PROCESSES: set[str] = {
-    "chrome.exe", "msedge.exe", "firefox.exe", "brave.exe",
-    "opera.exe", "vivaldi.exe", "arc.exe",
-}
+_BROWSER_PROCESSES = BROWSER_PROCESS_NAMES
 
 # ブラウザで除外するドメイン（部分一致）
 _EXCLUDED_DOMAINS: list[str] = [
@@ -113,7 +111,7 @@ def get_active_window_info() -> ActiveWindowInfo:
                     ctypes.windll.kernel32.CloseHandle(h_proc)
 
         # ブラウザ判定
-        info.is_browser = info.app_name.lower() in _BROWSER_PROCESSES
+        info.is_browser = is_browser_process(info.app_name)
 
         # ブラウザの場合、タイトルからドメインを推定
         if info.is_browser:
