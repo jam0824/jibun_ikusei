@@ -2,6 +2,7 @@ import { CalendarDays, Clock3, Search, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ActivityLogNav, RecordsSectionTabs } from '@/components/records-navigation'
+import type { ActivitySession } from '@/domain/action-log-types'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Switch } from '@/components/ui'
 import { formatDateTime } from '@/lib/date'
@@ -213,6 +214,79 @@ function OpenLoopsCard({
   )
 }
 
+function buildSessionPrimaryText(session: ActivitySession) {
+  return session.summary?.trim() || session.title
+}
+
+function buildSessionSecondaryText(session: ActivitySession) {
+  if (session.summary?.trim()) {
+    return session.title
+  }
+
+  return [session.primaryCategory, session.appNames.join(', '), session.domains.join(', ')]
+    .filter(Boolean)
+    .join(' / ')
+}
+
+function buildSessionMetaText(session: ActivitySession) {
+  if (!session.summary?.trim()) {
+    return ''
+  }
+
+  return [session.primaryCategory, session.appNames.join(', ')].filter(Boolean).join(' / ')
+}
+
+function SessionListItem({
+  session,
+  onToggleSessionHidden,
+  timeStartFormat,
+  timeEndFormat,
+  className,
+  showClockIcon = false,
+}: {
+  session: ActivitySession
+  onToggleSessionHidden?: (sessionId: string, dateKey: string, hidden: boolean) => void
+  timeStartFormat: string
+  timeEndFormat: string
+  className: string
+  showClockIcon?: boolean
+}) {
+  const primaryText = buildSessionPrimaryText(session)
+  const secondaryText = buildSessionSecondaryText(session)
+  const metaText = buildSessionMetaText(session)
+
+  return (
+    <div data-testid={`activity-session-${session.id}`} className={className}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-base font-semibold leading-7 text-slate-900">{primaryText}</div>
+          <div className="mt-2 text-xs text-slate-500">
+            {formatDateTime(session.startedAt, timeStartFormat)} -{' '}
+            {formatDateTime(session.endedAt, timeEndFormat)}
+          </div>
+          {secondaryText ? <div className="mt-2 text-sm text-slate-600">{secondaryText}</div> : null}
+          {metaText ? <div className="mt-1 text-xs text-slate-500">{metaText}</div> : null}
+        </div>
+        <div className="flex items-center gap-2">
+          {showClockIcon ? <Clock3 className="mt-0.5 h-4 w-4 text-slate-400" /> : null}
+          {onToggleSessionHidden ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-label={
+                session.hidden ? `Restore session ${session.id}` : `Hide session ${session.id}`
+              }
+              onClick={() => onToggleSessionHidden(session.id, session.dateKey, !session.hidden)}
+            >
+              {session.hidden ? '再表示' : '非表示'}
+            </Button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SessionsOrEventsCard({
   day,
   viewMode,
@@ -275,42 +349,15 @@ function SessionsOrEventsCard({
         ) : (
           <div className="space-y-3">
             {visibleSessions.map((session) => (
-              <div key={session.id} className="rounded-2xl border border-slate-200 bg-white px-4 py-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-slate-900">{session.title}</div>
-                    <div className="mt-1 text-xs text-slate-500">
-                      {formatDateTime(session.startedAt, 'HH:mm')} -{' '}
-                      {formatDateTime(session.endedAt, 'HH:mm')}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Clock3 className="mt-0.5 h-4 w-4 text-slate-400" />
-                    {onToggleSessionHidden ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        aria-label={
-                          session.hidden
-                            ? `Restore session ${session.id}`
-                            : `Hide session ${session.id}`
-                        }
-                        onClick={() =>
-                          onToggleSessionHidden(session.id, session.dateKey, !session.hidden)
-                        }
-                      >
-                        非表示
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="mt-2 text-sm text-slate-600">
-                  {[session.primaryCategory, session.appNames.join(', ')].filter(Boolean).join(' / ')}
-                </div>
-                {session.summary ? (
-                  <div className="mt-2 text-sm text-slate-600">{session.summary}</div>
-                ) : null}
-              </div>
+              <SessionListItem
+                key={session.id}
+                session={session}
+                onToggleSessionHidden={onToggleSessionHidden}
+                timeStartFormat="HH:mm"
+                timeEndFormat="HH:mm"
+                className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                showClockIcon
+              />
             ))}
           </div>
         )}
@@ -1066,32 +1113,16 @@ function SearchView() {
                 ) : (
                   <div className="space-y-3">
                     {results.sessions.map((session) => (
-                      <div key={session.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="text-sm font-semibold text-slate-900">{session.title}</div>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            aria-label={
-                              session.hidden
-                                ? `Restore session ${session.id}`
-                                : `Hide session ${session.id}`
-                            }
-                            onClick={() =>
-                              void handleToggleSessionHidden(session.id, session.dateKey, !session.hidden)
-                            }
-                          >
-                            {session.hidden ? '再表示' : '非表示'}
-                          </Button>
-                        </div>
-                        <div className="mt-1 text-xs text-slate-500">
-                          {formatDateTime(session.startedAt, 'M/d HH:mm')} -{' '}
-                          {formatDateTime(session.endedAt, 'HH:mm')}
-                        </div>
-                        {session.summary ? (
-                          <div className="mt-2 text-sm text-slate-600">{session.summary}</div>
-                        ) : null}
-                      </div>
+                      <SessionListItem
+                        key={session.id}
+                        session={session}
+                        onToggleSessionHidden={(sessionId, dateKey, hidden) => {
+                          void handleToggleSessionHidden(sessionId, dateKey, hidden)
+                        }}
+                        timeStartFormat="M/d HH:mm"
+                        timeEndFormat="HH:mm"
+                        className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+                      />
                     ))}
                   </div>
                 )}

@@ -203,6 +203,12 @@
         "filename": "lily_playful_05.png",
         "description": "いたずらっぽい表情、ウィンクしている、舌を出している（バリエーション5）"
       }
+    ],
+    "sorry": [
+      {
+        "filename": "lily_sorry_01.png",
+        "description": "sorry（バリエーション1）"
+      }
     ]
   },
   "max_per_category": 5
