@@ -602,10 +602,60 @@
 
 ---
 
+## Phase 9 follow-up: 日次ログ3段化と30分まとめ統合
+
+### 目的
+
+- [ ] `DailyActivityLog` を `その日のまとめ / クエストクリア状況まとめ / 健康状況まとめ` の 3 本立てへ拡張する
+- [ ] `session` 表示で 30 分まとめを `DailyActivityLog` の下、session timeline の上に統合する
+- [ ] `situation_logs` を長期保存対象へ切り替える
+
+### 実装対象
+
+- [ ] `DailyActivityLog` に `questSummary` と `healthSummary` を追加する
+- [ ] `today/day` の `session` 表示で `SituationLog` を最新順に表示する
+- [ ] `today/day` の `event` 表示では `SituationLog` を出さない
+- [ ] `today/day` で `OpenLoop` 表示を外す
+- [ ] カレンダーセルは `DailyActivityLog.summary` だけを表示する
+- [ ] `situation_logs` の TTL を撤廃する
+- [ ] export bundle に `situationLogs` を含める
+- [ ] 期間 delete で `SituationLog` も削除対象に含める
+
+### 先に書く failing test
+
+- [ ] `DailyActivityLog` の 3 本まとめが `summary -> questSummary -> healthSummary` の順で表示されるテスト
+- [ ] `session` 表示で `SituationLog` が `timestamp` 降順に出るテスト
+- [ ] `event` 表示では `SituationLog` が出ないテスト
+- [ ] `today/day` で `OpenLoop` が表示されないテスト
+- [ ] カレンダーセルに `DailyActivityLog.summary` だけが出るテスト
+- [ ] export bundle に `situationLogs` が含まれるテスト
+- [ ] `DELETE /action-log/range` が `SituationLog` も削除対象に含めるテスト
+
+### 実装メモ
+
+- [ ] `summary`, `questSummary`, `healthSummary` はすべて JST 同日データを入力にし、`gpt-5.4` で生成する
+- [ ] `questSummary` は `QuestCompletion` と関連 `Quest` 情報、`healthSummary` は `health-data` を主入力にする
+- [ ] 3 本ともリリィ観察日記風の地の文でそろえる
+- [ ] `mainThemes` / `reviewQuestions` は保持してもよいが、day 画面の必須表示にはしない
+
+### 完了条件
+
+- [ ] day 画面の表示順が仕様どおりに揃う
+- [ ] event 画面に 30 分まとめが混ざらない
+- [ ] `situation_logs` が期間削除・export の対象まで含めて長期保存仕様に沿う
+
+### 自己レビュー項目
+
+- [ ] spec と TODO と実装方針にズレがないか
+- [ ] JST 基準の日付集計が `questSummary` / `healthSummary` でも守られているか
+- [ ] `situation_logs` の保持変更が privacy 導線と矛盾していないか
+
+---
+
 ## 最終チェック
 
 - [x] Phase 0 完了後に停止するルールが TODO に明記されている
 - [x] 各フェーズに `目的 / 実装対象 / 先に書く failing test / 実装メモ / 完了条件 / 自己レビュー項目` が揃っている
-- [x] `RawEvent / ActivitySession / DailyActivityLog / WeeklyActivityReview / Activity Capture Service` が明記されている
+- [x] `RawEvent / ActivitySession / DailyActivityLog / WeeklyActivityReview / SituationLog / Activity Capture Service` が明記されている
 - [x] `Chrome Extension -> Desktop -> Server` の責務分離が TODO に反映されている
 - [x] PWA 正本 / desktop ハブの方針が TODO に反映されている

@@ -160,7 +160,7 @@ function DailySummaryCard({ day }: { day: ActivityDayViewData }) {
 
   return (
     <Card>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-5">
         <div className="flex items-center justify-between gap-3">
           <div>
             <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -170,28 +170,54 @@ function DailySummaryCard({ day }: { day: ActivityDayViewData }) {
           </div>
           <Badge tone="soft">{day.dailyLog.dateKey}</Badge>
         </div>
-        <p className="text-sm leading-6 text-slate-600">{day.dailyLog.summary}</p>
-        {day.dailyLog.mainThemes.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {day.dailyLog.mainThemes.map((theme) => (
-              <Badge key={theme} tone="browsing">
-                {theme}
-              </Badge>
-            ))}
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-slate-900">その日のまとめ</div>
+            <p className="text-sm leading-6 text-slate-600">{day.dailyLog.summary}</p>
           </div>
-        ) : null}
-        {day.dailyLog.reviewQuestions.length > 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-            <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              振り返りの問い
-            </div>
-            <div className="mt-2 space-y-2 text-sm text-slate-600">
-              {day.dailyLog.reviewQuestions.map((question) => (
-                <div key={question}>{question}</div>
-              ))}
-            </div>
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-slate-900">クエストクリア状況まとめ</div>
+            <p className="text-sm leading-6 text-slate-600">{day.dailyLog.questSummary}</p>
           </div>
-        ) : null}
+          <div className="space-y-2">
+            <div className="text-sm font-semibold text-slate-900">健康状況まとめ</div>
+            <p className="text-sm leading-6 text-slate-600">{day.dailyLog.healthSummary}</p>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function SituationLogCard({
+  situationLogs,
+}: {
+  situationLogs: ActivityDayViewData['situationLogs']
+}) {
+  if (situationLogs.length === 0) {
+    return null
+  }
+
+  return (
+    <Card>
+      <CardContent className="space-y-4">
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            SituationLog
+          </div>
+          <div className="mt-1 text-lg font-bold text-slate-900">30分まとめ</div>
+        </div>
+        <div className="space-y-3">
+          {situationLogs.map((situationLog) => (
+            <div
+              key={situationLog.timestamp}
+              className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
+            >
+              <div className="text-xs text-slate-500">{formatDateTime(situationLog.timestamp, 'HH:mm')}</div>
+              <div className="mt-2 text-sm leading-6 text-slate-600">{situationLog.summary}</div>
+            </div>
+          ))}
+        </div>
       </CardContent>
     </Card>
   )
@@ -627,6 +653,7 @@ function TodayOrDayView({
         sessions: sessionTimeline.items,
         rawEvents: eventTimeline.items,
         dailyLog: dayShell.dailyLog,
+        situationLogs: dayShell.situationLogs,
         openLoops: dayShell.openLoops,
       }
     : null
@@ -741,14 +768,17 @@ function TodayOrDayView({
             <DailySummaryCard day={day} />
             <ManualNotePlaceholder />
             {viewMode === 'session' ? (
-              <label className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <span className="text-sm font-semibold text-slate-700">hidden session を含める</span>
-                <Switch
-                  checked={includeHiddenSessions}
-                  onCheckedChange={setIncludeHiddenSessions}
-                  aria-label="Include hidden sessions in timeline"
-                />
-              </label>
+              <>
+                <SituationLogCard situationLogs={day.situationLogs} />
+                <label className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
+                  <span className="text-sm font-semibold text-slate-700">hidden session を含める</span>
+                  <Switch
+                    checked={includeHiddenSessions}
+                    onCheckedChange={setIncludeHiddenSessions}
+                    aria-label="Include hidden sessions in timeline"
+                  />
+                </label>
+              </>
             ) : null}
             <SessionsOrEventsCard
               sessions={sessionTimeline.items}
@@ -761,7 +791,6 @@ function TodayOrDayView({
               onLoadMoreSessions={loadMoreSessions}
               onLoadMoreEvents={loadMoreEvents}
             />
-            <OpenLoopsCard openLoops={day.openLoops} />
           </>
         ) : null}
       </div>
@@ -866,13 +895,6 @@ function CalendarView() {
                     </div>
                     <div className="text-sm text-slate-600">
                       {day.dailyLog?.summary ?? 'この日のまとめはまだ生成されていません。'}
-                    </div>
-                    <div className="flex flex-wrap gap-2">
-                      {(day.dailyLog?.mainThemes ?? []).map((theme) => (
-                        <Badge key={`${day.dateKey}_${theme}`} tone="soft">
-                          {theme}
-                        </Badge>
-                      ))}
                     </div>
                   </CardContent>
                 </button>

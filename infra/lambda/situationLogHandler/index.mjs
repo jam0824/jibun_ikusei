@@ -1,8 +1,6 @@
 import { QueryCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { db, TABLE_NAME, getUserId, response, parseBody } from "/opt/nodejs/utils.mjs";
 
-const TTL_DAYS = 31;
-
 export const handler = async (event) => {
   const userId = getUserId(event);
   const pk = `user#${userId}`;
@@ -41,7 +39,6 @@ export const handler = async (event) => {
         return response(400, { error: "summary and timestamp are required" });
       }
 
-      const ttl = Math.floor(Date.now() / 1000) + TTL_DAYS * 86400;
       const shortId = crypto.randomUUID().slice(0, 8);
 
       await db.send(new PutCommand({
@@ -49,7 +46,6 @@ export const handler = async (event) => {
         Item: {
           PK: pk,
           SK: `SITUATION#${body.timestamp}#${shortId}`,
-          ttl,
           summary: body.summary,
           timestamp: body.timestamp,
           details: body.details ?? {},

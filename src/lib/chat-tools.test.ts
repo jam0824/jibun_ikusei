@@ -603,6 +603,8 @@ describe('get_messages_and_logs', () => {
         id: 'daily_2026-03-29',
         dateKey: '2026-03-29',
         summary: 'リリィは、この日の調査の流れを静かに見つめていた。',
+        questSummary: 'リリィは、この日のクエスト達成を静かに見守っていた。',
+        healthSummary: 'リリィは、この日の健康記録をそっとたどっていた。',
         mainThemes: ['Chrome拡張'],
         noteIds: [],
         openLoopIds: ['loop_1'],

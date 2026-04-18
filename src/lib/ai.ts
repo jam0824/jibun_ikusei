@@ -5,6 +5,7 @@ import type {
 } from '@/domain/action-log-types'
 import {
   buildTemplateSkillResolution,
+  getActiveCompletions,
   getProviderConfig,
   getQuestTypeLabel,
   hasUsableAi,
@@ -17,11 +18,13 @@ import type {
   LocalUser,
   PersonalSkillDictionary,
   Quest,
+  QuestCompletion,
   Skill,
   SkillResolutionResult,
   UserSettings,
 } from '@/domain/types'
-import type { ActivityLogEntry } from '@/lib/api-client'
+import type { ActivityLogEntry, HealthDataEntry } from '@/lib/api-client'
+import { getDayKey } from '@/lib/date'
 import { createOfflineError, isOffline } from '@/lib/network'
 
 const skillResolutionSchema = z.object({
@@ -47,6 +50,8 @@ const weeklyReflectionSchema = z.object({
 
 const dailyActivityLogSchema = z.object({
   summary: z.string().min(1),
+  questSummary: z.string().min(1),
+  healthSummary: z.string().min(1),
   mainThemes: z.array(z.string().min(1)).min(1).max(5),
   reviewQuestions: z.array(z.string().min(1)).min(1).max(3),
 })
@@ -116,6 +121,8 @@ const dailyActivityLogJsonSchema = {
   additionalProperties: false,
   properties: {
     summary: { type: 'string' },
+    questSummary: { type: 'string' },
+    healthSummary: { type: 'string' },
     mainThemes: {
       type: 'array',
       items: { type: 'string' },
@@ -129,7 +136,7 @@ const dailyActivityLogJsonSchema = {
       maxItems: 3,
     },
   },
-  required: ['summary', 'mainThemes', 'reviewQuestions'],
+  required: ['summary', 'questSummary', 'healthSummary', 'mainThemes', 'reviewQuestions'],
 }
 
 const weeklyActivityReviewJsonSchema = {
@@ -172,8 +179,8 @@ const DAILY_ACTIVITY_LOG_SYSTEM_PROMPT = [
   'The prose must read like リリィがユーザーをそっと見守って書いた観察日記風の地の文.',
   '直接話しかける口調は禁止.',
   'Do not use second-person coaching language.',
-  'Generate only summary, mainThemes, and reviewQuestions.',
-  'Use only the provided ActivitySession and OpenLoop summaries.',
+  'Generate summary, questSummary, healthSummary, mainThemes, and reviewQuestions.',
+  'Use the provided ActivitySession, OpenLoop, QuestCompletion, Quest, and health-data records only.',
 ].join(' ')
 
 const WEEKLY_ACTIVITY_REVIEW_SYSTEM_PROMPT = [
@@ -709,6 +716,8 @@ export async function generateWeeklyReflection(params: {
 export interface GeneratedDailyActivityLog {
   provider: 'openai' | 'template'
   summary: string
+  questSummary: string
+  healthSummary: string
   mainThemes: string[]
   reviewQuestions: string[]
 }
@@ -831,14 +840,107 @@ function sanitizeOpenLoopsForActionLogAi(openLoops: OpenLoop[]) {
   }))
 }
 
+function sanitizeQuestsForActionLogAi(quests: Quest[]) {
+  return quests.map((quest) => ({
+    id: quest.id,
+    title: quest.title,
+    category: quest.category ?? null,
+    questType: getQuestTypeLabel(quest),
+    status: quest.status,
+  }))
+}
+
+function sanitizeCompletionsForActionLogAi(completions: QuestCompletion[], questMap: Map<string, Quest>) {
+  return completions.map((completion) => ({
+    id: completion.id,
+    completedAt: completion.completedAt,
+    questId: completion.questId,
+    questTitle: questMap.get(completion.questId)?.title ?? null,
+    note: completion.note ?? null,
+  }))
+}
+
+function sanitizeHealthDataForActionLogAi(healthData: HealthDataEntry[]) {
+  return healthData.map((entry) => ({
+    date: entry.date,
+    time: entry.time,
+    weight_kg: entry.weight_kg,
+    body_fat_pct: entry.body_fat_pct,
+    source: entry.source ?? null,
+  }))
+}
+
 function filterOpenOpenLoops(openLoops: OpenLoop[]) {
   return openLoops.filter((openLoop) => openLoop.status === 'open')
+}
+
+function filterDateCompletions(dateKey: string, completions: QuestCompletion[]) {
+  return getActiveCompletions(completions)
+    .filter((completion) => getDayKey(completion.completedAt) === dateKey)
+    .sort((left, right) => right.completedAt.localeCompare(left.completedAt))
+}
+
+function filterDateHealthData(dateKey: string, healthData: HealthDataEntry[]) {
+  return [...healthData]
+    .filter((entry) => entry.date === dateKey)
+    .sort((left, right) => `${right.date}T${right.time}`.localeCompare(`${left.date}T${left.time}`))
+}
+
+function buildQuestSummaryFallback(params: {
+  dateKey: string
+  quests: Quest[]
+  completions: QuestCompletion[]
+}) {
+  const questMap = new Map(params.quests.map((quest) => [quest.id, quest] as const))
+  const sameDayCompletions = filterDateCompletions(params.dateKey, params.completions)
+
+  if (sameDayCompletions.length === 0) {
+    return 'リリィは、この日のクエスト達成は控えめで、次の一歩へ向けた静かな余白が残っていたと見ている。'
+  }
+
+  const topQuestTitle = questMap.get(sameDayCompletions[0]?.questId ?? '')?.title ?? 'いくつかのクエスト'
+  const uniqueTitles = uniqueNonEmpty(
+    sameDayCompletions.map((completion) => questMap.get(completion.questId)?.title),
+    3,
+  )
+
+  return [
+    `リリィは、この日は${sameDayCompletions.length}件の達成があり、`,
+    `${topQuestTitle}のような区切りが静かに積み重なっていたと見ている。`,
+    uniqueTitles.length > 1 ? `${uniqueTitles.slice(1).join('や')}にも小さな足跡が残っていた。` : '',
+  ].join('')
+}
+
+function buildHealthSummaryFallback(params: {
+  dateKey: string
+  healthData: HealthDataEntry[]
+}) {
+  const sameDayHealthData = filterDateHealthData(params.dateKey, params.healthData)
+  const latest = sameDayHealthData[0]
+
+  if (!latest) {
+    return 'リリィは、この日の健康記録は多く語らず、静かな余白のまま一日の輪郭を見守っていた。'
+  }
+
+  const details = [
+    latest.weight_kg != null ? `体重 ${latest.weight_kg}kg` : undefined,
+    latest.body_fat_pct != null ? `体脂肪率 ${latest.body_fat_pct}%` : undefined,
+  ].filter(Boolean)
+
+  if (details.length === 0) {
+    return 'リリィは、この日の健康記録が静かに残り、暮らしの輪郭をそっと伝えていたと見ている。'
+  }
+
+  return `リリィは、この日の健康記録に${details.join('、')}といった輪郭が残り、朝の様子をそっと伝えていたと見ている。`
 }
 
 function buildDailyActivityLogFallback(params: {
   dateKey: string
   sessions: ActivitySession[]
   openLoops: OpenLoop[]
+  quests: Quest[]
+  completions: QuestCompletion[]
+  healthData: HealthDataEntry[]
 }): GeneratedDailyActivityLog {
   const themes = collectThemes(params.sessions, params.openLoops, 3)
   const themeText = themes.length > 0 ? themes.join('や') : '静かな整理'
@@ -854,6 +956,15 @@ function buildDailyActivityLogFallback(params: {
         ? `${openLoop.title}のように、まだ続きを気にしていることも残っていた。`
         : '区切りをつけながら静かに進めていた。',
     ].join(''),
+    questSummary: buildQuestSummaryFallback({
+      dateKey: params.dateKey,
+      quests: params.quests,
+      completions: params.completions,
+    }),
+    healthSummary: buildHealthSummaryFallback({
+      dateKey: params.dateKey,
+      healthData: params.healthData,
+    }),
     mainThemes: themes.length > 0 ? themes : ['静かな整理'],
     reviewQuestions: [
       `${focus}のあとに、次の一歩として見えていたものは何だったか。`,
@@ -894,18 +1005,35 @@ export async function generateDailyActivityLog(params: {
   dateKey: string
   sessions: ActivitySession[]
   openLoops: OpenLoop[]
+  quests: Quest[]
+  completions: QuestCompletion[]
+  healthData: HealthDataEntry[]
 }): Promise<GeneratedDailyActivityLog> {
-  const { aiConfig, settings, dateKey, sessions, openLoops } = params
+  const { aiConfig, settings, dateKey, sessions, openLoops, quests, completions, healthData } = params
   const openAiConfig = aiConfig.providers.openai
   const visibleOpenLoops = filterOpenOpenLoops(openLoops)
+  const sameDayCompletions = filterDateCompletions(dateKey, completions)
+  const sameDayHealthData = filterDateHealthData(dateKey, healthData)
+  const relatedQuestIds = new Set(sameDayCompletions.map((completion) => completion.questId))
+  const relatedQuests = quests.filter((quest) => relatedQuestIds.has(quest.id))
 
   if (!settings.aiEnabled || !openAiConfig.apiKey || isOffline()) {
-    return buildDailyActivityLogFallback({ dateKey, sessions, openLoops: visibleOpenLoops })
+    return buildDailyActivityLogFallback({
+      dateKey,
+      sessions,
+      openLoops: visibleOpenLoops,
+      quests: relatedQuests,
+      completions: sameDayCompletions,
+      healthData: sameDayHealthData,
+    })
   }
 
   try {
+    const questMap = new Map(relatedQuests.map((quest) => [quest.id, quest] as const))
     const result = await requestOpenAiJson<{
       summary: string
+      questSummary: string
+      healthSummary: string
       mainThemes: string[]
       reviewQuestions: string[]
     }>({
@@ -918,6 +1046,9 @@ export async function generateDailyActivityLog(params: {
         dateKey,
         sessions: sanitizeSessionsForActionLogAi(sessions),
         openLoops: sanitizeOpenLoopsForActionLogAi(visibleOpenLoops),
+        quests: sanitizeQuestsForActionLogAi(relatedQuests),
+        completions: sanitizeCompletionsForActionLogAi(sameDayCompletions, questMap),
+        healthData: sanitizeHealthDataForActionLogAi(sameDayHealthData),
       },
       systemPrompt: DAILY_ACTIVITY_LOG_SYSTEM_PROMPT,
     })
@@ -926,11 +1057,20 @@ export async function generateDailyActivityLog(params: {
     return {
       provider: 'openai',
       summary: parsed.summary,
+      questSummary: parsed.questSummary,
+      healthSummary: parsed.healthSummary,
       mainThemes: parsed.mainThemes,
       reviewQuestions: parsed.reviewQuestions,
     }
   } catch {
-    return buildDailyActivityLogFallback({ dateKey, sessions, openLoops: visibleOpenLoops })
+    return buildDailyActivityLogFallback({
+      dateKey,
+      sessions,
+      openLoops: visibleOpenLoops,
+      quests: relatedQuests,
+      completions: sameDayCompletions,
+      healthData: sameDayHealthData,
+    })
   }
 }
 

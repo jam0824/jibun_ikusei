@@ -1,6 +1,8 @@
 ﻿import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hydratePersistedState } from '@/domain/logic'
 import type { ActivitySession, OpenLoop } from '@/domain/action-log-types'
+import type { Quest, QuestCompletion } from '@/domain/types'
+import type { HealthDataEntry } from '@/lib/api-client'
 import {
   buildLilyChatSystemPrompt,
   generateDailyActivityLog,
@@ -45,6 +47,54 @@ function createOpenLoop(id = 'open_loop_1', overrides: Partial<OpenLoop> = {}): 
     description: 'manifest の権限設定を次に確認する。',
     status: 'open',
     linkedSessionIds: ['session_1'],
+    ...overrides,
+  }
+}
+
+function createQuest(id = 'quest_1', overrides: Partial<Quest> = {}): Quest {
+  return {
+    id,
+    title: '朝の読書',
+    description: '静かな読書時間',
+    questType: 'repeatable',
+    xpReward: 5,
+    category: '学習',
+    skillMappingMode: 'ask_each_time',
+    cooldownMinutes: 0,
+    dailyCompletionCap: 10,
+    status: 'active',
+    privacyMode: 'normal',
+    pinned: false,
+    createdAt: '2026-04-17T07:00:00+09:00',
+    updatedAt: '2026-04-17T07:00:00+09:00',
+    ...overrides,
+  }
+}
+
+function createCompletion(
+  id = 'completion_1',
+  questId = 'quest_1',
+  overrides: Partial<QuestCompletion> = {},
+): QuestCompletion {
+  return {
+    id,
+    questId,
+    clientRequestId: `req_${id}`,
+    completedAt: '2026-04-17T08:00:00+09:00',
+    userXpAwarded: 5,
+    skillResolutionStatus: 'resolved',
+    createdAt: '2026-04-17T08:00:00+09:00',
+    ...overrides,
+  }
+}
+
+function createHealthDataEntry(overrides: Partial<HealthDataEntry> = {}): HealthDataEntry {
+  return {
+    date: '2026-04-17',
+    time: '07:10',
+    weight_kg: 61.2,
+    body_fat_pct: 18.1,
+    source: 'health-planet',
     ...overrides,
   }
 }
@@ -305,7 +355,7 @@ describe('ai adapter', () => {
               content: [
                 {
                   type: 'output_text',
-                  text: '{"summary":"リリィは、この日は拡張の調査に静かな集中が集まっていたと見ている。","mainThemes":["Chrome拡張","調査"],"reviewQuestions":["次に確認したい仕様はどこだったか。","調査のあとに着手したい一歩は何か。"]}',
+                  text: '{"summary":"リリィは、この日は拡張の調査に静かな集中が集まっていたと見ている。","questSummary":"リリィは、この日のクエスト達成が小さな区切りをいくつか残していたと見ている。","healthSummary":"リリィは、この日の健康記録が静かに朝の輪郭を残していたと見ている。","mainThemes":["Chrome拡張","調査"],"reviewQuestions":["次に確認したい仕様はどこだったか。","調査のあとに着手したい一歩は何か。"]}',
                 },
               ],
             },
@@ -321,15 +371,22 @@ describe('ai adapter', () => {
       dateKey: '2026-04-17',
       sessions: [createActivitySession('session_1')],
       openLoops: [createOpenLoop()],
+      quests: [createQuest()],
+      completions: [createCompletion()],
+      healthData: [createHealthDataEntry()],
     })
 
     expect(result.provider).toBe('openai')
     expect(result.summary).toContain('リリィは')
+    expect(result.questSummary).toContain('リリィは')
+    expect(result.healthSummary).toContain('リリィは')
 
     const body = JSON.parse(String((fetchMock.mock.calls[0] as [string, RequestInit])[1].body))
     expect(body.model).toBe('gpt-5.4')
     expect(body.input[0].content[0].text).toContain('観察日記風')
     expect(body.input[0].content[0].text).toContain('直接話しかける口調は禁止')
+    expect(body.input[0].content[0].text).toContain('QuestCompletion')
+    expect(body.input[0].content[0].text).toContain('health-data')
   })
 
   it('generates WeeklyActivityReview with gpt-5.4 and observation-diary prompt', async () => {
@@ -401,12 +458,38 @@ describe('ai adapter', () => {
       dateKey: '2026-04-17',
       sessions: [createActivitySession('session_1')],
       openLoops: [createOpenLoop()],
+      quests: [createQuest()],
+      completions: [createCompletion()],
+      healthData: [createHealthDataEntry()],
     })
 
     expect(result.provider).toBe('template')
     expect(result.summary).toContain('リリィ')
     expect(result.summary).not.toContain('あなた')
+    expect(result.questSummary).toContain('リリィ')
+    expect(result.healthSummary).toContain('リリィ')
     expect(result.reviewQuestions.length).toBeGreaterThan(0)
+  })
+
+  it('returns non-empty quest and health summaries even when same-day data is sparse', async () => {
+    const state = hydratePersistedState()
+    state.settings.aiEnabled = false
+
+    const result = await generateDailyActivityLog({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      dateKey: '2026-04-17',
+      sessions: [createActivitySession('session_1')],
+      openLoops: [],
+      quests: [],
+      completions: [],
+      healthData: [],
+    })
+
+    expect(result.questSummary.trim().length).toBeGreaterThan(0)
+    expect(result.healthSummary.trim().length).toBeGreaterThan(0)
+    expect(result.questSummary).toContain('リリィ')
+    expect(result.healthSummary).toContain('リリィ')
   })
 
   it('falls back to an observation-diary weekly review when OpenAI is unavailable', async () => {

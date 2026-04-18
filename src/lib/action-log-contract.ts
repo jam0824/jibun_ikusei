@@ -92,18 +92,38 @@ export const activitySessionSchema = z
   })
   .strict() satisfies z.ZodType<ActivitySession>
 
-export const dailyActivityLogSchema = z
+function buildLegacyQuestSummary(dateKey: string) {
+  return `リリィは、${dateKey}のクエスト達成の足跡を静かに見渡していた。`
+}
+
+function buildLegacyHealthSummary(dateKey: string) {
+  return `リリィは、${dateKey}の健康記録をそっとたどりながら一日の輪郭を見ていた。`
+}
+
+const dailyActivityLogBaseSchema = z
   .object({
     id: z.string().min(1),
     dateKey: dateKeySchema,
     summary: z.string().min(1),
+    questSummary: z.string().min(1).optional(),
+    healthSummary: z.string().min(1).optional(),
     mainThemes: z.array(z.string().min(1)),
     noteIds: z.array(z.string().min(1)),
     openLoopIds: z.array(z.string().min(1)),
     reviewQuestions: z.array(z.string().min(1)),
     generatedAt: jstRfc3339Schema,
   })
-  .strict() satisfies z.ZodType<DailyActivityLog>
+  .strict()
+
+export const dailyActivityLogSchema = dailyActivityLogBaseSchema.transform((log) => ({
+  ...log,
+  questSummary: log.questSummary?.trim() || buildLegacyQuestSummary(log.dateKey),
+  healthSummary: log.healthSummary?.trim() || buildLegacyHealthSummary(log.dateKey),
+})) satisfies z.ZodType<DailyActivityLog>
+
+export function normalizeDailyActivityLog(log: unknown): DailyActivityLog {
+  return dailyActivityLogSchema.parse(log)
+}
 
 export const weeklyActivityReviewSchema = z
   .object({

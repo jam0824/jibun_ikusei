@@ -14,6 +14,7 @@ import type { PersistedAppState, Quest, QuestCompletion } from '@/domain/types'
 import * as api from '@/lib/api-client'
 import * as ai from '@/lib/ai'
 import { useAppStore } from '@/store/app-store'
+import type { HealthDataEntry, SituationLogEntry } from '@/lib/api-client'
 
 function createQuest(id: string, title: string): Quest {
   const now = '2026-04-17T09:00:00+09:00'
@@ -122,6 +123,8 @@ function createDailyLog(dateKey = '2026-04-17', overrides: Partial<DailyActivity
     id: `daily_${dateKey}`,
     dateKey,
     summary: 'リリィは、この日の調査に静かな集中が集まっていたと見ている。',
+    questSummary: 'リリィは、この日のクエスト達成が小さな区切りをいくつか残していたと見ている。',
+    healthSummary: 'リリィは、この日の健康記録が静かに朝の輪郭を残していたと見ている。',
     mainThemes: ['Chrome拡張', '調査'],
     noteIds: [],
     openLoopIds: ['open_loop_1'],
@@ -157,6 +160,31 @@ function createOpenLoop(id = 'open_loop_1', overrides: Partial<OpenLoop> = {}): 
     description: 'manifest の権限設定を次に確認する。',
     status: 'open',
     linkedSessionIds: ['session_1'],
+    ...overrides,
+  }
+}
+
+function createHealthDataEntry(overrides: Partial<HealthDataEntry> = {}): HealthDataEntry {
+  return {
+    date: '2026-04-16',
+    time: '07:15',
+    weight_kg: 61.2,
+    body_fat_pct: 18.1,
+    source: 'health-planet',
+    ...overrides,
+  }
+}
+
+function createSituationLog(
+  timestamp = '2026-04-17T18:30:00+09:00',
+  overrides: Partial<SituationLogEntry> = {},
+): SituationLogEntry {
+  return {
+    summary: '直近30分は実装と確認を落ち着いて行き来していた。',
+    timestamp,
+    details: {
+      active_apps: ['Code', 'Chrome'],
+    },
     ...overrides,
   }
 }
@@ -380,9 +408,13 @@ describe('activity log routes', () => {
         dailyLogs: 1,
         weeklyReviews: 1,
         openLoops: 1,
+        situationLogs: 1,
       },
       deletionRequestId: 'delete_1',
     })
+    vi.spyOn(api, 'getCompletions').mockResolvedValue([
+      createCompletion('completion_yesterday', 'quest_today', '2026-04-16T08:30:00+09:00'),
+    ])
     vi.spyOn(api, 'getActionLogOpenLoops').mockResolvedValue([
       createOpenLoop(),
       createOpenLoop('open_loop_2', {
@@ -392,6 +424,7 @@ describe('activity log routes', () => {
       }),
     ])
     vi.spyOn(api, 'getBrowsingTimes').mockResolvedValue([])
+    vi.spyOn(api, 'getHealthData').mockResolvedValue([createHealthDataEntry()])
     vi.spyOn(api, 'getNutrition').mockResolvedValue({
       daily: null,
       breakfast: null,
@@ -399,10 +432,17 @@ describe('activity log routes', () => {
       dinner: null,
     })
     vi.spyOn(api, 'getFitbitData').mockResolvedValue([])
+    vi.spyOn(api, 'getQuests').mockResolvedValue([createQuest('quest_today', '今日の読書')])
+    vi.spyOn(api, 'getSituationLogs').mockResolvedValue([
+      createSituationLog('2026-04-17T18:00:00+09:00', { summary: '少し前の30分まとめ' }),
+      createSituationLog('2026-04-17T19:00:00+09:00', { summary: '最新の30分まとめ' }),
+    ])
 
     vi.spyOn(ai, 'generateDailyActivityLog').mockResolvedValue({
       provider: 'template',
       summary: 'リリィは、前日の調査の流れを静かに見つめていた。',
+      questSummary: 'リリィは、前日のクエスト達成が小さな区切りを作っていたと見ている。',
+      healthSummary: 'リリィは、前日の健康記録が朝の輪郭を静かに残していたと見ている。',
       mainThemes: ['Chrome拡張', '調査'],
       reviewQuestions: ['次に確認したい仕様はどこだったか。'],
     })
@@ -551,6 +591,35 @@ describe('activity log routes', () => {
     expect(api.putActionLogDailyActivityLog).not.toHaveBeenCalled()
   })
 
+  it('renders the three-part daily summary in order on day views', async () => {
+    renderApp('/records/activity/day/2026-04-17')
+    await settleApp()
+
+    const summary = screen.getByText('リリィは、この日の調査に静かな集中が集まっていたと見ている。')
+    const questSummary = screen.getByText(
+      'リリィは、この日のクエスト達成が小さな区切りをいくつか残していたと見ている。',
+    )
+    const healthSummary = screen.getByText(
+      'リリィは、この日の健康記録が静かに朝の輪郭を残していたと見ている。',
+    )
+
+    expect(summary.compareDocumentPosition(questSummary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(questSummary.compareDocumentPosition(healthSummary) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.queryByText('次に確認したい仕様はどこだったか。')).not.toBeInTheDocument()
+  })
+
+  it('renders same-day situation logs newest first only in session view', async () => {
+    renderApp('/records/activity/day/2026-04-17')
+    await settleApp()
+
+    const newest = screen.getByText('最新の30分まとめ')
+    const older = screen.getByText('少し前の30分まとめ')
+    const sessionTimeline = screen.getByText('セッション表示')
+
+    expect(newest.compareDocumentPosition(older) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(older.compareDocumentPosition(sessionTimeline) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+
   it('switches to raw event display when view=event is specified', async () => {
     renderApp('/records/activity/today?view=event')
     await settleApp()
@@ -559,6 +628,14 @@ describe('activity log routes', () => {
     expect(screen.getAllByText('Chrome / Manifest V3 - Chrome for Developers').length).toBeGreaterThan(0)
     expect(api.getActionLogRawEventsPage).toHaveBeenCalledTimes(1)
     expect(api.getActionLogSessionsPage).not.toHaveBeenCalled()
+  })
+
+  it('does not render situation logs in event view', async () => {
+    renderApp('/records/activity/today?view=event')
+    await settleApp()
+
+    expect(screen.queryByText('最新の30分まとめ')).not.toBeInTheDocument()
+    expect(screen.queryByText('少し前の30分まとめ')).not.toBeInTheDocument()
   })
 
   it('keeps the target date and session-event toggle in the same target row', async () => {
@@ -847,6 +924,15 @@ describe('activity log routes', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/records/activity/day/2026-04-03')
   })
 
+  it('shows only the daily summary text on calendar cells', async () => {
+    renderApp('/records/activity/calendar?month=2026-04')
+    await settleApp()
+
+    expect(screen.getByText('リリィは、この日の調査に静かな集中が集まっていたと見ている。')).toBeInTheDocument()
+    expect(screen.queryByText('Chrome拡張')).not.toBeInTheDocument()
+    expect(screen.queryByText('調査')).not.toBeInTheDocument()
+  })
+
   it('defaults calendar month to the current JST month and updates the month query from controls', async () => {
     renderApp('/records/activity/calendar')
     await settleApp()
@@ -1002,7 +1088,7 @@ describe('activity log routes', () => {
     expect(screen.getAllByText('20分')).toHaveLength(2)
   })
 
-  it('does not show closed open loops on the day view', async () => {
+  it('does not show open loops on the day view', async () => {
     vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
       createOpenLoop('open_loop_open', {
         id: 'open_loop_open',
@@ -1018,8 +1104,9 @@ describe('activity log routes', () => {
     renderApp('/records/activity/day/2026-04-17')
     await settleApp()
 
-    expect(screen.getByText('Still open loop')).toBeInTheDocument()
+    expect(screen.queryByText('Still open loop')).not.toBeInTheDocument()
     expect(screen.queryByText('Resolved loop')).not.toBeInTheDocument()
+    expect(screen.queryByText('途中になっていること')).not.toBeInTheDocument()
   })
 
   it('does not show closed open loops on the weekly detail view', async () => {
