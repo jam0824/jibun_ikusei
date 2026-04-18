@@ -37,6 +37,20 @@ DEFAULT_ACTIVITY_PROCESSING_CONFIG = {
 _CODE_APPS = ("code.exe", "cursor.exe", "wezterm", "powershell", "windows terminal", "git")
 _LEARNING_HINTS = ("docs", "developer", "tutorial", "article", "reference", "guide", "manual")
 _OPEN_LOOP_HINTS = ("todo", "wip", "fixme", "unfinished", "残", "未完")
+_OPEN_LOOP_COMPLETION_HINTS = (
+    "完了",
+    "対応完了",
+    "修正完了",
+    "解決",
+    "反映完了",
+    "送信完了",
+    "マージ完了",
+    "done",
+    "completed",
+    "fixed",
+    "resolved",
+    "merged",
+)
 _HANGUL_RE = re.compile(r"[\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]")
 _FORBIDDEN_TELEMETRY_TERMS = (
     "heartbeat",
@@ -182,6 +196,13 @@ def _normalize_title(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
 
 
+def _normalize_matching_text(value: Any) -> str:
+    normalized = re.sub(r"[^\w\u3040-\u30ff\u3400-\u9fff]+", " ", str(value or "").lower())
+    for hint in (*_OPEN_LOOP_HINTS, *_OPEN_LOOP_COMPLETION_HINTS):
+        normalized = normalized.replace(hint.lower(), " ")
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
 def _session_id(raw_event_ids: list[str]) -> str:
     digest = sha1("|".join(sorted(raw_event_ids)).encode("utf-8")).hexdigest()
     return f"session_{digest[:16]}"
@@ -258,6 +279,15 @@ def _session_hidden_match_key(session: dict[str, Any]) -> tuple[Any, ...]:
         _normalized_session_context(session.get("domains")),
         _normalized_session_context(session.get("projectNames")),
     )
+
+
+def _context_overlap(values: dict[str, Any], other_values: dict[str, Any]) -> bool:
+    for key in ("appNames", "domains", "projectNames", "searchKeywords"):
+        left = set(_normalized_session_context(values.get(key)))
+        right = set(_normalized_session_context(other_values.get(key)))
+        if left & right:
+            return True
+    return False
 
 
 class ActionLogOrganizer:
@@ -510,6 +540,137 @@ class ActionLogOrganizer:
 
         return reused_results, uncached_candidates
 
+    def _session_contains_completion_hint(
+        self,
+        session: dict[str, Any],
+        representative_title: str | None = None,
+    ) -> bool:
+        values = [
+            str(session.get("title") or ""),
+            str(session.get("summary") or ""),
+            str(representative_title or ""),
+            *[
+                str(value or "")
+                for value in session.get("searchKeywords", [])
+            ],
+        ]
+        haystack = " ".join(values).lower()
+        return any(hint.lower() in haystack for hint in _OPEN_LOOP_COMPLETION_HINTS)
+
+    def _loop_topic_matches_session(
+        self,
+        open_loop: dict[str, Any],
+        session: dict[str, Any],
+        representative_title: str | None = None,
+    ) -> bool:
+        loop_texts = [
+            _normalize_matching_text(open_loop.get("title")),
+            _normalize_matching_text(open_loop.get("description")),
+        ]
+        session_texts = [
+            _normalize_matching_text(session.get("title")),
+            _normalize_matching_text(session.get("summary")),
+            _normalize_matching_text(representative_title),
+            *[
+                _normalize_matching_text(value)
+                for value in session.get("searchKeywords", [])
+            ],
+        ]
+        compact_loop_texts = [value for value in loop_texts if value]
+        compact_session_texts = [value for value in session_texts if value]
+        return any(
+            left in right or right in left
+            for left in compact_loop_texts
+            for right in compact_session_texts
+        )
+
+    def _auto_close_open_loops(
+        self,
+        *,
+        open_loops: list[dict[str, Any]],
+        sessions: list[dict[str, Any]],
+        existing_sessions_by_id: dict[str, dict[str, Any]],
+        existing_open_loops: list[dict[str, Any]],
+        candidates_by_id: dict[str, dict[str, Any]],
+        managed_date_keys: list[str],
+        updated_at: str,
+    ) -> int:
+        open_loops_by_id = {
+            str(open_loop.get("id")): open_loop for open_loop in open_loops
+        }
+        session_lookup = {
+            **existing_sessions_by_id,
+            **{str(session.get("id")): session for session in sessions},
+        }
+        auto_closed_count = 0
+
+        for existing_open_loop in existing_open_loops:
+            if str(existing_open_loop.get("status") or "open") != "open":
+                continue
+            if str(existing_open_loop.get("dateKey") or "") not in managed_date_keys:
+                continue
+
+            loop_id = str(existing_open_loop.get("id") or "")
+            current_loop = open_loops_by_id.get(loop_id)
+            if not current_loop or str(current_loop.get("status") or "open") != "open":
+                continue
+
+            linked_session_ids = [
+                str(session_id)
+                for session_id in existing_open_loop.get("linkedSessionIds", [])
+                if str(session_id).strip()
+            ]
+            origin_session = next(
+                (
+                    session_lookup.get(session_id)
+                    for session_id in linked_session_ids
+                    if session_lookup.get(session_id) is not None
+                ),
+                None,
+            )
+            if origin_session is None:
+                continue
+
+            loop_created_at = str(
+                current_loop.get("createdAt")
+                or existing_open_loop.get("createdAt")
+                or ""
+            )
+            for session in sessions:
+                if str(session.get("startedAt") or "") <= loop_created_at:
+                    continue
+                if str(session.get("id") or "") in linked_session_ids:
+                    continue
+                if session.get("openLoopIds"):
+                    continue
+
+                candidate = candidates_by_id.get(str(session.get("id") or ""))
+                representative_title = (
+                    str(candidate.get("representativeTitle") or "")
+                    if candidate
+                    else ""
+                )
+                if not self._session_contains_completion_hint(
+                    session,
+                    representative_title,
+                ):
+                    continue
+                if not self._loop_topic_matches_session(
+                    current_loop,
+                    session,
+                    representative_title,
+                ):
+                    continue
+                if not _context_overlap(origin_session, session):
+                    continue
+
+                current_loop["status"] = "closed"
+                current_loop["updatedAt"] = updated_at
+                auto_closed_count += 1
+                break
+
+        return auto_closed_count
+
     async def organize_and_sync(self, *, now: datetime | None = None) -> None:
         reference = _normalize_jst(now)
         managed_date_keys = _managed_date_keys(reference)
@@ -519,6 +680,9 @@ class ActionLogOrganizer:
         to_date = managed_date_keys[-1]
         existing_sessions = await self.api_client.get_action_log_sessions(from_date, to_date)
         existing_open_loops = await self.api_client.get_action_log_open_loops(from_date, to_date)
+        existing_sessions_by_id = {
+            str(session.get("id")): session for session in existing_sessions
+        }
         existing_open_loops_by_id = {
             str(open_loop.get("id")): open_loop for open_loop in existing_open_loops
         }
@@ -545,6 +709,9 @@ class ActionLogOrganizer:
             else ({}, 0, False)
         )
         llm_results = {**reused_results, **ai_results}
+        candidates_by_id = {
+            str(candidate.get("id")): candidate for candidate in candidates
+        }
         sessions: list[dict[str, Any]] = []
         open_loops: list[dict[str, Any]] = []
         organized_at = reference.isoformat(timespec="seconds")
@@ -576,6 +743,7 @@ class ActionLogOrganizer:
                 candidate=candidate,
                 enriched=enriched,
                 updated_at=organized_at,
+                existing_open_loops_by_id=existing_open_loops_by_id,
             )
             open_loops.extend(session_open_loops)
             candidate_match_key = self._candidate_match_key(candidate)
@@ -603,19 +771,29 @@ class ActionLogOrganizer:
                     ),
                 }
             )
+        auto_closed_count = self._auto_close_open_loops(
+            open_loops=open_loops,
+            sessions=sessions,
+            existing_sessions_by_id=existing_sessions_by_id,
+            existing_open_loops=existing_open_loops,
+            candidates_by_id=candidates_by_id,
+            managed_date_keys=managed_date_keys,
+            updated_at=organized_at,
+        )
         effective_ai_count = max(
             0,
             len(ai_results) - language_rejected_count - telemetry_term_rejected_count,
         )
         fallback_count = len(candidates) - len(reused_results) - effective_ai_count
         self._logger.info(
-            "Action-log organizer stats: total_candidates=%d reused_count=%d ai_count=%d fallback_count=%d batch_count=%d budget_exhausted=%s language_rejected_count=%d telemetry_term_rejected_count=%d",
+            "Action-log organizer stats: total_candidates=%d reused_count=%d ai_count=%d fallback_count=%d batch_count=%d budget_exhausted=%s auto_closed_count=%d language_rejected_count=%d telemetry_term_rejected_count=%d",
             len(candidates),
             len(reused_results),
             effective_ai_count,
             fallback_count,
             batch_count,
             budget_exhausted,
+            auto_closed_count,
             language_rejected_count,
             telemetry_term_rejected_count,
         )
@@ -978,22 +1156,34 @@ class ActionLogOrganizer:
         candidate: dict[str, Any],
         enriched: dict[str, Any],
         updated_at: str,
+        existing_open_loops_by_id: dict[str, dict[str, Any]],
     ) -> list[dict[str, Any]]:
         open_loops: list[dict[str, Any]] = []
         for item in enriched.get("openLoops", []):
             title = str(item.get("title") or "").strip()
             if not title:
                 continue
+            loop_id = _open_loop_id(self.device_id, candidate["dateKey"], title)
+            existing_open_loop = existing_open_loops_by_id.get(loop_id)
+            status = str(existing_open_loop.get("status") or "open") if existing_open_loop else "open"
             open_loops.append(
                 {
-                    "id": _open_loop_id(self.device_id, candidate["dateKey"], title),
+                    "id": loop_id,
                     "createdAt": candidate["endedAt"],
-                    "updatedAt": updated_at,
+                    "updatedAt": (
+                        str(existing_open_loop.get("updatedAt") or updated_at)
+                        if existing_open_loop and status in {"closed", "ignored"}
+                        else updated_at
+                    ),
                     "dateKey": candidate["dateKey"],
                     "title": title,
                     "description": item.get("description") or None,
-                    "status": "open",
-                    "linkedSessionIds": [candidate["id"]],
+                    "status": status,
+                    "linkedSessionIds": (
+                        list(existing_open_loop.get("linkedSessionIds", [candidate["id"]]))
+                        if existing_open_loop and status in {"closed", "ignored"}
+                        else [candidate["id"]]
+                    ),
                 }
             )
         return open_loops

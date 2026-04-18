@@ -8,6 +8,8 @@ import { Badge, Button, Card, CardContent, Input, Switch } from '@/components/ui
 import { formatDateTime } from '@/lib/date'
 import { writeLastRecordsRoute } from '@/lib/records-route-state'
 import {
+  buildCompactSessionBlocks,
+  type CompactSessionBlock,
   type ActivityDayViewData,
   type ActivityLogViewMode,
   type ActivitySearchResult,
@@ -292,6 +294,37 @@ function SessionListItem({
   )
 }
 
+function CompactSessionListItem({
+  block,
+  timeStartFormat,
+  timeEndFormat,
+  className,
+}: {
+  block: CompactSessionBlock
+  timeStartFormat: string
+  timeEndFormat: string
+  className: string
+}) {
+  return (
+    <div data-testid={`activity-session-compact-${block.id}`} className={className}>
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-base font-semibold leading-7 text-slate-900">{block.primaryText}</div>
+          <div className="mt-2 text-xs text-slate-500">
+            {formatDateTime(block.startedAt, timeStartFormat)} - {formatDateTime(block.endedAt, timeEndFormat)}
+          </div>
+          {block.secondaryText ? <div className="mt-2 text-sm text-slate-600">{block.secondaryText}</div> : null}
+          {block.metaText ? <div className="mt-1 text-xs text-slate-500">{block.metaText}</div> : null}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge tone="soft">{block.sessionCount}件</Badge>
+          <Clock3 className="mt-0.5 h-4 w-4 text-slate-400" />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function TimelineCountAndMore({
   visibleCount,
   totalCount,
@@ -333,7 +366,11 @@ function SessionsOrEventsCard({
   onLoadMoreEvents: () => void
 }) {
   const visibleSessions = day.sessions.filter((session) => includeHidden || !session.hidden)
-  const displayedSessions = visibleSessions.slice(0, sessionVisibleCount)
+  const compactSessionBlocks = useMemo(
+    () => buildCompactSessionBlocks(visibleSessions),
+    [visibleSessions],
+  )
+  const displayedSessionBlocks = compactSessionBlocks.slice(0, sessionVisibleCount)
   const displayedEvents = day.rawEvents.slice(0, eventVisibleCount)
 
   return (
@@ -387,25 +424,35 @@ function SessionsOrEventsCard({
               />
             </div>
           )
-        ) : visibleSessions.length === 0 ? (
+        ) : compactSessionBlocks.length === 0 ? (
           <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
             表示できるセッションはありません。
           </div>
         ) : (
           <div className="space-y-3">
-            {displayedSessions.map((session) => (
-              <SessionListItem
-                key={session.id}
-                session={session}
-                timeStartFormat="HH:mm"
-                timeEndFormat="HH:mm"
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
-                showClockIcon
-              />
+            {displayedSessionBlocks.map((block) => (
+              block.kind === 'single' ? (
+                <SessionListItem
+                  key={block.id}
+                  session={block.representativeSession}
+                  timeStartFormat="HH:mm"
+                  timeEndFormat="HH:mm"
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                  showClockIcon
+                />
+              ) : (
+                <CompactSessionListItem
+                  key={block.id}
+                  block={block}
+                  timeStartFormat="HH:mm"
+                  timeEndFormat="HH:mm"
+                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3"
+                />
+              )
             ))}
             <TimelineCountAndMore
-              visibleCount={displayedSessions.length}
-              totalCount={visibleSessions.length}
+              visibleCount={displayedSessionBlocks.length}
+              totalCount={compactSessionBlocks.length}
               onLoadMore={onLoadMoreSessions}
             />
           </div>

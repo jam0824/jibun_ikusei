@@ -621,6 +621,16 @@ describe('get_messages_and_logs', () => {
         status: 'open',
         linkedSessionIds: ['session_visible'],
       },
+      {
+        id: 'loop_2',
+        createdAt: '2026-03-29T11:00:00+09:00',
+        updatedAt: '2026-03-29T11:05:00+09:00',
+        dateKey: '2026-03-29',
+        title: '完了した OpenLoop',
+        description: 'これは closed なので出さない。',
+        status: 'closed',
+        linkedSessionIds: ['session_visible'],
+      },
     ])
 
     const result = await executeTool('get_messages_and_logs', { type: 'activity_logs', date: '2026-03-29' }, createContext())
@@ -629,6 +639,7 @@ describe('get_messages_and_logs', () => {
     expect(result).toContain('Manifest V3 を確認していた。')
     expect(result).toContain('リリィは、この日の調査の流れを静かに見つめていた。')
     expect(result).toContain('権限設定の確認')
+    expect(result).not.toContain('完了した OpenLoop')
     expect(result).not.toContain('隠しセッション')
     expect(result).not.toContain('RawEvent')
   })

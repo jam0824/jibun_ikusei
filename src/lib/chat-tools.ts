@@ -1264,10 +1264,11 @@ async function executeGetMessagesAndLogs(args: ToolArgs, context: ToolContext): 
     }
 
     const visibleSessions = sessions.filter((session) => session.hidden !== true)
+    const visibleOpenLoops = openLoops.filter((openLoop) => openLoop.status === 'open')
     const items = [
       ...visibleSessions.map(formatActivitySessionLine),
       ...dailyLogs.map(formatDailyActivityLogLine),
-      ...openLoops.map(formatOpenLoopLine),
+      ...visibleOpenLoops.map(formatOpenLoopLine),
     ]
 
     if (items.length === 0) return `${filter.label} のアクティビティログがありません。`

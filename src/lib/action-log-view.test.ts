@@ -30,6 +30,7 @@ vi.mock('@/lib/ai', () => ({
 import * as api from '@/lib/api-client'
 import * as ai from '@/lib/ai'
 import {
+  buildCompactSessionBlocks,
   canDeleteActionLogRange,
   ensurePreviousDayDailyActivityLog,
   ensurePreviousWeekReviewForWeb,
@@ -261,6 +262,178 @@ describe('action log view orchestration', () => {
     expect(result.rawEvents.map((event) => event.id)).toEqual(['event_new', 'event_old'])
   })
 
+  it('compacts short alternating YouTube and Codex sessions into two blocks', async () => {
+    const blocks = buildCompactSessionBlocks([
+      createSession('youtube_1', {
+        startedAt: '2026-04-16T14:19:00+09:00',
+        endedAt: '2026-04-16T14:19:20+09:00',
+        title: 'YouTube page',
+        summary: undefined,
+        primaryCategory: '娯楽',
+        activityKinds: ['視聴'],
+        appNames: ['chrome.exe'],
+        domains: ['youtube.com'],
+      }),
+      createSession('codex_1', {
+        startedAt: '2026-04-16T14:18:40+09:00',
+        endedAt: '2026-04-16T14:18:55+09:00',
+        title: 'Codex task',
+        summary: undefined,
+        primaryCategory: '仕事',
+        activityKinds: ['開発'],
+        appNames: ['Codex.exe'],
+        domains: [],
+      }),
+      createSession('youtube_2', {
+        startedAt: '2026-04-16T14:18:10+09:00',
+        endedAt: '2026-04-16T14:18:30+09:00',
+        title: 'Ancient Egypt video',
+        summary: undefined,
+        primaryCategory: '娯楽',
+        activityKinds: ['視聴'],
+        appNames: ['chrome.exe'],
+        domains: ['youtube.com'],
+      }),
+      createSession('codex_2', {
+        startedAt: '2026-04-16T14:17:50+09:00',
+        endedAt: '2026-04-16T14:18:00+09:00',
+        title: 'Codex note',
+        summary: undefined,
+        primaryCategory: '仕事',
+        activityKinds: ['開発'],
+        appNames: ['Codex.exe'],
+        domains: [],
+      }),
+    ])
+
+    expect(blocks).toHaveLength(2)
+    expect(blocks.map((block) => block.kind)).toEqual(['compact', 'compact'])
+    expect(blocks.map((block) => block.primaryText)).toEqual(['YouTubeで動画を視聴', 'Codexでコード作業'])
+    expect(blocks[0]).toMatchObject({
+      sessionIds: ['youtube_1', 'youtube_2'],
+      sessionCount: 2,
+      startedAt: '2026-04-16T14:18:10+09:00',
+      endedAt: '2026-04-16T14:19:20+09:00',
+    })
+    expect(blocks[1]).toMatchObject({
+      sessionIds: ['codex_1', 'codex_2'],
+      sessionCount: 2,
+      startedAt: '2026-04-16T14:17:50+09:00',
+      endedAt: '2026-04-16T14:18:55+09:00',
+    })
+  })
+
+  it('keeps a different domain as a single block inside the same burst', async () => {
+    const blocks = buildCompactSessionBlocks([
+      createSession('youtube_1', {
+        startedAt: '2026-04-16T14:19:00+09:00',
+        endedAt: '2026-04-16T14:19:15+09:00',
+        title: 'YouTube page',
+        summary: undefined,
+        activityKinds: ['視聴'],
+        appNames: ['chrome.exe'],
+        domains: ['youtube.com'],
+      }),
+      createSession('github_1', {
+        startedAt: '2026-04-16T14:18:40+09:00',
+        endedAt: '2026-04-16T14:18:55+09:00',
+        title: 'PR page',
+        summary: undefined,
+        activityKinds: ['調査'],
+        appNames: ['chrome.exe'],
+        domains: ['github.com'],
+      }),
+      createSession('youtube_2', {
+        startedAt: '2026-04-16T14:18:10+09:00',
+        endedAt: '2026-04-16T14:18:25+09:00',
+        title: 'YouTube video',
+        summary: undefined,
+        activityKinds: ['視聴'],
+        appNames: ['chrome.exe'],
+        domains: ['youtube.com'],
+      }),
+    ])
+
+    expect(blocks).toHaveLength(2)
+    expect(blocks.map((block) => block.kind)).toEqual(['compact', 'single'])
+    expect(blocks[0].primaryText).toBe('YouTubeで動画を視聴')
+    expect(blocks[1].representativeSession.id).toBe('github_1')
+  })
+
+  it('does not compact sessions when the gap exceeds five minutes', async () => {
+    const blocks = buildCompactSessionBlocks([
+      createSession('codex_1', {
+        startedAt: '2026-04-16T14:19:00+09:00',
+        endedAt: '2026-04-16T14:19:20+09:00',
+        title: 'Codex task 1',
+        summary: undefined,
+        activityKinds: ['開発'],
+        appNames: ['Codex.exe'],
+        domains: [],
+      }),
+      createSession('codex_2', {
+        startedAt: '2026-04-16T14:12:00+09:00',
+        endedAt: '2026-04-16T14:12:20+09:00',
+        title: 'Codex task 2',
+        summary: undefined,
+        activityKinds: ['開発'],
+        appNames: ['Codex.exe'],
+        domains: [],
+      }),
+      createSession('codex_3', {
+        startedAt: '2026-04-16T14:05:00+09:00',
+        endedAt: '2026-04-16T14:05:20+09:00',
+        title: 'Codex task 3',
+        summary: undefined,
+        activityKinds: ['開発'],
+        appNames: ['Codex.exe'],
+        domains: [],
+      }),
+    ])
+
+    expect(blocks).toHaveLength(3)
+    expect(blocks.every((block) => block.kind === 'single')).toBe(true)
+  })
+
+  it('shows only open open loops in day views and daily log generation input', async () => {
+    const state = hydratePersistedState()
+    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
+      createOpenLoop('open_loop_open'),
+      createOpenLoop('open_loop_closed', {
+        id: 'open_loop_closed',
+        title: 'Already resolved loop',
+        status: 'closed',
+      }),
+    ])
+    vi.mocked(ai.generateDailyActivityLog).mockResolvedValue({
+      provider: 'template',
+      summary: 'Daily summary based on open loops only.',
+      mainThemes: ['Chrome docs'],
+      reviewQuestions: ['What remains open?'],
+    })
+
+    const fetched = await fetchActivityDayView('2026-04-16')
+
+    expect(fetched.openLoops.map((openLoop) => openLoop.id)).toEqual(['open_loop_open'])
+
+    const generated = await ensurePreviousDayDailyActivityLog({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      dateKey: '2026-04-16',
+      now: new Date('2026-04-17T09:00:00+09:00'),
+    })
+
+    expect(vi.mocked(ai.generateDailyActivityLog).mock.calls[0][0]).toMatchObject({
+      openLoops: [createOpenLoop('open_loop_open')],
+    })
+    expect(api.putActionLogDailyActivityLog).toHaveBeenCalledWith(
+      expect.objectContaining({
+        openLoopIds: ['open_loop_open'],
+      }),
+    )
+    expect(generated.openLoops.map((openLoop) => openLoop.id)).toEqual(['open_loop_open'])
+  })
+
   it('does not generate a DailyActivityLog for today even when it is missing', async () => {
     const state = hydratePersistedState()
 
@@ -291,6 +464,14 @@ describe('action log view orchestration', () => {
 
   it('generates a missing WeeklyActivityReview only on Monday for the previous week from the week screen', async () => {
     const state = hydratePersistedState()
+    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
+      createOpenLoop('open_loop_open'),
+      createOpenLoop('open_loop_closed', {
+        id: 'open_loop_closed',
+        title: 'Resolved weekly loop',
+        status: 'closed',
+      }),
+    ])
     vi.mocked(ai.generateWeeklyActivityReview).mockResolvedValue({
       provider: 'template',
       summary: 'Lily observed a week centered on research and implementation.',
@@ -309,14 +490,14 @@ describe('action log view orchestration', () => {
     expect(ai.generateWeeklyActivityReview).toHaveBeenCalledTimes(1)
     expect(vi.mocked(ai.generateWeeklyActivityReview).mock.calls[0][0]).toMatchObject({
       weekKey: '2026-W16',
-      openLoops: [createOpenLoop()],
+      openLoops: [createOpenLoop('open_loop_open')],
       categoryDurations: { study: 40, work: 20 },
     })
     expect(api.putActionLogWeeklyActivityReview).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'weekly_2026-W16',
         weekKey: '2026-W16',
-        openLoopIds: ['open_loop_1'],
+        openLoopIds: ['open_loop_open'],
       }),
     )
   })
@@ -453,10 +634,17 @@ describe('action log view orchestration', () => {
     vi.mocked(api.getActionLogWeeklyActivityReview).mockResolvedValue(createWeeklyReview('2026-W16'))
     vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
       createOpenLoop('week_loop', { dateKey: '2026-04-14' }),
+      createOpenLoop('week_loop_closed', {
+        id: 'week_loop_closed',
+        dateKey: '2026-04-14',
+        title: 'Already resolved weekly loop',
+        status: 'closed',
+      }),
     ])
 
     const result = await fetchActivityReviewWeek('2026-W16')
 
+    expect(result.openLoops.map((openLoop) => openLoop.id)).toEqual(['week_loop'])
     expect(result.topApps).toEqual([
       { label: 'Chrome', minutes: 60 },
       { label: 'Code', minutes: 30 },
@@ -489,6 +677,12 @@ describe('action log view orchestration', () => {
         title: 'Chrome task',
         dateKey: '2026-04-16',
       }),
+      createOpenLoop('loop_closed', {
+        id: 'loop_closed',
+        title: 'Resolved code task',
+        dateKey: '2026-04-16',
+        status: 'closed',
+      }),
     ])
 
     const filtered = await searchActivityLogs({
@@ -517,7 +711,7 @@ describe('action log view orchestration', () => {
     })
 
     expect(withHidden.sessions.map((session) => session.id)).toEqual(['hidden_code'])
-    expect(withHidden.openLoops.map((openLoop) => openLoop.id)).toEqual([])
+    expect(withHidden.openLoops.map((openLoop) => openLoop.id)).toEqual(['loop_closed'])
   })
 
   it('exports an action-log bundle with overlapping weekly reviews only', async () => {
