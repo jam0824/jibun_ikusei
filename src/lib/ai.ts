@@ -1,7 +1,6 @@
 import { z } from 'zod'
 import type {
   ActivitySession,
-  OpenLoop,
 } from '@/domain/action-log-types'
 import {
   buildTemplateSkillResolution,
@@ -180,7 +179,7 @@ const DAILY_ACTIVITY_LOG_SYSTEM_PROMPT = [
   '直接話しかける口調は禁止.',
   'Do not use second-person coaching language.',
   'Generate summary, questSummary, healthSummary, mainThemes, and reviewQuestions.',
-  'Use the provided ActivitySession, OpenLoop, QuestCompletion, Quest, and health-data records only.',
+  'Use the provided ActivitySession, QuestCompletion, Quest, and health-data records only.',
 ].join(' ')
 
 const WEEKLY_ACTIVITY_REVIEW_SYSTEM_PROMPT = [
@@ -191,7 +190,7 @@ const WEEKLY_ACTIVITY_REVIEW_SYSTEM_PROMPT = [
   '直接話しかける口調は禁止.',
   'Do not use second-person coaching language.',
   'Generate only summary and focusThemes.',
-  'Use only the provided ActivitySession and OpenLoop summaries plus category durations.',
+  'Use only the provided ActivitySession summaries plus category durations.',
 ].join(' ')
 
 const RETRYABLE_STATUS_CODES = new Set([408, 409, 429, 500, 502, 503, 504])
@@ -794,7 +793,7 @@ function summarizeSessionFocus(sessions: ActivitySession[]) {
   return '静かな整理'
 }
 
-function collectThemes(sessions: ActivitySession[], openLoops: OpenLoop[], limit = 5) {
+function collectThemes(sessions: ActivitySession[], limit = 5) {
   const sessionThemes = takeTopCounts(
     sessions.flatMap((session) => [
       session.primaryCategory,
@@ -805,13 +804,7 @@ function collectThemes(sessions: ActivitySession[], openLoops: OpenLoop[], limit
     limit,
   )
 
-  return uniqueNonEmpty(
-    [
-      ...sessionThemes,
-      ...openLoops.map((openLoop) => openLoop.title),
-    ],
-    limit,
-  )
+  return uniqueNonEmpty(sessionThemes, limit)
 }
 
 function sanitizeSessionsForActionLogAi(sessions: ActivitySession[]) {
@@ -827,16 +820,6 @@ function sanitizeSessionsForActionLogAi(sessions: ActivitySession[]) {
     domains: session.domains,
     projectNames: session.projectNames,
     summary: session.summary ?? null,
-  }))
-}
-
-function sanitizeOpenLoopsForActionLogAi(openLoops: OpenLoop[]) {
-  return openLoops.map((openLoop) => ({
-    id: openLoop.id,
-    dateKey: openLoop.dateKey,
-    title: openLoop.title,
-    description: openLoop.description ?? null,
-    status: openLoop.status,
   }))
 }
 
@@ -868,10 +851,6 @@ function sanitizeHealthDataForActionLogAi(healthData: HealthDataEntry[]) {
     body_fat_pct: entry.body_fat_pct,
     source: entry.source ?? null,
   }))
-}
-
-function filterOpenOpenLoops(openLoops: OpenLoop[]) {
-  return openLoops.filter((openLoop) => openLoop.status === 'open')
 }
 
 function filterDateCompletions(dateKey: string, completions: QuestCompletion[]) {
@@ -937,24 +916,20 @@ function buildHealthSummaryFallback(params: {
 function buildDailyActivityLogFallback(params: {
   dateKey: string
   sessions: ActivitySession[]
-  openLoops: OpenLoop[]
   quests: Quest[]
   completions: QuestCompletion[]
   healthData: HealthDataEntry[]
 }): GeneratedDailyActivityLog {
-  const themes = collectThemes(params.sessions, params.openLoops, 3)
+  const themes = collectThemes(params.sessions, 3)
   const themeText = themes.length > 0 ? themes.join('や') : '静かな整理'
   const focus = summarizeSessionFocus(params.sessions)
-  const openLoop = params.openLoops[0]
 
   return {
     provider: 'template',
     summary: [
       `リリィの観察では、この日は${themeText}を軸に時間が流れていた。`,
       `${focus}に向かう場面が中心で、`,
-      openLoop
-        ? `${openLoop.title}のように、まだ続きを気にしていることも残っていた。`
-        : '区切りをつけながら静かに進めていた。',
+      '区切りをつけながら静かに進めていた。',
     ].join(''),
     questSummary: buildQuestSummaryFallback({
       dateKey: params.dateKey,
@@ -968,9 +943,7 @@ function buildDailyActivityLogFallback(params: {
     mainThemes: themes.length > 0 ? themes : ['静かな整理'],
     reviewQuestions: [
       `${focus}のあとに、次の一歩として見えていたものは何だったか。`,
-      openLoop
-        ? `${openLoop.title}に手を戻すなら、最初に確かめたい点はどこか。`
-        : 'この日の流れの中で、もう少し深めたい部分はどこだったか。',
+      'この日の流れの中で、もう少し深めたい部分はどこだったか。',
     ],
   }
 }
@@ -978,22 +951,18 @@ function buildDailyActivityLogFallback(params: {
 function buildWeeklyActivityReviewFallback(params: {
   weekKey: string
   sessions: ActivitySession[]
-  openLoops: OpenLoop[]
   categoryDurations: Record<string, number>
 }): GeneratedWeeklyActivityReview {
-  const themes = collectThemes(params.sessions, params.openLoops, 3)
+  const themes = collectThemes(params.sessions, 3)
   const strongestCategory = Object.entries(params.categoryDurations)
     .sort((left, right) => right[1] - left[1])[0]?.[0]
-  const openLoop = params.openLoops[0]
 
   return {
     provider: 'template',
     summary: [
       `リリィの観察では、この週は${themes.join('や') || '静かな整理'}がゆっくり積み重なっていた。`,
       strongestCategory ? `${strongestCategory}に向かう時間が濃く、` : '',
-      openLoop
-        ? `${openLoop.title}のように、続きを抱えたまま次の週へ渡りそうなものも見えていた。`
-        : 'いくつかの区切りをつけながら、流れを整えていた。',
+      'いくつかの区切りをつけながら、流れを整えていた。',
     ].join(''),
     focusThemes: themes.length > 0 ? themes : ['静かな整理'],
   }
@@ -1004,14 +973,12 @@ export async function generateDailyActivityLog(params: {
   settings: UserSettings
   dateKey: string
   sessions: ActivitySession[]
-  openLoops: OpenLoop[]
   quests: Quest[]
   completions: QuestCompletion[]
   healthData: HealthDataEntry[]
 }): Promise<GeneratedDailyActivityLog> {
-  const { aiConfig, settings, dateKey, sessions, openLoops, quests, completions, healthData } = params
+  const { aiConfig, settings, dateKey, sessions, quests, completions, healthData } = params
   const openAiConfig = aiConfig.providers.openai
-  const visibleOpenLoops = filterOpenOpenLoops(openLoops)
   const sameDayCompletions = filterDateCompletions(dateKey, completions)
   const sameDayHealthData = filterDateHealthData(dateKey, healthData)
   const relatedQuestIds = new Set(sameDayCompletions.map((completion) => completion.questId))
@@ -1021,7 +988,6 @@ export async function generateDailyActivityLog(params: {
     return buildDailyActivityLogFallback({
       dateKey,
       sessions,
-      openLoops: visibleOpenLoops,
       quests: relatedQuests,
       completions: sameDayCompletions,
       healthData: sameDayHealthData,
@@ -1045,7 +1011,6 @@ export async function generateDailyActivityLog(params: {
         task: 'daily_activity_log',
         dateKey,
         sessions: sanitizeSessionsForActionLogAi(sessions),
-        openLoops: sanitizeOpenLoopsForActionLogAi(visibleOpenLoops),
         quests: sanitizeQuestsForActionLogAi(relatedQuests),
         completions: sanitizeCompletionsForActionLogAi(sameDayCompletions, questMap),
         healthData: sanitizeHealthDataForActionLogAi(sameDayHealthData),
@@ -1066,7 +1031,6 @@ export async function generateDailyActivityLog(params: {
     return buildDailyActivityLogFallback({
       dateKey,
       sessions,
-      openLoops: visibleOpenLoops,
       quests: relatedQuests,
       completions: sameDayCompletions,
       healthData: sameDayHealthData,
@@ -1079,18 +1043,15 @@ export async function generateWeeklyActivityReview(params: {
   settings: UserSettings
   weekKey: string
   sessions: ActivitySession[]
-  openLoops: OpenLoop[]
   categoryDurations: Record<string, number>
 }): Promise<GeneratedWeeklyActivityReview> {
-  const { aiConfig, settings, weekKey, sessions, openLoops, categoryDurations } = params
+  const { aiConfig, settings, weekKey, sessions, categoryDurations } = params
   const openAiConfig = aiConfig.providers.openai
-  const visibleOpenLoops = filterOpenOpenLoops(openLoops)
 
   if (!settings.aiEnabled || !openAiConfig.apiKey || isOffline()) {
     return buildWeeklyActivityReviewFallback({
       weekKey,
       sessions,
-      openLoops: visibleOpenLoops,
       categoryDurations,
     })
   }
@@ -1109,7 +1070,6 @@ export async function generateWeeklyActivityReview(params: {
         weekKey,
         categoryDurations,
         sessions: sanitizeSessionsForActionLogAi(sessions),
-        openLoops: sanitizeOpenLoopsForActionLogAi(visibleOpenLoops),
       },
       systemPrompt: WEEKLY_ACTIVITY_REVIEW_SYSTEM_PROMPT,
     })
@@ -1124,7 +1084,6 @@ export async function generateWeeklyActivityReview(params: {
     return buildWeeklyActivityReviewFallback({
       weekKey,
       sessions,
-      openLoops: visibleOpenLoops,
       categoryDurations,
     })
   }

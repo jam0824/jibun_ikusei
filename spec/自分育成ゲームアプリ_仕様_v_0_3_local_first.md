@@ -536,7 +536,7 @@ Cognito で認証される利用アカウント。アプリのデータ分離単
 - `review/year` では 1 年分の週次レビュー一覧を表示し、`前年` / `次年` / `年ピッカー` で移動できる。
 - `review/year` の各週カードの導線ラベルは `詳細` とし、モバイルでは本文と衝突しないよう縦積み配置を許容する。
 - `review/year` の各週を押すと `/records/activity/review/week?weekKey=YYYY-Www` の詳細へ遷移する。
-- `review/week` は個別週の詳細 route として扱い、本文やカテゴリ比率、OpenLoop を表示する。
+- `review/week` は個別週の詳細 route として扱い、本文、カテゴリ比率、よく使ったアプリ / ドメインを表示する。
 
 #### `activity` タブの補足
 

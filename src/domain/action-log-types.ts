@@ -42,10 +42,6 @@ export const DEVICE_CAPTURE_STATES = ['active', 'paused', 'disabled'] as const
 
 export type DeviceCaptureState = (typeof DEVICE_CAPTURE_STATES)[number]
 
-export const OPEN_LOOP_STATUSES = ['open', 'closed', 'ignored'] as const
-
-export type OpenLoopStatus = (typeof OPEN_LOOP_STATUSES)[number]
-
 export const PRIVACY_RULE_TYPES = ['app', 'domain', 'window_title', 'storage_mode'] as const
 
 export type PrivacyRuleType = (typeof PRIVACY_RULE_TYPES)[number]
@@ -100,7 +96,6 @@ export interface ActivitySession {
   summary?: string
   searchKeywords: string[]
   noteIds: string[]
-  openLoopIds: string[]
   hidden: boolean
 }
 
@@ -112,7 +107,6 @@ export interface DailyActivityLog {
   healthSummary: string
   mainThemes: string[]
   noteIds: string[]
-  openLoopIds: string[]
   reviewQuestions: string[]
   generatedAt: string
 }
@@ -123,7 +117,6 @@ export interface WeeklyActivityReview {
   summary: string
   categoryDurations: Record<string, number>
   focusThemes: string[]
-  openLoopIds: string[]
   generatedAt: string
 }
 
@@ -133,17 +126,6 @@ export interface ManualNote {
   dateKey: string
   body: string
   linkedSessionId?: string
-}
-
-export interface OpenLoop {
-  id: string
-  createdAt: string
-  updatedAt: string
-  dateKey: string
-  title: string
-  description?: string
-  status: OpenLoopStatus
-  linkedSessionIds: string[]
 }
 
 export interface PrivacyRule {

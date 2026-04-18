@@ -1,6 +1,5 @@
 import {
   getActionLogDailyActivityLogs,
-  getActionLogOpenLoops,
   getActionLogSessions,
   getBrowsingTimes,
   getChatMessages,
@@ -11,7 +10,7 @@ import {
   getSituationLogs,
 } from '@/lib/api-client'
 import type { NutritionRangeResult, SituationLogEntry } from '@/lib/api-client'
-import type { ActivitySession, DailyActivityLog, OpenLoop } from '@/domain/action-log-types'
+import type { ActivitySession, DailyActivityLog } from '@/domain/action-log-types'
 import { aggregateByCategory, aggregateDomains } from '@/lib/browsing-aggregator'
 import { NUTRIENT_META } from '@/domain/nutrition-constants'
 import { formatSeconds } from '@/lib/time-format'
@@ -322,11 +321,6 @@ function formatActivitySessionLine(session: ActivitySession): string {
 
 function formatDailyActivityLogLine(log: DailyActivityLog): string {
   return `- [その日のまとめ] ${log.summary} (${log.dateKey})`
-}
-
-function formatOpenLoopLine(openLoop: OpenLoop): string {
-  const descriptionSuffix = openLoop.description ? ` / ${openLoop.description}` : ''
-  return `- [OpenLoop / ${openLoop.status}] ${openLoop.title}${descriptionSuffix}`
 }
 
 async function loadMessagesForSessions(
@@ -1252,23 +1246,19 @@ async function executeGetMessagesAndLogs(args: ToolArgs, context: ToolContext): 
 
     let sessions: ActivitySession[]
     let dailyLogs: DailyActivityLog[]
-    let openLoops: OpenLoop[]
     try {
-      ;[sessions, dailyLogs, openLoops] = await Promise.all([
+      ;[sessions, dailyLogs] = await Promise.all([
         getActionLogSessions(filter.from, filter.to),
         getActionLogDailyActivityLogs(filter.from, filter.to),
-        getActionLogOpenLoops(filter.from, filter.to),
       ])
     } catch {
       return 'アクティビティログの取得に失敗しました。'
     }
 
     const visibleSessions = sessions.filter((session) => session.hidden !== true)
-    const visibleOpenLoops = openLoops.filter((openLoop) => openLoop.status === 'open')
     const items = [
       ...visibleSessions.map(formatActivitySessionLine),
       ...dailyLogs.map(formatDailyActivityLogLine),
-      ...visibleOpenLoops.map(formatOpenLoopLine),
     ]
 
     if (items.length === 0) return `${filter.label} のアクティビティログがありません。`

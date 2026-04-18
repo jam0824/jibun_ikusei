@@ -53,7 +53,7 @@ _DAILY_SYSTEM_PROMPT = (
     "Write in Japanese. The prose must read like リリィがユーザーをそっと見守って書いた観察日記風の地の文. "
     "直接話しかける口調は禁止. "
     "Generate only summary, mainThemes, and reviewQuestions. "
-    "Use only the provided ActivitySession and OpenLoop summaries."
+    "Use only the provided ActivitySession summaries."
 )
 
 _WEEKLY_SYSTEM_PROMPT = (
@@ -62,7 +62,7 @@ _WEEKLY_SYSTEM_PROMPT = (
     "Write in Japanese. The prose must read like リリィがユーザーをそっと見守って書いた観察日記風の地の文. "
     "直接話しかける口調は禁止. "
     "Generate only summary and focusThemes. "
-    "Use only the provided ActivitySession and OpenLoop summaries plus category durations."
+    "Use only the provided ActivitySession summaries plus category durations."
 )
 
 
@@ -109,15 +109,11 @@ def _duration_minutes(started_at: str, ended_at: str) -> int:
     return max(0, round((ended - started).total_seconds() / 60))
 
 
-def _collect_themes(sessions: list[dict[str, Any]], open_loops: list[dict[str, Any]], limit: int) -> list[str]:
+def _collect_themes(sessions: list[dict[str, Any]], limit: int) -> list[str]:
     themes: list[str] = []
     for session in sessions:
         themes.extend(session.get("activityKinds", []))
         themes.extend(session.get("domains", []))
-    for open_loop in open_loops:
-        title = str(open_loop.get("title") or "").strip()
-        if title:
-            themes.append(title)
 
     seen: set[str] = set()
     ordered: list[str] = []
@@ -149,34 +145,12 @@ def _sanitize_sessions(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def _sanitize_open_loops(open_loops: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        {
-            "dateKey": open_loop.get("dateKey"),
-            "title": open_loop.get("title"),
-            "description": open_loop.get("description"),
-            "status": open_loop.get("status"),
-        }
-        for open_loop in open_loops
-    ]
-
-
-def _filter_open_open_loops(open_loops: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return [
-        open_loop
-        for open_loop in open_loops
-        if str(open_loop.get("status") or "open") == "open"
-    ]
-
-
 def _build_daily_fallback(
     *,
     date_key: str,
     sessions: list[dict[str, Any]],
-    open_loops: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    themes = _collect_themes(sessions, open_loops, 3) or ["静かな作業"]
-    open_loop = open_loops[0] if open_loops else None
+    themes = _collect_themes(sessions, 3) or ["静かな作業"]
     return {
         "summary": (
             f"リリィは、{date_key} には {themes[0]} を中心に、落ち着いた流れで行動が積み重なっていたと見ている。"
@@ -184,11 +158,7 @@ def _build_daily_fallback(
         "mainThemes": themes[:5],
         "reviewQuestions": [
             "次に確認したいことはどこに残っていたか。",
-            (
-                f"{open_loop.get('title')} に手を戻すなら、最初の一歩は何だったか。"
-                if open_loop
-                else "この流れを次に続けるなら、どこから始めたいか。"
-            ),
+            "この流れを次に続けるなら、どこから始めたいか。",
         ],
     }
 
@@ -197,10 +167,9 @@ def _build_weekly_fallback(
     *,
     week_key: str,
     sessions: list[dict[str, Any]],
-    open_loops: list[dict[str, Any]],
     category_durations: dict[str, int],
 ) -> dict[str, Any]:
-    themes = _collect_themes(sessions, open_loops, 3) or ["静かな作業"]
+    themes = _collect_themes(sessions, 3) or ["静かな作業"]
     dominant_category = (
         sorted(category_durations.items(), key=lambda item: item[1], reverse=True)[0][0]
         if category_durations
@@ -244,14 +213,10 @@ class ActionLogSummaryBackfillService:
             return
 
         sessions = await self.api_client.get_action_log_sessions(yesterday_key, yesterday_key)
-        open_loops = _filter_open_open_loops(
-            await self.api_client.get_action_log_open_loops(yesterday_key, yesterday_key)
-        )
         daily_input = {
             "task": "daily_activity_log",
             "dateKey": yesterday_key,
             "sessions": _sanitize_sessions(sessions),
-            "openLoops": _sanitize_open_loops(open_loops),
         }
 
         try:
@@ -270,7 +235,6 @@ class ActionLogSummaryBackfillService:
             generated = _build_daily_fallback(
                 date_key=yesterday_key,
                 sessions=sessions,
-                open_loops=open_loops,
             )
 
         await self.api_client.put_action_log_daily_log(
@@ -280,7 +244,6 @@ class ActionLogSummaryBackfillService:
                 "summary": generated["summary"],
                 "mainThemes": list(generated["mainThemes"]),
                 "noteIds": [],
-                "openLoopIds": [str(open_loop["id"]) for open_loop in open_loops],
                 "reviewQuestions": list(generated["reviewQuestions"]),
                 "generatedAt": _to_jst_iso(generated_at),
             }
@@ -293,9 +256,6 @@ class ActionLogSummaryBackfillService:
 
         from_date, to_date = _week_range_from_key(week_key)
         sessions = await self.api_client.get_action_log_sessions(from_date, to_date)
-        open_loops = _filter_open_open_loops(
-            await self.api_client.get_action_log_open_loops(from_date, to_date)
-        )
         category_durations: dict[str, int] = {}
         for session in sessions:
             category = str(session.get("primaryCategory") or "").strip()
@@ -311,7 +271,6 @@ class ActionLogSummaryBackfillService:
             "weekKey": week_key,
             "categoryDurations": category_durations,
             "sessions": _sanitize_sessions(sessions),
-            "openLoops": _sanitize_open_loops(open_loops),
         }
 
         try:
@@ -330,7 +289,6 @@ class ActionLogSummaryBackfillService:
             generated = _build_weekly_fallback(
                 week_key=week_key,
                 sessions=sessions,
-                open_loops=open_loops,
                 category_durations=category_durations,
             )
 
@@ -341,7 +299,6 @@ class ActionLogSummaryBackfillService:
                 "summary": generated["summary"],
                 "categoryDurations": category_durations,
                 "focusThemes": list(generated["focusThemes"]),
-                "openLoopIds": [str(open_loop["id"]) for open_loop in open_loops],
                 "generatedAt": _to_jst_iso(generated_at),
             }
         )

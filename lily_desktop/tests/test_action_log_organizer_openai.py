@@ -61,35 +61,21 @@ def _write_spool(log_dir: Path, date_key: str, events: list[dict]) -> None:
 @dataclass
 class _FakeApiClient:
     existing_sessions: list[dict] | None = None
-    existing_open_loops: list[dict] | None = None
     put_sessions_calls: list[dict] | None = None
-    put_open_loops_calls: list[dict] | None = None
     get_session_calls: list[tuple[str, str]] | None = None
-    get_open_loop_calls: list[tuple[str, str]] | None = None
 
     def __post_init__(self) -> None:
         self.existing_sessions = list(self.existing_sessions or [])
-        self.existing_open_loops = list(self.existing_open_loops or [])
         self.put_sessions_calls = []
-        self.put_open_loops_calls = []
         self.get_session_calls = []
-        self.get_open_loop_calls = []
 
     async def get_action_log_sessions(self, from_date: str, to_date: str) -> list[dict]:
         self.get_session_calls.append((from_date, to_date))
         return list(self.existing_sessions)
 
-    async def get_action_log_open_loops(self, from_date: str, to_date: str) -> list[dict]:
-        self.get_open_loop_calls.append((from_date, to_date))
-        return list(self.existing_open_loops)
-
     async def put_action_log_sessions(self, payload: dict) -> dict:
         self.put_sessions_calls.append(payload)
         return {"updated": len(payload["sessions"])}
-
-    async def put_action_log_open_loops(self, payload: dict) -> dict:
-        self.put_open_loops_calls.append(payload)
-        return {"updated": len(payload["openLoops"])}
 
 
 def _make_processing_config(**overrides):
@@ -117,16 +103,15 @@ def _extract_session_ids(input_payload: dict) -> list[str]:
 def _build_result_for_ids(session_ids: list[str]) -> StructuredJsonResult:
     return StructuredJsonResult(
         output={
-                "sessions": [
-                    {
-                        "sessionId": session_id,
-                        "title": f"AI title {index + 1}",
-                        "primaryCategory": "その他",
-                        "activityKinds": ["作業"],
-                        "summary": f"AI summary {index + 1}",
-                        "searchKeywords": [f"kw-{index + 1}"],
-                        "openLoops": [],
-                    }
+            "sessions": [
+                {
+                    "sessionId": session_id,
+                    "title": f"AI title {index + 1}",
+                    "primaryCategory": "その他",
+                    "activityKinds": ["作業"],
+                    "summary": f"AI summary {index + 1}",
+                    "searchKeywords": [f"kw-{index + 1}"],
+                }
                 for index, session_id in enumerate(session_ids)
             ]
         },
@@ -174,7 +159,6 @@ async def test_organizer_uses_openai_structured_outputs_and_logs_usage(
                         "activityKinds": ["調査"],
                         "summary": "OpenAI generated summary",
                         "searchKeywords": ["example.com"],
-                        "openLoops": [],
                     }
                 ]
             },
@@ -243,7 +227,6 @@ async def test_organizer_rejects_hangul_openai_output_and_falls_back(tmp_path, m
                         "activityKinds": ["활동 로그"],
                         "summary": "GitHub PR 페이지를 확인한 활동입니다.",
                         "searchKeywords": ["github.com"],
-                        "openLoops": [],
                     }
                 ]
             },
@@ -302,7 +285,6 @@ async def test_organizer_rejects_internal_telemetry_terms_and_falls_back(
                         "activityKinds": ["heartbeat"],
                         "summary": "Codexによる作業の心拍イベントを記録した。",
                         "searchKeywords": ["Codex", "heartbeat"],
-                        "openLoops": [],
                     }
                 ]
             },
@@ -366,7 +348,6 @@ async def test_organizer_openai_without_api_key_falls_back_and_still_syncs(tmp_p
 
     assert called is False
     assert api_client.put_sessions_calls[0]["sessions"][0]["title"]
-    assert api_client.put_open_loops_calls[0]["openLoops"][0]["title"]
 
 
 @pytest.mark.asyncio
@@ -410,7 +391,6 @@ async def test_organizer_does_not_reuse_existing_hangul_enrichment(tmp_path, mon
         "summary": "GitHub PR 페이지를 확인한 활동입니다.",
         "searchKeywords": ["github.com"],
         "noteIds": [],
-        "openLoopIds": [],
         "hidden": False,
     }
     api_client = _FakeApiClient(existing_sessions=[existing_session])
@@ -435,7 +415,6 @@ async def test_organizer_does_not_reuse_existing_hangul_enrichment(tmp_path, mon
                         "activityKinds": ["調査"],
                         "summary": "GitHub PR の内容を確認していた。",
                         "searchKeywords": ["GitHub PR", "github.com"],
-                        "openLoops": [],
                     }
                 ]
             },
@@ -498,7 +477,6 @@ async def test_organizer_does_not_reuse_existing_internal_telemetry_terms(
         "summary": "YouTubeの心拍イベントを記録した。",
         "searchKeywords": ["YouTube", "heartbeat"],
         "noteIds": [],
-        "openLoopIds": [],
         "hidden": False,
     }
     api_client = _FakeApiClient(existing_sessions=[existing_session])
@@ -523,7 +501,6 @@ async def test_organizer_does_not_reuse_existing_internal_telemetry_terms(
                         "activityKinds": ["動画視聴"],
                         "summary": "YouTubeページを続けて閲覧していた。",
                         "searchKeywords": ["YouTube", "www.youtube.com"],
-                        "openLoops": [],
                     }
                 ]
             },
@@ -595,23 +572,9 @@ async def test_organizer_reuses_existing_enrichment_and_excludes_it_from_openai_
         "summary": "Existing summary",
         "searchKeywords": ["existing-keyword"],
         "noteIds": [],
-        "openLoopIds": ["loop_existing"],
         "hidden": False,
     }
-    existing_open_loop = {
-        "id": "loop_existing",
-        "createdAt": reused_candidate["endedAt"],
-        "updatedAt": reused_candidate["endedAt"],
-        "dateKey": reused_candidate["dateKey"],
-        "title": "Existing loop title",
-        "description": "Existing loop description",
-        "status": "open",
-        "linkedSessionIds": [reused_candidate["id"]],
-    }
-    api_client = _FakeApiClient(
-        existing_sessions=[existing_session],
-        existing_open_loops=[existing_open_loop],
-    )
+    api_client = _FakeApiClient(existing_sessions=[existing_session])
     organizer = ActionLogOrganizer(
         device_id="device_1",
         api_client=api_client,
@@ -633,7 +596,6 @@ async def test_organizer_reuses_existing_enrichment_and_excludes_it_from_openai_
                         "activityKinds": ["調査"],
                         "summary": "New AI summary",
                         "searchKeywords": ["new-keyword"],
-                        "openLoops": [],
                     }
                 ]
             },
@@ -650,7 +612,6 @@ async def test_organizer_reuses_existing_enrichment_and_excludes_it_from_openai_
     assert _extract_session_ids(request_payloads[0]) == [new_candidate["id"]]
     session_titles = [session["title"] for session in api_client.put_sessions_calls[0]["sessions"]]
     assert session_titles == ["Existing title", "New AI title"]
-    assert api_client.put_open_loops_calls[0]["openLoops"][0]["title"] == "Existing loop title"
 
 
 @pytest.mark.asyncio
@@ -829,8 +790,6 @@ async def test_organizer_budget_exhaustion_falls_back_and_still_syncs(
     await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
 
     assert requested_batches == [newest_first_ids[:8]]
-    assert len(api_client.put_sessions_calls) == 1
-    assert len(api_client.put_open_loops_calls) == 1
     saved_sessions = {
         session["id"]: session for session in api_client.put_sessions_calls[0]["sessions"]
     }

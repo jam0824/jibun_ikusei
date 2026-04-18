@@ -180,7 +180,6 @@ describe('actionLogHandler', () => {
           projectNames: [],
           searchKeywords: ['example', 'research'],
           noteIds: [],
-          openLoopIds: [],
           hidden: false,
         },
       ],
@@ -260,7 +259,6 @@ describe('actionLogHandler', () => {
               projectNames: [],
               searchKeywords: ['hidden'],
               noteIds: [],
-              openLoopIds: [],
               hidden: true,
             },
           ],
@@ -288,7 +286,6 @@ describe('actionLogHandler', () => {
             projectNames: [],
             searchKeywords: ['visible'],
             noteIds: [],
-            openLoopIds: [],
             hidden: false,
           },
         ],
@@ -335,7 +332,6 @@ describe('actionLogHandler', () => {
       projectNames: [],
       searchKeywords: [`keyword-${index}`],
       noteIds: [],
-      openLoopIds: [],
       hidden: false,
     }))
 
@@ -454,7 +450,6 @@ describe('actionLogHandler', () => {
           projectNames: [],
           searchKeywords: ['retry'],
           noteIds: [],
-          openLoopIds: [],
           hidden: false,
         },
       ],
@@ -498,7 +493,6 @@ describe('actionLogHandler', () => {
       summary: 'summary',
       mainThemes: ['route'],
       noteIds: [],
-      openLoopIds: [],
       reviewQuestions: ['q1'],
       generatedAt: '2026-04-17T23:59:00+09:00',
     }
@@ -541,7 +535,6 @@ describe('actionLogHandler', () => {
       summary: 'summary',
       categoryDurations: { 学習: 120 },
       focusThemes: ['route'],
-      openLoopIds: [],
       generatedAt: '2026-04-17T23:59:00+09:00',
     }
 
@@ -656,67 +649,6 @@ describe('actionLogHandler', () => {
     expect(getBody).toEqual(rules)
   })
 
-  it('open-loop routes support range get and dateKey full replace', async () => {
-    const openLoops = [
-      {
-        id: 'loop_1',
-        createdAt: '2026-04-17T10:00:00+09:00',
-        updatedAt: '2026-04-17T10:05:00+09:00',
-        dateKey: '2026-04-17',
-        title: 'manifestの確認',
-        description: 'manifest v3 を見直す',
-        status: 'open',
-        linkedSessionIds: ['session_1'],
-      },
-    ]
-
-    const commands = []
-    mockSend.mockImplementation((command) => {
-      commands.push(command)
-      if (command.constructor.name === 'QueryCommand') {
-        return Promise.resolve({
-          Items: [
-            {
-              PK: 'user#test-user-123',
-              SK: 'ACTION_LOG#OPEN_LOOP#2026-04-17#old_loop',
-            },
-          ],
-        })
-      }
-      return Promise.resolve({})
-    })
-
-    const putEvent = makeEvent('PUT /action-log/open-loops', {
-      body: {
-        dateKeys: ['2026-04-17'],
-        openLoops,
-      },
-    })
-    const { statusCode: putStatus, body: putBody } = parseResponse(await handler(putEvent))
-    expect(putStatus).toBe(200)
-    expect(putBody.updated).toBe(1)
-    expect(commands.some((command) => command.constructor.name === 'DeleteCommand')).toBe(true)
-    const savedPut = commands.find((command) => command.constructor.name === 'PutCommand')
-    expect(savedPut.input.Item.SK).toBe('ACTION_LOG#OPEN_LOOP#2026-04-17#loop_1')
-
-    mockSend.mockReset()
-    mockSend.mockResolvedValueOnce({
-      Items: [
-        {
-          PK: 'user#test-user-123',
-          SK: 'ACTION_LOG#OPEN_LOOP#2026-04-17#loop_1',
-          ...openLoops[0],
-        },
-      ],
-    })
-
-    const getEvent = makeEvent('GET /action-log/open-loops')
-    getEvent.queryStringParameters = { from: '2026-04-17', to: '2026-04-17' }
-    const { statusCode: getStatus, body: getBody } = parseResponse(await handler(getEvent))
-    expect(getStatus).toBe(200)
-    expect(getBody).toEqual(openLoops)
-  })
-
   it('PUT /action-log/sessions/{id}/hidden updates only the target session hidden state', async () => {
     const existingSession = {
       PK: 'user#test-user-123',
@@ -734,7 +666,6 @@ describe('actionLogHandler', () => {
       projectNames: [],
       searchKeywords: ['chrome'],
       noteIds: [],
-      openLoopIds: [],
       hidden: false,
     }
 
@@ -792,13 +723,6 @@ describe('actionLogHandler', () => {
             Items: [{ PK: 'user#test-user-123', SK: 'ACTION_LOG#DAILY#2026-04-16' }],
           })
         }
-        if (String(prefix).startsWith('ACTION_LOG#OPEN_LOOP#')) {
-          return Promise.resolve({
-            Items: [
-              { PK: 'user#test-user-123', SK: 'ACTION_LOG#OPEN_LOOP#2026-04-16#loop_1' },
-            ],
-          })
-        }
         if (String(prefix).startsWith('SITUATION#')) {
           return Promise.resolve({
             Items: [
@@ -832,7 +756,6 @@ describe('actionLogHandler', () => {
     expect(body.deleted.rawEvents).toBe(1)
     expect(body.deleted.sessions).toBe(1)
     expect(body.deleted.dailyLogs).toBe(1)
-    expect(body.deleted.openLoops).toBe(1)
     expect(body.deleted.weeklyReviews).toBe(1)
     expect(body.deleted.situationLogs).toBe(1)
     const putCommands = commands.filter((command) => command.constructor.name === 'PutCommand')

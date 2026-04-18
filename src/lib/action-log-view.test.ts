@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type {
   ActivitySession,
   DailyActivityLog,
-  OpenLoop,
   RawEvent,
   WeeklyActivityReview,
 } from '@/domain/action-log-types'
@@ -15,7 +14,6 @@ vi.mock('@/lib/api-client', () => ({
   getCompletions: vi.fn(),
   getActionLogDailyActivityLog: vi.fn(),
   getActionLogDailyActivityLogs: vi.fn(),
-  getActionLogOpenLoops: vi.fn(),
   getActionLogRawEvents: vi.fn(),
   getActionLogRawEventsPage: vi.fn(),
   getActionLogSessions: vi.fn(),
@@ -71,7 +69,6 @@ function createSession(id: string, overrides: Partial<ActivitySession> = {}): Ac
     summary: 'Looked through Chrome extension docs.',
     searchKeywords: ['chrome', 'docs'],
     noteIds: [],
-    openLoopIds: ['open_loop_1'],
     hidden: false,
     ...overrides,
   }
@@ -90,20 +87,6 @@ function createRawEvent(id: string, overrides: Partial<RawEvent> = {}): RawEvent
     domain: 'developer.chrome.com',
     metadata: {},
     expiresAt: '2026-05-16T09:05:00+09:00',
-    ...overrides,
-  }
-}
-
-function createOpenLoop(id = 'open_loop_1', overrides: Partial<OpenLoop> = {}): OpenLoop {
-  return {
-    id,
-    createdAt: '2026-04-16T09:40:00+09:00',
-    updatedAt: '2026-04-16T09:40:00+09:00',
-    dateKey: '2026-04-16',
-    title: 'Review manifest settings',
-    description: 'Double-check the manifest settings.',
-    status: 'open',
-    linkedSessionIds: ['session_1'],
     ...overrides,
   }
 }
@@ -179,7 +162,6 @@ function createDailyLog(dateKey = '2026-04-16', overrides: Partial<DailyActivity
     healthSummary: 'Lily saw a quiet health record that still left a few steady marks.',
     mainThemes: ['Chrome docs', 'research'],
     noteIds: [],
-    openLoopIds: ['open_loop_1'],
     reviewQuestions: ['What should be explored next?'],
     generatedAt: `${dateKey}T22:00:00+09:00`,
     ...overrides,
@@ -196,7 +178,6 @@ function createWeeklyReview(
     summary: 'Lily observed a week centered on research and implementation.',
     categoryDurations: { study: 40 },
     focusThemes: ['Chrome docs'],
-    openLoopIds: ['open_loop_1'],
     generatedAt: '2026-04-18T08:00:00+09:00',
     ...overrides,
   }
@@ -221,7 +202,6 @@ describe('action log view orchestration', () => {
         appNames: ['Code'],
         domains: [],
         searchKeywords: ['vscode', 'implementation'],
-        openLoopIds: [],
       }),
     ])
     vi.mocked(api.getActionLogRawEvents).mockResolvedValue([createRawEvent('event_1')])
@@ -231,7 +211,6 @@ describe('action log view orchestration', () => {
     })
     vi.mocked(api.getCompletions).mockResolvedValue([createCompletion()])
     vi.mocked(api.getActionLogDailyActivityLog).mockResolvedValue(null)
-    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([createOpenLoop()])
     vi.mocked(api.getActionLogSessionsPage).mockResolvedValue({
       items: [createSession('session_2')],
       nextCursor: null,
@@ -255,7 +234,6 @@ describe('action log view orchestration', () => {
         sessions: 1,
         dailyLogs: 1,
         weeklyReviews: 1,
-        openLoops: 1,
         situationLogs: 2,
       },
       deletionRequestId: 'delete_1',
@@ -284,7 +262,6 @@ describe('action log view orchestration', () => {
     expect(vi.mocked(ai.generateDailyActivityLog).mock.calls[0][0]).toMatchObject({
       dateKey: '2026-04-16',
       sessions: [createSession('session_1')],
-      openLoops: [createOpenLoop()],
       quests: [createQuest()],
       completions: [createCompletion()],
       healthData: [createHealthDataEntry()],
@@ -294,7 +271,6 @@ describe('action log view orchestration', () => {
       expect.objectContaining({
         id: 'daily_2026-04-16',
         dateKey: '2026-04-16',
-        openLoopIds: ['open_loop_1'],
       }),
     )
     expect(result.dailyLog?.summary).toBe('Lily stitched together the day from the surrounding sessions.')
@@ -369,13 +345,6 @@ describe('action log view orchestration', () => {
 
   it('fetches the day shell without loading timeline pages', async () => {
     vi.mocked(api.getActionLogDailyActivityLog).mockResolvedValue(createDailyLog('2026-04-16'))
-    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
-      createOpenLoop('open_loop_open'),
-      createOpenLoop('open_loop_closed', {
-        id: 'open_loop_closed',
-        status: 'closed',
-      }),
-    ])
     vi.mocked(api.getSituationLogs).mockResolvedValue([
       createSituationLog('2026-04-16T18:00:00+09:00', { summary: 'older summary' }),
       createSituationLog('2026-04-16T19:00:00+09:00', { summary: 'newer summary' }),
@@ -384,12 +353,10 @@ describe('action log view orchestration', () => {
     const result = await fetchActivityDayShell('2026-04-16')
 
     expect(api.getActionLogDailyActivityLog).toHaveBeenCalledWith('2026-04-16')
-    expect(api.getActionLogOpenLoops).toHaveBeenCalledWith('2026-04-16', '2026-04-16')
     expect(api.getSituationLogs).toHaveBeenCalledWith('2026-04-16', '2026-04-16')
     expect(api.getActionLogSessionsPage).not.toHaveBeenCalled()
     expect(api.getActionLogRawEventsPage).not.toHaveBeenCalled()
     expect(result.dailyLog?.id).toBe('daily_2026-04-16')
-    expect(result.openLoops.map((openLoop) => openLoop.id)).toEqual(['open_loop_open'])
     expect(result.situationLogs.map((log) => log.summary)).toEqual(['newer summary', 'older summary'])
   })
 
@@ -605,28 +572,20 @@ describe('action log view orchestration', () => {
     expect(blocks.every((block) => block.kind === 'single')).toBe(true)
   })
 
-  it('shows only open open loops in day views and daily log generation input', async () => {
+  it('builds day views and daily log generation input without open loops', async () => {
     const state = hydratePersistedState()
-    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
-      createOpenLoop('open_loop_open'),
-      createOpenLoop('open_loop_closed', {
-        id: 'open_loop_closed',
-        title: 'Already resolved loop',
-        status: 'closed',
-      }),
-    ])
     vi.mocked(ai.generateDailyActivityLog).mockResolvedValue({
       provider: 'template',
-      summary: 'Daily summary based on open loops only.',
-      questSummary: 'Quest summary based on open loops only.',
-      healthSummary: 'Health summary based on open loops only.',
+      summary: 'Daily summary based on sessions only.',
+      questSummary: 'Quest summary based on sessions only.',
+      healthSummary: 'Health summary based on sessions only.',
       mainThemes: ['Chrome docs'],
-      reviewQuestions: ['What remains open?'],
+      reviewQuestions: ['What should be continued next?'],
     })
 
     const fetched = await fetchActivityDayView('2026-04-16')
 
-    expect(fetched.openLoops.map((openLoop) => openLoop.id)).toEqual(['open_loop_open'])
+    expect(fetched).not.toHaveProperty('openLoops')
 
     const generated = await ensurePreviousDayDailyActivityLog({
       aiConfig: state.aiConfig,
@@ -635,15 +594,13 @@ describe('action log view orchestration', () => {
       now: new Date('2026-04-17T09:00:00+09:00'),
     })
 
-    expect(vi.mocked(ai.generateDailyActivityLog).mock.calls[0][0]).toMatchObject({
-      openLoops: [createOpenLoop('open_loop_open')],
-    })
+    expect(vi.mocked(ai.generateDailyActivityLog).mock.calls[0][0]).not.toHaveProperty('openLoops')
     expect(api.putActionLogDailyActivityLog).toHaveBeenCalledWith(
       expect.objectContaining({
-        openLoopIds: ['open_loop_open'],
+        id: 'daily_2026-04-16',
       }),
     )
-    expect(generated.openLoops.map((openLoop) => openLoop.id)).toEqual(['open_loop_open'])
+    expect(generated).not.toHaveProperty('openLoops')
   })
 
   it('does not generate a DailyActivityLog for today even when it is missing', async () => {
@@ -676,14 +633,6 @@ describe('action log view orchestration', () => {
 
   it('generates a missing WeeklyActivityReview only on Monday for the previous week from the week screen', async () => {
     const state = hydratePersistedState()
-    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
-      createOpenLoop('open_loop_open'),
-      createOpenLoop('open_loop_closed', {
-        id: 'open_loop_closed',
-        title: 'Resolved weekly loop',
-        status: 'closed',
-      }),
-    ])
     vi.mocked(ai.generateWeeklyActivityReview).mockResolvedValue({
       provider: 'template',
       summary: 'Lily observed a week centered on research and implementation.',
@@ -702,14 +651,12 @@ describe('action log view orchestration', () => {
     expect(ai.generateWeeklyActivityReview).toHaveBeenCalledTimes(1)
     expect(vi.mocked(ai.generateWeeklyActivityReview).mock.calls[0][0]).toMatchObject({
       weekKey: '2026-W16',
-      openLoops: [createOpenLoop('open_loop_open')],
       categoryDurations: { study: 40, work: 20 },
     })
     expect(api.putActionLogWeeklyActivityReview).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'weekly_2026-W16',
         weekKey: '2026-W16',
-        openLoopIds: ['open_loop_open'],
       }),
     )
   })
@@ -844,19 +791,9 @@ describe('action log view orchestration', () => {
       }),
     ])
     vi.mocked(api.getActionLogWeeklyActivityReview).mockResolvedValue(createWeeklyReview('2026-W16'))
-    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
-      createOpenLoop('week_loop', { dateKey: '2026-04-14' }),
-      createOpenLoop('week_loop_closed', {
-        id: 'week_loop_closed',
-        dateKey: '2026-04-14',
-        title: 'Already resolved weekly loop',
-        status: 'closed',
-      }),
-    ])
 
     const result = await fetchActivityReviewWeek('2026-W16')
 
-    expect(result.openLoops.map((openLoop) => openLoop.id)).toEqual(['week_loop'])
     expect(result.topApps).toEqual([
       { label: 'Chrome', minutes: 60 },
       { label: 'Code', minutes: 30 },
@@ -867,7 +804,7 @@ describe('action log view orchestration', () => {
     ])
   })
 
-  it('filters sessions by hidden/category/app/domain and optionally includes open loops', async () => {
+  it('filters sessions by hidden/category/app/domain', async () => {
     vi.mocked(api.getActionLogSessions).mockResolvedValue([
       createSession('visible_chrome', {
         primaryCategory: 'study',
@@ -884,19 +821,6 @@ describe('action log view orchestration', () => {
         hidden: true,
       }),
     ])
-    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
-      createOpenLoop('loop_visible', {
-        title: 'Chrome task',
-        dateKey: '2026-04-16',
-      }),
-      createOpenLoop('loop_closed', {
-        id: 'loop_closed',
-        title: 'Resolved code task',
-        dateKey: '2026-04-16',
-        status: 'closed',
-      }),
-    ])
-
     const filtered = await searchActivityLogs({
       from: '2026-04-01',
       to: '2026-04-17',
@@ -904,12 +828,10 @@ describe('action log view orchestration', () => {
       categories: ['study'],
       apps: ['Chrome'],
       domains: ['developer.chrome.com'],
-      includeOpenLoops: false,
       includeHidden: false,
     })
 
     expect(filtered.sessions.map((session) => session.id)).toEqual(['visible_chrome'])
-    expect(filtered.openLoops).toEqual([])
 
     const withHidden = await searchActivityLogs({
       from: '2026-04-01',
@@ -918,19 +840,16 @@ describe('action log view orchestration', () => {
       categories: [],
       apps: [],
       domains: [],
-      includeOpenLoops: true,
       includeHidden: true,
     })
 
     expect(withHidden.sessions.map((session) => session.id)).toEqual(['hidden_code'])
-    expect(withHidden.openLoops.map((openLoop) => openLoop.id)).toEqual(['loop_closed'])
   })
 
   it('exports an action-log bundle with overlapping weekly reviews only', async () => {
     vi.mocked(api.getActionLogRawEvents).mockResolvedValue([createRawEvent('raw_1')])
     vi.mocked(api.getActionLogSessions).mockResolvedValue([createSession('session_1')])
     vi.mocked(api.getActionLogDailyActivityLogs).mockResolvedValue([createDailyLog('2026-04-16')])
-    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([createOpenLoop('open_loop_1')])
     vi.mocked(api.getSituationLogs).mockResolvedValue([createSituationLog()])
     vi.mocked(api.getActionLogWeeklyActivityReviews).mockResolvedValue([
       createWeeklyReview('2026-W16'),
@@ -950,7 +869,6 @@ describe('action log view orchestration', () => {
     expect(bundle.rawEvents.map((event) => event.id)).toEqual(['raw_1'])
     expect(bundle.sessions.map((session) => session.id)).toEqual(['session_1'])
     expect(bundle.dailyLogs.map((log) => log.id)).toEqual(['daily_2026-04-16'])
-    expect(bundle.openLoops.map((openLoop) => openLoop.id)).toEqual(['open_loop_1'])
     expect(bundle.situationLogs.map((log) => log.timestamp)).toEqual(['2026-04-16T18:30:00+09:00'])
     expect(bundle.weeklyReviews.map((review) => review.id)).toEqual(['weekly_2026-W16'])
     expect(bundle.meta).toMatchObject({

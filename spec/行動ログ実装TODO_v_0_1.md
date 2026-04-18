@@ -110,7 +110,7 @@
 
 ### 実装対象
 
-- [x] `RawEvent / ActivitySession / DailyActivityLog / WeeklyActivityReview / ManualNote / OpenLoop / PrivacyRule / Device` の型定義
+- [x] `RawEvent / ActivitySession / DailyActivityLog / WeeklyActivityReview / ManualNote / PrivacyRule / Device` の型定義
 - [x] サーバー保存モデルと API 契約の骨組み
 - [x] privacy rule と storage mode の土台
 - [x] `RawEvent` の TTL 既定値 30 日の扱い
@@ -298,7 +298,7 @@
 - [x] `RawEvent -> ActivitySession` のセッション化
 - [x] セッション名付け
 - [x] primary category と activity kind の分類
-- [x] OpenLoop 抽出
+- [x] session enrichment を session-only に整理する
 - [x] 検索補助インデックス生成
 
 ### 先に書く failing test
@@ -317,7 +317,7 @@
 
 ### 完了条件
 
-- [x] session タイトル・カテゴリ・OpenLoop が生成される
+- [x] session タイトルとカテゴリが生成される
 - [x] local `gemma4` が通常整理処理に使われる
 - [x] fallback 時も最低限の session 生成が成立する
 
@@ -380,7 +380,7 @@
 - [x] `前年` / `次年` / `年ピッカー` で `year` query が更新される
 - [x] 年一覧から `review/week?weekKey=YYYY-Www` へ遷移する
 - [x] `review/week` が指定週の詳細を表示する
-- [x] 期間とキーワードで `ActivitySession` / `OpenLoop` が client-side filter される
+- [x] 期間とキーワードで `ActivitySession` が client-side filter される
 - [x] 空結果時の empty state が出る
 - [x] `home-screen` からの `records` 導線が壊れていない
 - [x] `weekly-reflection-screen` からの `records` 導線が壊れていない
@@ -394,7 +394,7 @@
 - [x] カレンダーは 1 か月単位表示を正本にする
 - [x] 週次レビュー一覧は 1 年単位表示を正本にする
 - [x] `review/week` は週詳細 route として扱う
-- [x] 最小検索は `ActivitySession` と `OpenLoop` の client-side filter に留める
+- [x] 最小検索は `ActivitySession` の client-side filter に留める
 - [x] Phase 6 では `ManualNote` の保存 UI は実装しない
 
 ### 完了条件
@@ -495,7 +495,7 @@
 
 - [x] Web 側 Lily の `activity_logs` 参照を action-log API へ切り替える
 - [x] desktop 側 Lily の `activity_logs` 参照を action-log API へ切り替える
-- [x] `activity_logs` 参照で `ActivitySession / DailyActivityLog / OpenLoop` を優先して返す
+- [x] `activity_logs` 参照で `ActivitySession / DailyActivityLog` を優先して返す
 - [x] `RawEvent` を Lily の既定の長期参照対象にしない
 - [x] 非表示セッションを Lily 会話コンテキストから除外する
 - [x] `web.base_url` + deep link path を使った既定ブラウザ起動
@@ -504,8 +504,8 @@
 
 ### 先に書く failing test
 
-- [x] Web 側 Lily の `activity_logs` が `ActivitySession / DailyActivityLog / OpenLoop` を返すテスト
-- [x] desktop 側 Lily の `activity_logs` が `ActivitySession / DailyActivityLog / OpenLoop` を返すテスト
+- [x] Web 側 Lily の `activity_logs` が `ActivitySession / DailyActivityLog` を返すテスト
+- [x] desktop 側 Lily の `activity_logs` が `ActivitySession / DailyActivityLog` を返すテスト
 - [x] `RawEvent` 全文を既定で返さないテスト
 - [x] 非表示セッションが Lily 会話コンテキストから除外されるテスト
 - [x] `web.base_url` を使って既定ブラウザ起動 URL を組み立てるテスト
@@ -555,7 +555,7 @@
 - [x] desktop が purge request を処理し、local spool と `sync_state.json` を更新して ack する
 - [x] `today / day / search` で session を非表示にできる
 - [x] `day / search` で hidden session を再表示できる
-- [x] search に `keyword / from / to / categories / apps / domains / includeOpenLoops / includeHidden` を追加する
+- [x] search に `keyword / from / to / categories / apps / domains / includeHidden` を追加する
 - [x] search から action-log 専用 JSON export を行えるようにする
 - [x] search から action-log 専用の期間削除を行えるようにする
 - [x] 削除した期間が raw sync / organizer で復活しないよう purge queue を入れる
@@ -579,7 +579,7 @@
 
 - [x] settings は local draft + 明示 Save で動かし、`putActionLogDevice()` と `putActionLogPrivacyRules()` に分離して保存する
 - [x] `hidden=true` session は既定の一覧と Lily 会話コンテキストから除外し、明示的に含めたときだけ表示する
-- [x] export は client-side bundle とし、`rawEvents / sessions / dailyLogs / weeklyReviews / openLoops / meta` を含める
+- [x] export は client-side bundle とし、`rawEvents / sessions / dailyLogs / weeklyReviews / meta` を含める
 - [x] delete は action-log entity だけを対象にし、quests / completions / messages などは対象外のまま維持する
 - [x] `getDayKey()` / `getWeekKey()` は host timezone に依存させず JST 固定で算出する
 - [x] organizer 再実行で session id が変わっても hidden session を再流入させない
@@ -615,7 +615,7 @@
 - [ ] `DailyActivityLog` に `questSummary` と `healthSummary` を追加する
 - [ ] `today/day` の `session` 表示で `SituationLog` を最新順に表示する
 - [ ] `today/day` の `event` 表示では `SituationLog` を出さない
-- [ ] `today/day` で `OpenLoop` 表示を外す
+- [x] `today/day` で `OpenLoop` 表示を持たない
 - [ ] カレンダーセルは `DailyActivityLog.summary` だけを表示する
 - [ ] `situation_logs` の TTL を撤廃する
 - [ ] export bundle に `situationLogs` を含める
@@ -626,7 +626,7 @@
 - [ ] `DailyActivityLog` の 3 本まとめが `summary -> questSummary -> healthSummary` の順で表示されるテスト
 - [ ] `session` 表示で `SituationLog` が `timestamp` 降順に出るテスト
 - [ ] `event` 表示では `SituationLog` が出ないテスト
-- [ ] `today/day` で `OpenLoop` が表示されないテスト
+- [x] `today/day` で `OpenLoop` が表示されないテスト
 - [ ] カレンダーセルに `DailyActivityLog.summary` だけが出るテスト
 - [ ] export bundle に `situationLogs` が含まれるテスト
 - [ ] `DELETE /action-log/range` が `SituationLog` も削除対象に含めるテスト
@@ -637,7 +637,7 @@
 - [ ] `questSummary` は `QuestCompletion` と関連 `Quest` 情報、`healthSummary` は `health-data` を主入力にする
 - [ ] 3 本ともリリィ観察日記風の地の文でそろえる
 - [ ] `mainThemes` / `reviewQuestions` は保持してもよいが、day 画面の必須表示にはしない
-- [ ] `OpenLoop` の個別削除導線と削除時の整合性は後続タスクとして整理する
+- [x] `OpenLoop` 導線は廃止し、行動ログは session / daily / weekly を正本にする
 
 ### 完了条件
 

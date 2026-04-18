@@ -223,46 +223,6 @@ function SituationLogCard({
   )
 }
 
-function OpenLoopsCard({
-  title,
-  openLoops,
-}: {
-  title?: string
-  openLoops: ActivityDayViewData['openLoops'] | ActivityWeekViewData['openLoops']
-}) {
-  return (
-    <Card>
-      <CardContent className="space-y-4">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">OpenLoop</div>
-          <div className="mt-1 text-lg font-bold text-slate-900">
-            {title ?? '途中になっていること'}
-          </div>
-        </div>
-        {openLoops.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-            該当する OpenLoop はありません。
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {openLoops.map((openLoop) => (
-              <div key={openLoop.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-semibold text-slate-900">{openLoop.title}</div>
-                  <Badge tone="outline">{openLoop.status}</Badge>
-                </div>
-                {openLoop.description ? (
-                  <div className="mt-2 text-sm text-slate-600">{openLoop.description}</div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
-}
-
 function buildSessionPrimaryText(session: ActivitySession) {
   return session.summary?.trim() || session.title
 }
@@ -654,7 +614,6 @@ function TodayOrDayView({
         rawEvents: eventTimeline.items,
         dailyLog: dayShell.dailyLog,
         situationLogs: dayShell.situationLogs,
-        openLoops: dayShell.openLoops,
       }
     : null
 
@@ -1187,7 +1146,6 @@ function ReviewWeekView({ weekKey }: { weekKey: string }) {
                 emptyLabel="この週のドメイン利用はまだありません。"
               />
             </div>
-            <OpenLoopsCard title="その週の OpenLoop" openLoops={week?.openLoops ?? []} />
           </>
         ) : null}
       </div>
@@ -1203,9 +1161,8 @@ function SearchView() {
   const [categories, setCategories] = useState('')
   const [apps, setApps] = useState('')
   const [domains, setDomains] = useState('')
-  const [includeOpenLoops, setIncludeOpenLoops] = useState(true)
   const [includeHidden, setIncludeHidden] = useState(false)
-  const [results, setResults] = useState<ActivitySearchResult>({ sessions: [], openLoops: [] })
+  const [results, setResults] = useState<ActivitySearchResult>({ sessions: [] })
   const [error, setError] = useState<string>()
   const [actionMessage, setActionMessage] = useState<string>()
   const [isLoading, setIsLoading] = useState(true)
@@ -1223,7 +1180,6 @@ function SearchView() {
       categories: parseFilterInput(categories),
       apps: parseFilterInput(apps),
       domains: parseFilterInput(domains),
-      includeOpenLoops,
       includeHidden,
     })
       .then((nextResults) => {
@@ -1245,7 +1201,7 @@ function SearchView() {
     return () => {
       active = false
     }
-  }, [apps, categories, domains, from, includeHidden, includeOpenLoops, keyword, reloadToken, to])
+  }, [apps, categories, domains, from, includeHidden, keyword, reloadToken, to])
 
   const deleteEnabled = canDeleteActionLogRange({ from, to })
 
@@ -1288,7 +1244,7 @@ function SearchView() {
   }
 
   return (
-    <Screen title="行動ログ検索" subtitle="Session と OpenLoop をキーワードと期間で絞り込みます。">
+    <Screen title="行動ログ検索" subtitle="Session をキーワードと期間で絞り込みます。">
       <div className="space-y-4 pb-6">
         <RecordsSectionTabs active="activity" />
         <ActivityLogNav />
@@ -1359,15 +1315,7 @@ function SearchView() {
                 />
               </label>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                <span className="text-sm font-semibold text-slate-700">OpenLoop を含める</span>
-                <Switch
-                  checked={includeOpenLoops}
-                  onCheckedChange={setIncludeOpenLoops}
-                  aria-label="Include open loops"
-                />
-              </label>
+            <div className="grid gap-3 sm:grid-cols-1">
               <label className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
                 <span className="text-sm font-semibold text-slate-700">hidden session を含める</span>
                 <Switch
@@ -1420,30 +1368,6 @@ function SearchView() {
                         timeEndFormat="HH:mm"
                         className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3"
                       />
-                    ))}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-semibold text-slate-900">OpenLoop</div>
-                  <Badge tone="soft">{results.openLoops.length}件</Badge>
-                </div>
-                {results.openLoops.length === 0 ? (
-                  <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-                    条件に合う OpenLoop はありません。
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {results.openLoops.map((openLoop) => (
-                      <div key={openLoop.id} className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3">
-                        <div className="text-sm font-semibold text-slate-900">{openLoop.title}</div>
-                        {openLoop.description ? (
-                          <div className="mt-2 text-sm text-slate-600">{openLoop.description}</div>
-                        ) : null}
-                      </div>
                     ))}
                   </div>
                 )}

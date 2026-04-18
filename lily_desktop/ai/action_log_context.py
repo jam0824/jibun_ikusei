@@ -33,7 +33,6 @@ def to_jst(iso_value: str) -> str:
 def build_activity_log_entries(
     sessions: list[dict[str, Any]],
     daily_logs: list[dict[str, Any]],
-    open_loops: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     entries: list[dict[str, Any]] = []
 
@@ -67,18 +66,6 @@ def build_activity_log_entries(
             }
         )
 
-    for open_loop in open_loops:
-        entries.append(
-            {
-                "kind": "open_loop",
-                "category": "open_loop",
-                "title": open_loop.get("title", ""),
-                "summary": open_loop.get("description", ""),
-                "timestamp": open_loop.get("updatedAt") or open_loop.get("createdAt", ""),
-                "status": open_loop.get("status", "open"),
-            }
-        )
-
     entries.sort(key=lambda entry: str(entry.get("timestamp", "")), reverse=True)
     return entries
 
@@ -88,12 +75,11 @@ async def fetch_activity_log_entries(
     from_date: str,
     to_date: str,
 ) -> list[dict[str, Any]]:
-    sessions, daily_logs, open_loops = await asyncio.gather(
+    sessions, daily_logs = await asyncio.gather(
         api.get_action_log_sessions(from_date, to_date),
         api.get_action_log_daily_logs(from_date, to_date),
-        api.get_action_log_open_loops(from_date, to_date),
     )
-    return build_activity_log_entries(sessions, daily_logs, open_loops)
+    return build_activity_log_entries(sessions, daily_logs)
 
 
 def format_activity_log_lines(entries: list[dict[str, Any]], label: str) -> str:
@@ -120,14 +106,6 @@ def format_activity_log_lines(entries: list[dict[str, Any]], label: str) -> str:
         if kind == "daily":
             lines.append(
                 f"- [その日のまとめ] {entry.get('summary', '')} ({entry.get('dateKey', '')})"
-            )
-            continue
-
-        if kind == "open_loop":
-            summary = str(entry.get("summary", ""))
-            summary_suffix = f" / {summary}" if summary else ""
-            lines.append(
-                f"- [OpenLoop / {entry.get('status', 'open')}] {entry.get('title', '')}{summary_suffix}"
             )
             continue
 

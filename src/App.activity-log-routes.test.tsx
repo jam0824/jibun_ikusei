@@ -6,7 +6,6 @@ import { hydratePersistedState } from '@/domain/logic'
 import type {
   ActivitySession,
   DailyActivityLog,
-  OpenLoop,
   RawEvent,
   WeeklyActivityReview,
 } from '@/domain/action-log-types'
@@ -95,7 +94,6 @@ function createSession(id: string, overrides: Partial<ActivitySession> = {}): Ac
     summary: 'Chrome 拡張の調査を進めていた。',
     searchKeywords: ['Chrome拡張', 'developer.chrome.com'],
     noteIds: [],
-    openLoopIds: ['open_loop_1'],
     hidden: false,
     ...overrides,
   }
@@ -127,7 +125,6 @@ function createDailyLog(dateKey = '2026-04-17', overrides: Partial<DailyActivity
     healthSummary: 'リリィは、この日の健康記録が静かに朝の輪郭を残していたと見ている。',
     mainThemes: ['Chrome拡張', '調査'],
     noteIds: [],
-    openLoopIds: ['open_loop_1'],
     reviewQuestions: ['次に確認したい仕様はどこだったか。'],
     generatedAt: `${dateKey}T22:00:00+09:00`,
     ...overrides,
@@ -144,22 +141,7 @@ function createWeeklyReview(weekKey = '2026-W16', overrides: Partial<WeeklyActiv
       仕事: 120,
     },
     focusThemes: ['Chrome拡張', '開発'],
-    openLoopIds: ['open_loop_1'],
     generatedAt: '2026-04-18T08:00:00+09:00',
-    ...overrides,
-  }
-}
-
-function createOpenLoop(id = 'open_loop_1', overrides: Partial<OpenLoop> = {}): OpenLoop {
-  return {
-    id,
-    createdAt: '2026-04-17T09:40:00+09:00',
-    updatedAt: '2026-04-17T09:40:00+09:00',
-    dateKey: '2026-04-17',
-    title: '権限設定の確認',
-    description: 'manifest の権限設定を次に確認する。',
-    status: 'open',
-    linkedSessionIds: ['session_1'],
     ...overrides,
   }
 }
@@ -365,7 +347,6 @@ describe('activity log routes', () => {
         appNames: ['Code'],
         domains: [],
         searchKeywords: ['昨日', '実装'],
-        openLoopIds: [],
       }),
     ])
     vi.spyOn(api, 'getActionLogSessionsPage').mockResolvedValue({
@@ -407,21 +388,12 @@ describe('activity log routes', () => {
         sessions: 1,
         dailyLogs: 1,
         weeklyReviews: 1,
-        openLoops: 1,
         situationLogs: 1,
       },
       deletionRequestId: 'delete_1',
     })
     vi.spyOn(api, 'getCompletions').mockResolvedValue([
       createCompletion('completion_yesterday', 'quest_today', '2026-04-16T08:30:00+09:00'),
-    ])
-    vi.spyOn(api, 'getActionLogOpenLoops').mockResolvedValue([
-      createOpenLoop(),
-      createOpenLoop('open_loop_2', {
-        title: '検索画面の open loop',
-        dateKey: '2026-04-16',
-        linkedSessionIds: ['session_2'],
-      }),
     ])
     vi.spyOn(api, 'getBrowsingTimes').mockResolvedValue([])
     vi.spyOn(api, 'getHealthData').mockResolvedValue([createHealthDataEntry()])
@@ -1088,49 +1060,6 @@ describe('activity log routes', () => {
     expect(screen.getAllByText('20分')).toHaveLength(2)
   })
 
-  it('does not show open loops on the day view', async () => {
-    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
-      createOpenLoop('open_loop_open', {
-        id: 'open_loop_open',
-        title: 'Still open loop',
-      }),
-      createOpenLoop('open_loop_closed', {
-        id: 'open_loop_closed',
-        title: 'Resolved loop',
-        status: 'closed',
-      }),
-    ])
-
-    renderApp('/records/activity/day/2026-04-17')
-    await settleApp()
-
-    expect(screen.queryByText('Still open loop')).not.toBeInTheDocument()
-    expect(screen.queryByText('Resolved loop')).not.toBeInTheDocument()
-    expect(screen.queryByText('途中になっていること')).not.toBeInTheDocument()
-  })
-
-  it('does not show closed open loops on the weekly detail view', async () => {
-    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
-      createOpenLoop('open_loop_open', {
-        id: 'open_loop_open',
-        title: 'Weekly open loop',
-        dateKey: '2026-04-14',
-      }),
-      createOpenLoop('open_loop_closed', {
-        id: 'open_loop_closed',
-        title: 'Weekly resolved loop',
-        dateKey: '2026-04-15',
-        status: 'closed',
-      }),
-    ])
-
-    renderApp('/records/activity/review/week?weekKey=2026-W16')
-    await settleApp()
-
-    expect(screen.getByText('Weekly open loop')).toBeInTheDocument()
-    expect(screen.queryByText('Weekly resolved loop')).not.toBeInTheDocument()
-  })
-
   it.skip('filters search results on the search screen', async () => {
     renderApp('/records/activity/search')
     await settleApp()
@@ -1230,24 +1159,16 @@ describe('activity log routes', () => {
         searchKeywords: ['extension', 'manifest'],
       }),
     ])
-    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
-      createOpenLoop('open_loop_filter', {
-        title: 'Permission checklist',
-        description: 'Confirm the remaining permission settings.',
-        linkedSessionIds: ['session_filter'],
-      }),
-    ])
 
     renderApp('/records/activity/search')
     await settleApp()
 
     fireEvent.change(screen.getByRole('textbox', { name: 'Search keyword' }), {
-      target: { value: 'checklist' },
+      target: { value: 'manifest' },
     })
     await settleApp()
 
-    expect(screen.getByText('Permission checklist')).toBeInTheDocument()
-    expect(screen.queryByText('Extension research')).not.toBeInTheDocument()
+    expect(screen.getByText('Extension research')).toBeInTheDocument()
   })
 
   it('shows hidden sessions in search only when includeHidden is enabled after the view refreshes', async () => {
