@@ -10,6 +10,7 @@
 - 日次 `DailyActivityLog` と週次 `WeeklyActivityReview` の backfill は従来どおり `gpt-5.4` を使う。
 - 日次 `DailyActivityLog` の backfill は `summary` / `questSummary` / `healthSummary` を 3 本別々の `gpt-5.4` request として送る。
 - 日次 `DailyActivityLog` と週次 `WeeklyActivityReview` の backfill は `max_output_tokens=1600` を明示して送る。
+- 日次 `healthSummary` request では JST 同日の `health-data` に加えて `fitbit-data` と `nutrition-data` も入力へ含める。
 - 日次 `DailyActivityLog` はテンプレート fallback を使わず、成功した section だけ保存し、missing section は次回起動時または手動再生成時に再試行する。
 - desktop のデバッグメニューには `前日の DailyActivityLog を再生成` を置き、3 section を強制再実行できるようにする。
 

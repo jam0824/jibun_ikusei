@@ -634,7 +634,7 @@
 ### 実装メモ
 
 - [x] `summary`, `questSummary`, `healthSummary` はすべて JST 同日データを入力にし、`gpt-5.4` で生成する
-- [x] `questSummary` は `QuestCompletion` と関連 `Quest` 情報、`healthSummary` は `health-data` を主入力にする
+- [x] `questSummary` は `QuestCompletion` と関連 `Quest` 情報、`healthSummary` は `health-data` を主入力にしつつ `fitbit-data` / `nutrition-data` も同日データとして入力する
 - [x] 3 本ともリリィ観察日記風の地の文でそろえる
 - [x] `mainThemes` / `reviewQuestions` は保持してもよいが、day 画面の必須表示にはしない
 - [x] `OpenLoop` 導線は廃止し、行動ログは session / daily / weekly を正本にする

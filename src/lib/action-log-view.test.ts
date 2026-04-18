@@ -7,7 +7,12 @@ import type {
 } from '@/domain/action-log-types'
 import { hydratePersistedState } from '@/domain/logic'
 import type { Quest, QuestCompletion } from '@/domain/types'
-import type { HealthDataEntry, SituationLogEntry } from '@/lib/api-client'
+import type {
+  FitbitSummary,
+  HealthDataEntry,
+  NutritionDayResult,
+  SituationLogEntry,
+} from '@/lib/api-client'
 
 vi.mock('@/lib/api-client', () => ({
   deleteActionLogRange: vi.fn(),
@@ -21,6 +26,8 @@ vi.mock('@/lib/api-client', () => ({
   getActionLogWeeklyActivityReview: vi.fn(),
   getActionLogWeeklyActivityReviews: vi.fn(),
   getHealthData: vi.fn(),
+  getFitbitData: vi.fn(),
+  getNutrition: vi.fn(),
   getQuests: vi.fn(),
   getSituationLogs: vi.fn(),
   putActionLogDailyActivityLog: vi.fn(),
@@ -155,6 +162,80 @@ function createSituationLog(
   }
 }
 
+function createFitbitSummary(overrides: Partial<FitbitSummary> = {}): FitbitSummary {
+  return {
+    date: '2026-04-16',
+    heart: {
+      resting_heart_rate: 58,
+      intraday_points: 0,
+      heart_zones: [],
+    },
+    active_zone_minutes: {
+      intraday_points: 0,
+      minutes_total_estimate: 22,
+      summary_rows: 1,
+    },
+    sleep: {
+      main_sleep: {
+        date_of_sleep: '2026-04-16',
+        start_time: '2026-04-15T23:45:00.000',
+        end_time: '2026-04-16T06:40:00.000',
+        minutes_asleep: 390,
+        minutes_awake: 25,
+        time_in_bed: 415,
+        deep_minutes: 70,
+        light_minutes: 240,
+        rem_minutes: 80,
+        wake_minutes: 25,
+      },
+      all_sleep_count: 1,
+    },
+    activity: {
+      steps: 8123,
+      distance: 5.4,
+      calories: 2100,
+      very_active_minutes: 12,
+      fairly_active_minutes: 18,
+      lightly_active_minutes: 30,
+      sedentary_minutes: 500,
+    },
+    ...overrides,
+  }
+}
+
+function createNutritionDayResult(): NutritionDayResult {
+  return {
+    breakfast: null,
+    lunch: null,
+    dinner: null,
+    daily: {
+      userId: 'user_1',
+      date: '2026-04-16',
+      mealType: 'daily',
+      nutrients: {
+        energy: { value: 1850, unit: 'kcal', label: '適正', threshold: null },
+        protein: { value: 70, unit: 'g', label: '適正', threshold: null },
+        fat: { value: 55, unit: 'g', label: '適正', threshold: null },
+        carbs: { value: 230, unit: 'g', label: '適正', threshold: null },
+        potassium: { value: 1800, unit: 'mg', label: '不足', threshold: null },
+        calcium: { value: 700, unit: 'mg', label: '適正', threshold: null },
+        iron: { value: 7, unit: 'mg', label: '適正', threshold: null },
+        vitaminA: { value: 650, unit: 'µg', label: '適正', threshold: null },
+        vitaminE: { value: 6, unit: 'mg', label: '適正', threshold: null },
+        vitaminB1: { value: 0.8, unit: 'mg', label: '不足', threshold: null },
+        vitaminB2: { value: 1.2, unit: 'mg', label: '適正', threshold: null },
+        vitaminB6: { value: 1.0, unit: 'mg', label: '適正', threshold: null },
+        vitaminC: { value: 90, unit: 'mg', label: '適正', threshold: null },
+        fiber: { value: 14, unit: 'g', label: '不足', threshold: null },
+        saturatedFat: { value: 7, unit: 'g', label: '適正', threshold: null },
+        salt: { value: 9, unit: 'g', label: '過剰', threshold: null },
+      },
+      createdAt: '2026-04-16T20:00:00+09:00',
+      updatedAt: '2026-04-16T20:00:00+09:00',
+    },
+  }
+}
+
 function createDailyLog(dateKey = '2026-04-16', overrides: Partial<DailyActivityLog> = {}): DailyActivityLog {
   return {
     id: `daily_${dateKey}`,
@@ -219,6 +300,8 @@ describe('action log view orchestration', () => {
     })
     vi.mocked(api.getActionLogWeeklyActivityReview).mockResolvedValue(null)
     vi.mocked(api.getHealthData).mockResolvedValue([createHealthDataEntry()])
+    vi.mocked(api.getFitbitData).mockResolvedValue([createFitbitSummary()])
+    vi.mocked(api.getNutrition).mockResolvedValue(createNutritionDayResult())
     vi.mocked(api.getQuests).mockResolvedValue([createQuest()])
     vi.mocked(api.getSituationLogs).mockResolvedValue([createSituationLog()])
     vi.mocked(api.putActionLogDailyActivityLog).mockImplementation(async (log) => log)
@@ -277,6 +360,8 @@ describe('action log view orchestration', () => {
     expect(vi.mocked(ai.generateDailyHealthSummary).mock.calls[0][0]).toMatchObject({
       dateKey: '2026-04-16',
       healthData: [createHealthDataEntry()],
+      fitbitData: [createFitbitSummary()],
+      nutritionData: createNutritionDayResult(),
     })
     expect(api.putActionLogDailyActivityLog).toHaveBeenCalledWith(
       expect.objectContaining({
