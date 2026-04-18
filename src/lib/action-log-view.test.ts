@@ -14,7 +14,9 @@ vi.mock('@/lib/api-client', () => ({
   getActionLogDailyActivityLogs: vi.fn(),
   getActionLogOpenLoops: vi.fn(),
   getActionLogRawEvents: vi.fn(),
+  getActionLogRawEventsPage: vi.fn(),
   getActionLogSessions: vi.fn(),
+  getActionLogSessionsPage: vi.fn(),
   getActionLogWeeklyActivityReview: vi.fn(),
   getActionLogWeeklyActivityReviews: vi.fn(),
   putActionLogDailyActivityLog: vi.fn(),
@@ -33,8 +35,12 @@ import {
   buildCompactSessionBlocks,
   canDeleteActionLogRange,
   ensurePreviousDayDailyActivityLog,
+  ensurePreviousDayDailyActivityLogShell,
   ensurePreviousWeekReviewForWeb,
   exportActionLogBundle,
+  fetchActivityDayEventPage,
+  fetchActivityDaySessionPage,
+  fetchActivityDayShell,
   fetchActivityDayView,
   fetchActivityReviewWeek,
   resolveDefaultReviewYearJst,
@@ -148,8 +154,16 @@ describe('action log view orchestration', () => {
       }),
     ])
     vi.mocked(api.getActionLogRawEvents).mockResolvedValue([createRawEvent('event_1')])
+    vi.mocked(api.getActionLogRawEventsPage).mockResolvedValue({
+      items: [createRawEvent('event_1')],
+      nextCursor: null,
+    })
     vi.mocked(api.getActionLogDailyActivityLog).mockResolvedValue(null)
     vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([createOpenLoop()])
+    vi.mocked(api.getActionLogSessionsPage).mockResolvedValue({
+      items: [createSession('session_2')],
+      nextCursor: null,
+    })
     vi.mocked(api.getActionLogWeeklyActivityReview).mockResolvedValue(null)
     vi.mocked(api.putActionLogDailyActivityLog).mockImplementation(async (log) => log)
     vi.mocked(api.putActionLogWeeklyActivityReview).mockImplementation(async (review) => review)
@@ -260,6 +274,103 @@ describe('action log view orchestration', () => {
 
     expect(result.sessions.map((session) => session.id)).toEqual(['session_new', 'session_old'])
     expect(result.rawEvents.map((event) => event.id)).toEqual(['event_new', 'event_old'])
+  })
+
+  it('fetches the day shell without loading timeline pages', async () => {
+    vi.mocked(api.getActionLogDailyActivityLog).mockResolvedValue(createDailyLog('2026-04-16'))
+    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
+      createOpenLoop('open_loop_open'),
+      createOpenLoop('open_loop_closed', {
+        id: 'open_loop_closed',
+        status: 'closed',
+      }),
+    ])
+
+    const result = await fetchActivityDayShell('2026-04-16')
+
+    expect(api.getActionLogDailyActivityLog).toHaveBeenCalledWith('2026-04-16')
+    expect(api.getActionLogOpenLoops).toHaveBeenCalledWith('2026-04-16', '2026-04-16')
+    expect(api.getActionLogSessionsPage).not.toHaveBeenCalled()
+    expect(api.getActionLogRawEventsPage).not.toHaveBeenCalled()
+    expect(result.dailyLog?.id).toBe('daily_2026-04-16')
+    expect(result.openLoops.map((openLoop) => openLoop.id)).toEqual(['open_loop_open'])
+  })
+
+  it('fetches a paged session timeline for the day', async () => {
+    vi.mocked(api.getActionLogSessionsPage).mockResolvedValue({
+      items: [
+        createSession('session_new', {
+          startedAt: '2026-04-16T11:00:00+09:00',
+          endedAt: '2026-04-16T11:20:00+09:00',
+        }),
+      ],
+      nextCursor: 'cursor_sessions_2',
+    })
+
+    const result = await fetchActivityDaySessionPage({
+      dateKey: '2026-04-16',
+      cursor: 'cursor_sessions_1',
+      includeHidden: true,
+    })
+
+    expect(api.getActionLogSessionsPage).toHaveBeenCalledWith({
+      from: '2026-04-16',
+      to: '2026-04-16',
+      limit: 50,
+      cursor: 'cursor_sessions_1',
+      includeHidden: true,
+    })
+    expect(result.items.map((session) => session.id)).toEqual(['session_new'])
+    expect(result.nextCursor).toBe('cursor_sessions_2')
+  })
+
+  it('fetches a paged raw-event timeline for the day', async () => {
+    vi.mocked(api.getActionLogRawEventsPage).mockResolvedValue({
+      items: [
+        createRawEvent('event_new', {
+          occurredAt: '2026-04-16T11:05:00+09:00',
+          windowTitle: 'Newer event',
+        }),
+      ],
+      nextCursor: 'cursor_events_2',
+    })
+
+    const result = await fetchActivityDayEventPage({
+      dateKey: '2026-04-16',
+      cursor: 'cursor_events_1',
+    })
+
+    expect(api.getActionLogRawEventsPage).toHaveBeenCalledWith({
+      from: '2026-04-16',
+      to: '2026-04-16',
+      limit: 50,
+      cursor: 'cursor_events_1',
+    })
+    expect(result.items.map((event) => event.id)).toEqual(['event_new'])
+    expect(result.nextCursor).toBe('cursor_events_2')
+  })
+
+  it('ensures a missing previous-day daily log shell without loading timeline pages', async () => {
+    const state = hydratePersistedState()
+    vi.mocked(api.getActionLogDailyActivityLog).mockResolvedValue(null)
+    vi.mocked(ai.generateDailyActivityLog).mockResolvedValue({
+      provider: 'template',
+      summary: 'Generated summary for yesterday only.',
+      mainThemes: ['Chrome docs'],
+      reviewQuestions: ['What remains open?'],
+    })
+
+    const result = await ensurePreviousDayDailyActivityLogShell({
+      aiConfig: state.aiConfig,
+      settings: state.settings,
+      dateKey: '2026-04-16',
+      now: new Date('2026-04-17T09:00:00+09:00'),
+    })
+
+    expect(api.getActionLogSessions).toHaveBeenCalledWith('2026-04-16', '2026-04-16')
+    expect(api.getActionLogSessionsPage).not.toHaveBeenCalled()
+    expect(api.getActionLogRawEventsPage).not.toHaveBeenCalled()
+    expect(result.dailyLog?.summary).toBe('Generated summary for yesterday only.')
   })
 
   it('compacts short alternating YouTube and Codex sessions into two blocks', async () => {

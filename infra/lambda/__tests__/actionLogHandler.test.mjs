@@ -103,6 +103,49 @@ describe('actionLogHandler', () => {
     ])
   })
 
+  it('GET /action-log/raw-events/page returns newest-first items with a cursor for the next page', async () => {
+    const commands = []
+    mockSend.mockImplementation((command) => {
+      commands.push(command)
+      return Promise.resolve({
+        Items: [
+          {
+            PK: 'user#test-user-123',
+            SK: 'ACTION_LOG#RAW_EVENT#2026-04-17#2026-04-17T11:15:00+09:00#raw_2',
+            id: 'raw_2',
+            deviceId: 'device_1',
+            source: 'desktop_agent',
+            eventType: 'heartbeat',
+            occurredAt: '2026-04-17T11:15:00+09:00',
+          },
+          {
+            PK: 'user#test-user-123',
+            SK: 'ACTION_LOG#RAW_EVENT#2026-04-17#2026-04-17T11:05:00+09:00#raw_1',
+            id: 'raw_1',
+            deviceId: 'device_1',
+            source: 'desktop_agent',
+            eventType: 'active_window_changed',
+            occurredAt: '2026-04-17T11:05:00+09:00',
+          },
+        ],
+        LastEvaluatedKey: {
+          PK: 'user#test-user-123',
+          SK: 'ACTION_LOG#RAW_EVENT#2026-04-17#2026-04-17T11:05:00+09:00#raw_1',
+        },
+      })
+    })
+
+    const event = makeEvent('GET /action-log/raw-events/page')
+    event.queryStringParameters = { from: '2026-04-17', to: '2026-04-17', limit: '2' }
+    const { statusCode, body } = parseResponse(await handler(event))
+
+    expect(statusCode).toBe(200)
+    expect(body.items.map((item) => item.id)).toEqual(['raw_2', 'raw_1'])
+    expect(body.nextCursor).toEqual(expect.any(String))
+    expect(commands[0].input.ScanIndexForward).toBe(false)
+    expect(commands[0].input.Limit).toBe(2)
+  })
+
   it('PUT /action-log/sessions replaces sessions for included date keys and GET returns the range', async () => {
     const commands = []
     mockSend.mockImplementation((command) => {
@@ -192,6 +235,84 @@ describe('actionLogHandler', () => {
 
     expect(getStatus).toBe(200)
     expect(getBody).toEqual([putBody.sessions[0]])
+  })
+
+  it('GET /action-log/sessions/page skips hidden sessions when includeHidden is false', async () => {
+    const commands = []
+    mockSend.mockImplementation((command) => {
+      commands.push(command)
+      if (commands.length === 1) {
+        return Promise.resolve({
+          Items: [
+            {
+              PK: 'user#test-user-123',
+              SK: 'ACTION_LOG#SESSION#2026-04-17#2026-04-17T11:15:00+09:00#session_hidden',
+              id: 'session_hidden',
+              deviceId: 'device_1',
+              startedAt: '2026-04-17T11:15:00+09:00',
+              endedAt: '2026-04-17T11:20:00+09:00',
+              dateKey: '2026-04-17',
+              title: 'Hidden session',
+              primaryCategory: '学習',
+              activityKinds: ['research'],
+              appNames: ['Chrome'],
+              domains: ['example.com'],
+              projectNames: [],
+              searchKeywords: ['hidden'],
+              noteIds: [],
+              openLoopIds: [],
+              hidden: true,
+            },
+          ],
+          LastEvaluatedKey: {
+            PK: 'user#test-user-123',
+            SK: 'ACTION_LOG#SESSION#2026-04-17#2026-04-17T11:15:00+09:00#session_hidden',
+          },
+        })
+      }
+      return Promise.resolve({
+        Items: [
+          {
+            PK: 'user#test-user-123',
+            SK: 'ACTION_LOG#SESSION#2026-04-17#2026-04-17T11:05:00+09:00#session_visible',
+            id: 'session_visible',
+            deviceId: 'device_1',
+            startedAt: '2026-04-17T11:05:00+09:00',
+            endedAt: '2026-04-17T11:10:00+09:00',
+            dateKey: '2026-04-17',
+            title: 'Visible session',
+            primaryCategory: '学習',
+            activityKinds: ['research'],
+            appNames: ['Chrome'],
+            domains: ['example.com'],
+            projectNames: [],
+            searchKeywords: ['visible'],
+            noteIds: [],
+            openLoopIds: [],
+            hidden: false,
+          },
+        ],
+      })
+    })
+
+    const event = makeEvent('GET /action-log/sessions/page')
+    event.queryStringParameters = {
+      from: '2026-04-17',
+      to: '2026-04-17',
+      limit: '1',
+      includeHidden: 'false',
+    }
+    const { statusCode, body } = parseResponse(await handler(event))
+
+    expect(statusCode).toBe(200)
+    expect(body.items.map((item) => item.id)).toEqual(['session_visible'])
+    expect(body.nextCursor).toBeNull()
+    expect(commands[0].input.ScanIndexForward).toBe(false)
+    expect(commands[0].input.Limit).toBe(1)
+    expect(commands[1].input.ExclusiveStartKey).toEqual({
+      PK: 'user#test-user-123',
+      SK: 'ACTION_LOG#SESSION#2026-04-17#2026-04-17T11:15:00+09:00#session_hidden',
+    })
   })
 
   it('PUT /action-log/sessions batches delete and put requests in chunks of 25', async () => {
