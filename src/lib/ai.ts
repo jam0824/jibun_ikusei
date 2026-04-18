@@ -833,30 +833,6 @@ function takeTopCounts(values: string[], limit = 5) {
     .map(([value]) => value)
 }
 
-function summarizeSessionFocus(sessions: ActivitySession[]) {
-  if (sessions.length === 0) {
-    return '静かな整理'
-  }
-
-  const first = sessions[0]
-  const app = first.appNames[0]
-  const domain = first.domains[0]
-
-  if (app && domain) {
-    return `${app} と ${domain} を行き来する流れ`
-  }
-
-  if (first.title) {
-    return first.title
-  }
-
-  if (app) {
-    return `${app} での作業`
-  }
-
-  return '静かな整理'
-}
-
 function collectThemes(sessions: ActivitySession[], limit = 5) {
   const sessionThemes = takeTopCounts(
     sessions.flatMap((session) => [
@@ -927,89 +903,6 @@ function filterDateHealthData(dateKey: string, healthData: HealthDataEntry[]) {
   return [...healthData]
     .filter((entry) => entry.date === dateKey)
     .sort((left, right) => `${right.date}T${right.time}`.localeCompare(`${left.date}T${left.time}`))
-}
-
-function buildQuestSummaryFallback(params: {
-  dateKey: string
-  quests: Quest[]
-  completions: QuestCompletion[]
-}) {
-  const questMap = new Map(params.quests.map((quest) => [quest.id, quest] as const))
-  const sameDayCompletions = filterDateCompletions(params.dateKey, params.completions)
-
-  if (sameDayCompletions.length === 0) {
-    return 'リリィは、この日のクエスト達成は控えめで、次の一歩へ向けた静かな余白が残っていたと見ている。'
-  }
-
-  const topQuestTitle = questMap.get(sameDayCompletions[0]?.questId ?? '')?.title ?? 'いくつかのクエスト'
-  const uniqueTitles = uniqueNonEmpty(
-    sameDayCompletions.map((completion) => questMap.get(completion.questId)?.title),
-    3,
-  )
-
-  return [
-    `リリィは、この日は${sameDayCompletions.length}件の達成があり、`,
-    `${topQuestTitle}のような区切りが静かに積み重なっていたと見ている。`,
-    uniqueTitles.length > 1 ? `${uniqueTitles.slice(1).join('や')}にも小さな足跡が残っていた。` : '',
-  ].join('')
-}
-
-function buildHealthSummaryFallback(params: {
-  dateKey: string
-  healthData: HealthDataEntry[]
-}) {
-  const sameDayHealthData = filterDateHealthData(params.dateKey, params.healthData)
-  const latest = sameDayHealthData[0]
-
-  if (!latest) {
-    return 'リリィは、この日の健康記録は多く語らず、静かな余白のまま一日の輪郭を見守っていた。'
-  }
-
-  const details = [
-    latest.weight_kg != null ? `体重 ${latest.weight_kg}kg` : undefined,
-    latest.body_fat_pct != null ? `体脂肪率 ${latest.body_fat_pct}%` : undefined,
-  ].filter(Boolean)
-
-  if (details.length === 0) {
-    return 'リリィは、この日の健康記録が静かに残り、暮らしの輪郭をそっと伝えていたと見ている。'
-  }
-
-  return `リリィは、この日の健康記録に${details.join('、')}といった輪郭が残り、朝の様子をそっと伝えていたと見ている。`
-}
-
-function buildDailyActivityLogFallback(params: {
-  dateKey: string
-  sessions: ActivitySession[]
-  quests: Quest[]
-  completions: QuestCompletion[]
-  healthData: HealthDataEntry[]
-}): GeneratedDailyActivityLog {
-  const themes = collectThemes(params.sessions, 3)
-  const themeText = themes.length > 0 ? themes.join('や') : '静かな整理'
-  const focus = summarizeSessionFocus(params.sessions)
-
-  return {
-    provider: 'template',
-    summary: [
-      `リリィの観察では、この日は${themeText}を軸に時間が流れていた。`,
-      `${focus}に向かう場面が中心で、`,
-      '区切りをつけながら静かに進めていた。',
-    ].join(''),
-    questSummary: buildQuestSummaryFallback({
-      dateKey: params.dateKey,
-      quests: params.quests,
-      completions: params.completions,
-    }),
-    healthSummary: buildHealthSummaryFallback({
-      dateKey: params.dateKey,
-      healthData: params.healthData,
-    }),
-    mainThemes: themes.length > 0 ? themes : ['静かな整理'],
-    reviewQuestions: [
-      `${focus}のあとに、次の一歩として見えていたものは何だったか。`,
-      'この日の流れの中で、もう少し深めたい部分はどこだったか。',
-    ],
-  }
 }
 
 function buildWeeklyActivityReviewFallback(params: {
