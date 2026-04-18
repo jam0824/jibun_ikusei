@@ -181,6 +181,44 @@ function getSessionCard(sessionId: string) {
   return screen.getByTestId(`activity-session-${sessionId}`)
 }
 
+function createSessionBatch(
+  total: number,
+  options?: {
+    startIndex?: number
+    overrides?: Partial<ActivitySession>
+  },
+) {
+  return Array.from({ length: total }, (_, index) => {
+    const sequence = (options?.startIndex ?? 0) + index
+    const totalMinutes = 23 * 60 + 59 - sequence
+    const startedHour = String(Math.floor(totalMinutes / 60)).padStart(2, '0')
+    const startedMinute = String(totalMinutes % 60).padStart(2, '0')
+    const sessionNumber = String(sequence + 1).padStart(3, '0')
+    return createSession(`session_${sessionNumber}`, {
+      startedAt: `2026-04-17T${startedHour}:${startedMinute}:00+09:00`,
+      endedAt: `2026-04-17T${startedHour}:${startedMinute}:59+09:00`,
+      title: `Session ${sessionNumber}`,
+      summary: undefined,
+      searchKeywords: [`session_${sessionNumber}`],
+      ...options?.overrides,
+    })
+  })
+}
+
+function createRawEventBatch(total: number, startIndex = 0) {
+  return Array.from({ length: total }, (_, index) => {
+    const sequence = startIndex + index
+    const eventNumber = String(sequence + 1).padStart(3, '0')
+    const totalMinutes = 23 * 60 + 59 - sequence
+    const hour = String(Math.floor(totalMinutes / 60)).padStart(2, '0')
+    const minute = String(totalMinutes % 60).padStart(2, '0')
+    return createRawEvent(`event_${eventNumber}`, {
+      occurredAt: `2026-04-17T${hour}:${minute}:00+09:00`,
+      windowTitle: `Event ${eventNumber}`,
+    })
+  })
+}
+
 async function settleApp() {
   await act(async () => {
     await vi.runAllTimersAsync()
@@ -328,6 +366,84 @@ describe('activity log routes', () => {
 
     expect(screen.getByText('イベント表示')).toBeInTheDocument()
     expect(screen.getAllByText('Chrome / Manifest V3 - Chrome for Developers').length).toBeGreaterThan(0)
+  })
+
+  it('shows only the first 50 sessions until more is requested', async () => {
+    vi.mocked(api.getActionLogSessions).mockResolvedValue(createSessionBatch(75))
+
+    renderApp('/records/activity/today')
+    await settleApp()
+
+    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(50)
+    expect(screen.getByText('表示中: 50 / 75件')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'さらに50件表示' })).toBeInTheDocument()
+    expect(screen.queryByTestId('activity-session-session_051')).not.toBeInTheDocument()
+  })
+
+  it('shows the next 50 sessions after pressing load more', async () => {
+    vi.mocked(api.getActionLogSessions).mockResolvedValue(createSessionBatch(120))
+
+    renderApp('/records/activity/today')
+    await settleApp()
+
+    fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
+
+    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(100)
+    expect(screen.getByText('表示中: 100 / 120件')).toBeInTheDocument()
+    expect(screen.getByTestId('activity-session-session_051')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'さらに50件表示' })).toBeInTheDocument()
+  })
+
+  it('keeps session and event pagination state separate and resets when the view changes', async () => {
+    vi.mocked(api.getActionLogSessions).mockResolvedValue(createSessionBatch(120))
+    vi.mocked(api.getActionLogRawEvents).mockResolvedValue(createRawEventBatch(70))
+
+    renderApp('/records/activity/today')
+    await settleApp()
+
+    fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
+    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(100)
+
+    fireEvent.click(screen.getByRole('button', { name: 'event' }))
+    await settleApp()
+
+    expect(screen.getAllByTestId(/activity-event-/)).toHaveLength(50)
+    expect(screen.getByText('表示中: 50 / 70件')).toBeInTheDocument()
+    expect(screen.queryByTestId('activity-event-event_051')).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'session' }))
+    await settleApp()
+
+    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(50)
+    expect(screen.getByText('表示中: 50 / 120件')).toBeInTheDocument()
+    expect(screen.queryByTestId('activity-session-session_051')).not.toBeInTheDocument()
+  })
+
+  it('resets the session pagination when hidden sessions are included', async () => {
+    const sessions = [
+      ...createSessionBatch(70),
+      ...createSessionBatch(10, { startIndex: 70, overrides: { hidden: true } }).map((session, index) => ({
+        ...session,
+        id: `hidden_session_${String(index + 1).padStart(3, '0')}`,
+        title: `Hidden Session ${String(index + 1).padStart(3, '0')}`,
+        searchKeywords: [`hidden_session_${index + 1}`],
+      })),
+    ]
+    vi.mocked(api.getActionLogSessions).mockResolvedValue(sessions)
+
+    renderApp('/records/activity/day/2026-04-17')
+    await settleApp()
+
+    fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
+    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(70)
+    expect(screen.getByText('表示中: 70 / 70件')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('switch', { name: 'Include hidden sessions in timeline' }))
+    await settleApp()
+
+    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(50)
+    expect(screen.getByText('表示中: 50 / 80件')).toBeInTheDocument()
+    expect(screen.queryByText('Hidden Session 001')).not.toBeInTheDocument()
   })
 
   it('shows newer sessions above older ones on the today timeline', async () => {
