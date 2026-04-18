@@ -72,7 +72,7 @@ export function ActivityLogNav({
               cn(
                 baseNavClass,
                 isActive
-                  ? 'border-slate-950 bg-slate-950 text-slate-50 shadow-lg shadow-slate-900/15 ring-1 ring-slate-700/20'
+                  ? 'border-slate-950 bg-slate-950 text-white shadow-lg shadow-slate-900/15 ring-1 ring-slate-700/20'
                   : 'border-slate-200 bg-white text-slate-700 shadow-sm shadow-slate-200/70 hover:border-slate-300 hover:text-slate-900 hover:shadow-md',
               )
             }

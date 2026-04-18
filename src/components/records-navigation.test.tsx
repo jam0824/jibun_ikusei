@@ -33,7 +33,7 @@ describe('ActivityLogNav', () => {
 
     expect(todayLink).toHaveAttribute('aria-current', 'page')
     expect(todayLink).toHaveClass('bg-slate-950')
-    expect(todayLink).toHaveClass('text-slate-50')
+    expect(todayLink).toHaveClass('text-white')
     expect(calendarLink).toHaveClass('text-slate-700')
   })
 })
