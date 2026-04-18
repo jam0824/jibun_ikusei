@@ -519,6 +519,7 @@ Cognito で認証される利用アカウント。アプリのデータ分離単
 #### `activity` タブ内の通常導線
 
 - `行動ログ` タブを開くと `/records/activity/today` へ遷移する。
+- `成長記録 / 行動ログ` タブと、行動ログ内の `今日 / カレンダー / 検索 / 週次レビュー` pill ナビは、選択中に文字色・アイコン色のコントラストを十分に確保し、背景に埋もれない見た目を保つ。
 - `今日` から特定日へ移動する時は `/records/activity/day/:dateKey` を使う。
 - `カレンダー` は `/records/activity/calendar?month=YYYY-MM`
 - `検索` は `/records/activity/search`
