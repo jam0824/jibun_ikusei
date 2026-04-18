@@ -36,13 +36,13 @@ class EventBus(QObject):
     tts_toggle_requested = Signal()    # 読み上げON/OFFトグル要求
 
     # デバッグ
-    desktop_context_requested = Signal()  # 手動で状況取得を要求
+    five_minute_record_requested = Signal()  # 手動で5分記録を要求
+    thirty_minute_record_requested = Signal()  # 手動で30分記録を要求
     auto_talk_requested = Signal()        # 手動で雑談を発火
     books_talk_requested = Signal()       # 手動で本雑談を発火
     memory_talk_requested = Signal()      # 手動で思い出雑談を発火
     quest_weekly_talk_requested = Signal()  # 手動で週次クエスト雑談を発火
     quest_today_talk_requested = Signal()  # 手動で今日のクエスト雑談を発火
-    camera_capture_requested = Signal()   # 手動でカメラ状況取得を要求
 
 
 # アプリ全体で共有するシングルトン

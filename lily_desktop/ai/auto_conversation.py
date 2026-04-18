@@ -135,6 +135,7 @@ class AutoConversation:
         session_mgr: SessionManager,
         api_client=None,
         situation_capture_coordinator: SituationCaptureCoordinator | None = None,
+        activity_capture_service=None,
         event_hub: DomainEventHub | None = None,
     ):
         self._config = config
@@ -171,6 +172,7 @@ class AutoConversation:
             rakuten_origin=getattr(rakuten_cfg, "origin", ""),
             api_client=api_client,
             situation_capture_coordinator=situation_capture_coordinator,
+            activity_capture_service=activity_capture_service,
         )
         self._timer = QTimer()
         self._timer.setSingleShot(False)
@@ -179,6 +181,9 @@ class AutoConversation:
         self._interrupted = False  # ユーザー割り込みフラグ
         self._tts = None  # TTSEngine（optional）
         self._prefetch_task: asyncio.Task | None = None  # プリフェッチ用タスク
+
+    def set_activity_capture_service(self, activity_capture_service) -> None:
+        self._seed_mgr.set_activity_capture_service(activity_capture_service)
 
     def set_tts(self, tts_engine) -> None:
         """TTSEngine の参照を設定/解除する"""

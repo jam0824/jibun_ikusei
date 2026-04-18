@@ -164,6 +164,7 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
                 }
             ],
         },
+        timeout=90.0,
     )
     client._request.assert_any_await(
         "GET",
@@ -259,6 +260,7 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
                 }
             ],
         },
+        timeout=90.0,
     )
     client._request.assert_any_await(
         "PUT",

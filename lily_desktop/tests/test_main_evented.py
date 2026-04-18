@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+import httpx
 import pytest
 
 import main as main_mod
@@ -108,6 +109,26 @@ def test_quest_today_talk_request_publishes_forced_quest_today_event():
     event = hub.events[0]
     assert isinstance(event, ChatAutoTalkDue)
     assert event.forced_source == "quest_today"
+
+
+def test_five_minute_record_request_publishes_snapshot_event():
+    hub = _CaptureHub()
+    app = SimpleNamespace(event_hub=hub)
+
+    main_mod.App._on_five_minute_record_requested(app)
+
+    assert len(hub.events) == 1
+    assert isinstance(hub.events[0], CaptureSnapshotRequested)
+
+
+def test_thirty_minute_record_request_publishes_summary_event():
+    hub = _CaptureHub()
+    app = SimpleNamespace(event_hub=hub)
+
+    main_mod.App._on_thirty_minute_record_requested(app)
+
+    assert len(hub.events) == 1
+    assert isinstance(hub.events[0], CaptureSummaryDue)
 
 
 def test_memory_talk_request_publishes_forced_memory_event():
@@ -365,6 +386,27 @@ async def test_handle_action_log_sync_request_purges_and_acks_deletion_requests(
 
     assert purge_calls == [("2026-04-16", "2026-04-16")]
     app.api_client.ack_action_log_deletion_request.assert_awaited_once_with("delete_1")
+
+
+@pytest.mark.asyncio
+async def test_handle_action_log_organize_request_swallows_timeout_and_returns(caplog):
+    app = SimpleNamespace(
+        auth=SimpleNamespace(is_configured=True),
+        config=SimpleNamespace(
+            activity_capture=SimpleNamespace(
+                enabled=True,
+            )
+        ),
+        _get_action_log_organizer=Mock(
+            return_value=SimpleNamespace(
+                organize_and_sync=AsyncMock(side_effect=httpx.ReadTimeout("timed out"))
+            )
+        ),
+    )
+
+    await main_mod.App.handle_action_log_organize_request(app)
+
+    assert "Action log organize timed out" in caplog.text
 
 
 @pytest.mark.asyncio

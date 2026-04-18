@@ -9,6 +9,7 @@ from api.auth import CognitoAuth
 from core.constants import API_BASE_URL
 
 logger = logging.getLogger(__name__)
+_ACTION_LOG_BULK_WRITE_TIMEOUT_SECONDS = 90.0
 
 
 class ApiClient:
@@ -20,15 +21,29 @@ class ApiClient:
         self._base = API_BASE_URL
 
     async def _request(
-        self, method: str, path: str, json: Any = None, params: dict | None = None
+        self,
+        method: str,
+        path: str,
+        json: Any = None,
+        params: dict | None = None,
+        timeout: float | None = None,
     ) -> Any:
         token = await self._auth.get_id_token()
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json",
         }
+        request_kwargs = {
+            "headers": headers,
+            "json": json,
+            "params": params,
+        }
+        if timeout is not None:
+            request_kwargs["timeout"] = timeout
         resp = await self._http.request(
-            method, f"{self._base}{path}", headers=headers, json=json, params=params
+            method,
+            f"{self._base}{path}",
+            **request_kwargs,
         )
         resp.raise_for_status()
         return resp.json()
@@ -131,7 +146,12 @@ class ApiClient:
         )
 
     async def put_action_log_sessions(self, payload: dict) -> dict:
-        return await self._request("PUT", "/action-log/sessions", json=payload)
+        return await self._request(
+            "PUT",
+            "/action-log/sessions",
+            json=payload,
+            timeout=_ACTION_LOG_BULK_WRITE_TIMEOUT_SECONDS,
+        )
 
     async def put_action_log_session_hidden(
         self, session_id: str, payload: dict
@@ -192,7 +212,12 @@ class ApiClient:
         )
 
     async def put_action_log_open_loops(self, payload: dict) -> dict:
-        return await self._request("PUT", "/action-log/open-loops", json=payload)
+        return await self._request(
+            "PUT",
+            "/action-log/open-loops",
+            json=payload,
+            timeout=_ACTION_LOG_BULK_WRITE_TIMEOUT_SECONDS,
+        )
 
     async def delete_action_log_range(self, from_date: str, to_date: str) -> dict:
         return await self._request(

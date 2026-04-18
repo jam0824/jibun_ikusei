@@ -6,6 +6,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+import httpx
 import qasync
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication
@@ -32,7 +33,7 @@ from core.config import (
     save_healthplanet_token,
     save_voice_device,
 )
-from core.desktop_context import format_context_log
+from core.desktop_activity_summary import summarize_recent_desktop_activity
 from core.domain_events import (
     ActionLogOrganizeRequested,
     ActionLogSummaryBackfillRequested,
@@ -98,11 +99,13 @@ class App:
         )
         self.chat_engine.set_tools(CHAT_TOOLS, self.tool_executor.execute)
         self.situation_capture = SituationCaptureCoordinator()
+        self.activity_capture_service: ActivityCaptureService | None = None
         self.auto_conversation = AutoConversation(
             self.config,
             self.session_mgr,
             api_client=self.api_client,
             situation_capture_coordinator=self.situation_capture,
+            activity_capture_service=self.activity_capture_service,
             event_hub=self.event_hub,
         )
         self.voice_pipeline: VoicePipeline | None = None
@@ -112,7 +115,6 @@ class App:
         self.pending_periodic_expires_at: datetime | None = None
         self.chrome_audible_tabs_tracker = ChromeAudibleTabsTracker()
         self.level_watch = LevelWatchService()
-        self.activity_capture_service: ActivityCaptureService | None = None
         self.action_log_organizer: ActionLogOrganizer | None = None
         self.action_log_summary_backfill_service: ActionLogSummaryBackfillService | None = None
 
@@ -146,6 +148,8 @@ class App:
         self._healthplanet_sync_in_progress = False
         self._healthplanet_oauth_dialog: HealthPlanetOAuthDialog | None = None
         self._last_situation_capture_skip_reason = ""
+        self._manual_snapshot_feedback_requested = False
+        self._manual_summary_feedback_requested = False
         self.situation_logger = SituationLogger(
             openai_api_key=self.config.openai.api_key,
             summary_provider=self.config.camera.summary_provider,
@@ -185,13 +189,13 @@ class App:
         bus.camera_device_selected.connect(self._on_camera_device_selected)
 
         # デバッグ
-        bus.desktop_context_requested.connect(self._on_desktop_context_requested)
+        bus.five_minute_record_requested.connect(self._on_five_minute_record_requested)
+        bus.thirty_minute_record_requested.connect(self._on_thirty_minute_record_requested)
         bus.auto_talk_requested.connect(self._on_auto_talk_requested)
         bus.books_talk_requested.connect(self._on_books_talk_requested)
         bus.memory_talk_requested.connect(self._on_memory_talk_requested)
         bus.quest_weekly_talk_requested.connect(self._on_quest_weekly_talk_requested)
         bus.quest_today_talk_requested.connect(self._on_quest_today_talk_requested)
-        bus.camera_capture_requested.connect(self._on_camera_capture_requested)
 
     def _on_user_message(self, text: str) -> None:
         self._on_incoming_message(text, is_system=False)
@@ -581,6 +585,8 @@ class App:
         if not cfg.enabled:
             logger.info("Activity capture is disabled by config")
             self.activity_capture_service = None
+            if getattr(self, "auto_conversation", None) is not None:
+                self.auto_conversation.set_activity_capture_service(None)
             return
         if self.activity_capture_service is not None:
             return
@@ -594,12 +600,16 @@ class App:
         )
         service.start()
         self.activity_capture_service = service
+        if getattr(self, "auto_conversation", None) is not None:
+            self.auto_conversation.set_activity_capture_service(service)
 
     def stop_activity_capture_service(self) -> None:
         if self.activity_capture_service is None:
             return
         self.activity_capture_service.stop()
         self.activity_capture_service = None
+        if getattr(self, "auto_conversation", None) is not None:
+            self.auto_conversation.set_activity_capture_service(None)
 
     def start_action_log_sync_timer(self) -> None:
         if not self.config.activity_capture.enabled:
@@ -762,7 +772,15 @@ class App:
             return
 
         organizer = self._get_action_log_organizer()
-        await organizer.organize_and_sync()
+        try:
+            await organizer.organize_and_sync()
+        except httpx.TimeoutException as exc:
+            logger.warning(
+                "Action log organize timed out and will retry on the next cycle: %s",
+                exc,
+            )
+        except Exception:
+            logger.exception("Action log organize failed")
 
     async def handle_action_log_summary_backfill_request(self) -> None:
         if not self.config.activity_capture.enabled:
@@ -822,15 +840,18 @@ class App:
         """カメラ画像取得 + デスクトップ文脈取得の統合版。"""
         return await self._capture_and_record_coordinated()
 
-    async def _generate_and_send_summary(self) -> None:
+    async def _generate_and_send_summary(self) -> tuple[str, dict | None]:
         """30分間の要約を生成してサーバーに送信する"""
         summary_data = await self.situation_logger.generate_summary()
-        if summary_data:
-            try:
-                await self.api_client.post_situation_log(summary_data)
-                logger.info("30分要約をサーバーに送信: %s", summary_data["summary"][:100])
-            except Exception:
-                logger.exception("30分要約のサーバー送信に失敗")
+        if not summary_data:
+            return "empty", None
+        try:
+            await self.api_client.post_situation_log(summary_data)
+            logger.info("30分要約をサーバーに送信: %s", summary_data["summary"][:100])
+            return "sent", summary_data
+        except Exception:
+            logger.exception("30分要約のサーバー送信に失敗")
+            return "error", summary_data
 
     # --- デバッグ ---
 
@@ -881,22 +902,24 @@ class App:
             return
         self.auto_conversation.trigger_quest_today_now()
 
-    def _on_desktop_context_requested(self) -> None:
-        asyncio.ensure_future(self._fetch_and_show_desktop_context_coordinated())
+    def _on_five_minute_record_requested(self) -> None:
+        self._manual_snapshot_feedback_requested = True
+        bus.balloon_show.emit("リリィ", "[デバッグ] 5分記録を開始するね")
+        if getattr(self, "event_hub", None) is not None:
+            self.event_hub.publish(CaptureSnapshotRequested(source="debug.manual_five_minute"))
+            return
+        asyncio.ensure_future(self.run_capture_snapshot_job())
 
-    async def _fetch_and_show_desktop_context(self) -> None:
-        """デスクトップ文脈取得の統合版。"""
-        await self._fetch_and_show_desktop_context_coordinated()
-
-    def _on_camera_capture_requested(self) -> None:
-        asyncio.ensure_future(self._debug_capture_and_record_coordinated())
-
-    async def _debug_capture_and_record(self) -> None:
-        """デバッグ用の状況取得統合版。"""
-        await self._debug_capture_and_record_coordinated()
+    def _on_thirty_minute_record_requested(self) -> None:
+        self._manual_summary_feedback_requested = True
+        bus.balloon_show.emit("リリィ", "[デバッグ] 30分記録を開始するね")
+        if getattr(self, "event_hub", None) is not None:
+            self.event_hub.publish(CaptureSummaryDue(source="debug.manual_thirty_minute"))
+            return
+        asyncio.ensure_future(self.run_capture_summary_job())
 
     async def _capture_and_record_coordinated(self) -> SituationRecord | None:
-        """共有コーディネータ経由で状況を取得して記録する。"""
+        """カメラ取得と行動ログ要約を組み合わせて状況を記録する。"""
         from core.active_window import get_active_window_info
 
         record = SituationRecord()
@@ -904,123 +927,57 @@ class App:
         self._last_situation_capture_skip_reason = ""
         desktop_cfg = getattr(self.config, "desktop", None)
 
-        capture = await self.situation_capture.capture_for_record(
+        camera_attempt = await self.situation_capture.capture_camera(
             api_key=self.config.openai.api_key,
-            camera_provider=self.config.camera.analysis_provider,
-            camera_base_url=self.config.camera.analysis_base_url,
-            camera_model=self.config.camera.analysis_model,
-            screen_provider=getattr(desktop_cfg, "analysis_provider", "openai"),
-            screen_base_url=getattr(desktop_cfg, "analysis_base_url", ""),
-            screen_model=getattr(
+            provider=self.config.camera.analysis_provider,
+            base_url=self.config.camera.analysis_base_url,
+            model=self.config.camera.analysis_model,
+            device_index=self._camera_device_index,
+        )
+        if camera_attempt.skipped:
+            self._last_situation_capture_skip_reason = camera_attempt.skip_reason
+            logger.info("状況記録をスキップ: %s", camera_attempt.skip_reason)
+            return None
+
+        if camera_attempt.analysis is not None:
+            record.camera_summary = camera_attempt.analysis.summary
+            record.camera_tags = camera_attempt.analysis.tags
+            record.camera_scene_type = camera_attempt.analysis.scene_type
+
+        recent_events = (
+            self.activity_capture_service.snapshot_recent_events()
+            if self.activity_capture_service is not None
+            else []
+        )
+        desktop_summary = await summarize_recent_desktop_activity(
+            openai_api_key=self.config.openai.api_key,
+            provider=getattr(desktop_cfg, "analysis_provider", "openai"),
+            base_url=getattr(desktop_cfg, "analysis_base_url", ""),
+            model=getattr(
                 desktop_cfg,
                 "analysis_model",
                 self.config.openai.screen_analysis_model,
             ),
-            camera_device_index=self._camera_device_index,
+            recent_events=recent_events,
         )
-        if capture.skipped:
-            self._last_situation_capture_skip_reason = capture.skip_reason
-            logger.info("状況記録をスキップ: %s", capture.skip_reason)
-            return None
-
-        if capture.camera.analysis is not None:
-            record.camera_summary = capture.camera.analysis.summary
-            record.camera_tags = capture.camera.analysis.tags
-            record.camera_scene_type = capture.camera.analysis.scene_type
-
-        ctx = capture.desktop.context
-        if ctx is not None and ctx.analysis:
-            record.desktop_summary = ctx.analysis.summary
-            record.desktop_tags = ctx.analysis.tags
-            record.desktop_activity_type = ctx.analysis.activity_type
+        record.desktop_summary = desktop_summary.summary
+        record.desktop_tags = desktop_summary.tags
+        record.desktop_activity_type = desktop_summary.activity_type
 
         try:
-            win_info = ctx.window_info if ctx is not None else get_active_window_info()
-            record.active_app = win_info.app_name
-            record.window_title = win_info.window_title[:80]
+            record.active_app = desktop_summary.latest_app_name
+            record.window_title = desktop_summary.latest_window_title
+            if not record.active_app or not record.window_title:
+                win_info = get_active_window_info()
+                if not record.active_app:
+                    record.active_app = win_info.app_name
+                if not record.window_title:
+                    record.window_title = win_info.window_title[:80]
         except Exception:
             logger.exception("アクティブアプリ取得に失敗")
 
         self.situation_logger.record(record)
         return record
-
-    async def _fetch_and_show_desktop_context_coordinated(self) -> None:
-        """共有コーディネータ経由でデスクトップ状況を取得して表示する。"""
-        bus.balloon_show.emit("リリィ", "画面の状況を確認中…")
-        try:
-            desktop_cfg = getattr(self.config, "desktop", None)
-            attempt = await self.situation_capture.capture_desktop(
-                api_key=self.config.openai.api_key,
-                provider=getattr(desktop_cfg, "analysis_provider", "openai"),
-                base_url=getattr(desktop_cfg, "analysis_base_url", ""),
-                model=getattr(
-                    desktop_cfg,
-                    "analysis_model",
-                    self.config.openai.screen_analysis_model,
-                ),
-            )
-            if attempt.skipped:
-                bus.balloon_show.emit(
-                    "リリィ",
-                    f"[デバッグ] 取得中のためスキップ\n{attempt.skip_reason}",
-                )
-                return
-            if attempt.error or attempt.context is None:
-                bus.balloon_show.emit(
-                    "リリィ",
-                    f"[デバッグ] エラー: {attempt.error or '状況取得に失敗'}",
-                )
-                return
-
-            ctx = attempt.context
-            self._last_desktop_context = ctx
-            logger.info("\n%s", format_context_log(ctx))
-
-            if ctx.skipped:
-                bus.balloon_show.emit(
-                    "リリィ",
-                    f"[デバッグ] 解析対象外だよ\n{ctx.window_info.exclude_reason}",
-                )
-            elif ctx.error:
-                bus.balloon_show.emit("リリィ", f"[デバッグ] エラー: {ctx.error}")
-            elif ctx.analysis:
-                bus.balloon_show.emit(
-                    "リリィ",
-                    f"[デバッグ] {ctx.analysis.summary}\n"
-                    f"タグ: {', '.join(ctx.analysis.tags)}\n"
-                    f"種類: {ctx.analysis.activity_type}\n"
-                    f"詳細: {ctx.analysis.detail}",
-                )
-        except Exception:
-            logger.exception("デスクトップ状況取得に失敗")
-            bus.balloon_show.emit("リリィ", "[デバッグ] 状況取得に失敗しちゃった…")
-
-    async def _debug_capture_and_record_coordinated(self) -> None:
-        """共有コーディネータ経由で状況記録を確認する。"""
-        bus.balloon_show.emit("リリィ", "カメラ・デスクトップ状況を確認中…")
-        try:
-            record = await self._capture_and_record_coordinated()
-            if record is None:
-                bus.balloon_show.emit(
-                    "リリィ",
-                    f"[デバッグ] 取得中のためスキップ\n{self._last_situation_capture_skip_reason or '状況取得はすでに実行中です'}",
-                )
-                return
-
-            parts = ["[デバッグ] 状況記録完了"]
-            if record.camera_summary:
-                parts.append(f"カメラ: {record.camera_summary}")
-            else:
-                parts.append("カメラ: 取得できず")
-            if record.desktop_summary:
-                parts.append(f"デスクトップ: {record.desktop_summary}")
-            if record.active_app:
-                parts.append(f"アプリ: {record.active_app}")
-
-            bus.balloon_show.emit("リリィ", "\n".join(parts))
-        except Exception:
-            logger.exception("デバッグ: 状況記録に失敗")
-            bus.balloon_show.emit("リリィ", "[デバッグ] 状況記録に失敗しちゃった…")
 
     def _on_ai_response(self, speaker: str, text: str, pose_category: str) -> None:
         self._update_ui_for_response(speaker, text, pose_category)
@@ -1110,11 +1067,50 @@ async def _evented_handle_fitbit_sync_request(self: App) -> None:
 
 
 async def _evented_run_capture_snapshot_job(self: App) -> None:
-    await self._capture_and_record_coordinated()
+    manual_feedback = getattr(self, "_manual_snapshot_feedback_requested", False)
+    self._manual_snapshot_feedback_requested = False
+    try:
+        record = await self._capture_and_record_coordinated()
+    except Exception:
+        if manual_feedback:
+            bus.balloon_show.emit("リリィ", "[デバッグ] 5分記録に失敗しちゃった…")
+        raise
+
+    if not manual_feedback:
+        return
+    if record is None:
+        bus.balloon_show.emit(
+            "リリィ",
+            f"[デバッグ] 5分記録をスキップ\n{self._last_situation_capture_skip_reason or 'すでに実行中です'}",
+        )
+        return
+
+    parts = ["[デバッグ] 5分記録が完了したよ"]
+    if record.camera_summary:
+        parts.append(f"カメラ: {record.camera_summary}")
+    if record.desktop_summary:
+        parts.append(f"デスクトップ: {record.desktop_summary}")
+    if record.active_app:
+        parts.append(f"アプリ: {record.active_app}")
+    bus.balloon_show.emit("リリィ", "\n".join(parts))
 
 
 async def _evented_run_capture_summary_job(self: App) -> None:
-    await self._generate_and_send_summary()
+    manual_feedback = getattr(self, "_manual_summary_feedback_requested", False)
+    self._manual_summary_feedback_requested = False
+    status, summary_data = await self._generate_and_send_summary()
+    if not manual_feedback:
+        return
+    if status == "empty":
+        bus.balloon_show.emit("リリィ", "[デバッグ] 30分記録の対象がまだないよ")
+        return
+    if status == "error" or summary_data is None:
+        bus.balloon_show.emit("リリィ", "[デバッグ] 30分記録の送信に失敗しちゃった…")
+        return
+    bus.balloon_show.emit(
+        "リリィ",
+        f"[デバッグ] 30分記録を送信したよ\n{summary_data['summary'][:120]}",
+    )
 
 
 def _evented_start_healthplanet_sync(
