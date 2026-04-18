@@ -13,6 +13,7 @@ import type {
 } from '@/domain/types'
 import type {
   ActivitySession,
+  ActionLogPage,
   ActionLogDeletionRequest,
   DailyActivityLog,
   Device,
@@ -314,6 +315,23 @@ export function getActionLogRawEvents(from: string, to: string) {
   return request<RawEvent[]>(`/action-log/raw-events?from=${from}&to=${to}`)
 }
 
+export function getActionLogRawEventsPage(params: {
+  from: string
+  to: string
+  limit?: number
+  cursor?: string
+}) {
+  const searchParams = new URLSearchParams({
+    from: params.from,
+    to: params.to,
+    limit: String(params.limit ?? 50),
+  })
+  if (params.cursor) {
+    searchParams.set('cursor', params.cursor)
+  }
+  return request<ActionLogPage<RawEvent>>(`/action-log/raw-events/page?${searchParams.toString()}`)
+}
+
 export function putActionLogSessions(input: {
   deviceId: string
   dateKeys?: string[]
@@ -337,6 +355,27 @@ export function putActionLogSessionHidden(
 
 export function getActionLogSessions(from: string, to: string) {
   return request<ActivitySession[]>(`/action-log/sessions?from=${from}&to=${to}`)
+}
+
+export function getActionLogSessionsPage(params: {
+  from: string
+  to: string
+  limit?: number
+  cursor?: string
+  includeHidden?: boolean
+}) {
+  const searchParams = new URLSearchParams({
+    from: params.from,
+    to: params.to,
+    limit: String(params.limit ?? 50),
+  })
+  if (params.cursor) {
+    searchParams.set('cursor', params.cursor)
+  }
+  if (params.includeHidden !== undefined) {
+    searchParams.set('includeHidden', String(params.includeHidden))
+  }
+  return request<ActionLogPage<ActivitySession>>(`/action-log/sessions/page?${searchParams.toString()}`)
 }
 
 export function getActionLogDailyActivityLogs(from: string, to: string) {

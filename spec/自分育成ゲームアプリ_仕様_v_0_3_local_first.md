@@ -511,7 +511,9 @@ Cognito で認証される利用アカウント。アプリのデータ分離単
 #### `activity` タブの表示内容
 
 - タイムライン
-- `today/day` のタイムラインは `session` / `event` とも初期 `50件` 表示とし、残りは `さらに50件表示` で追加する
+- `today/day` のタイムラインは `session` / `event` とも server の paged read を使い、active view の最新 `50件` だけを初回表示する。残りは `さらに50件表示` で次ページを取得する
+- `today/day` では `session` / `event` の page state を分け、初回は現在の view だけを取得し、もう片方は最初の切り替え時に初回 fetch する
+- `today/day` では総件数を表示せず、`さらに50件表示` は `nextCursor` がある時だけ出す
 - `today/day` の `Target` カードでは、モバイルでも `対象日` と `session / event` 切り替えを同じ行に配置する
 - デイリーログ
 - 検索導線

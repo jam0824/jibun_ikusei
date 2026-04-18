@@ -43,6 +43,32 @@ function requireDateRange(event) {
   return { from, to };
 }
 
+function parsePageLimit(rawLimit) {
+  const parsed = Number(rawLimit);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return 50;
+  }
+  return Math.min(Math.trunc(parsed), 100);
+}
+
+function encodeCursor(lastEvaluatedKey) {
+  if (!lastEvaluatedKey) {
+    return null;
+  }
+  return Buffer.from(JSON.stringify(lastEvaluatedKey), "utf8").toString("base64url");
+}
+
+function decodeCursor(cursor) {
+  if (!cursor) {
+    return null;
+  }
+  try {
+    return JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+}
+
 function queryBetween({ pk, prefix, from, to }) {
   return db.send(
     new QueryCommand({
@@ -54,6 +80,24 @@ function queryBetween({ pk, prefix, from, to }) {
         ":skTo": `${prefix}${to}~`,
       },
       ScanIndexForward: true,
+    }),
+  );
+}
+
+function queryBetweenPage({ pk, prefix, from, to, limit, cursor, scanIndexForward = false }) {
+  const exclusiveStartKey = decodeCursor(cursor);
+  return db.send(
+    new QueryCommand({
+      TableName: TABLE_NAME,
+      KeyConditionExpression: "PK = :pk AND SK BETWEEN :skFrom AND :skTo",
+      ExpressionAttributeValues: {
+        ":pk": pk,
+        ":skFrom": `${prefix}${from}`,
+        ":skTo": `${prefix}${to}~`,
+      },
+      ExclusiveStartKey: exclusiveStartKey ?? undefined,
+      Limit: limit,
+      ScanIndexForward: scanIndexForward,
     }),
   );
 }
@@ -70,6 +114,34 @@ function queryBeginsWith({ pk, prefix }) {
       ScanIndexForward: true,
     }),
   );
+}
+
+async function queryVisibleSessionPage({ pk, from, to, limit, cursor, includeHidden }) {
+  const visibleItems = [];
+  let nextCursor = cursor;
+  let lastEvaluatedKey = null;
+
+  do {
+    const result = await queryBetweenPage({
+      pk,
+      prefix: SESSION_PREFIX,
+      from,
+      to,
+      limit: Math.max(1, limit - visibleItems.length),
+      cursor: nextCursor,
+      scanIndexForward: false,
+    });
+    const items = result.Items ?? [];
+    const filteredItems = includeHidden ? items : items.filter((item) => item.hidden !== true);
+    visibleItems.push(...filteredItems);
+    lastEvaluatedKey = result.LastEvaluatedKey ?? null;
+    nextCursor = encodeCursor(lastEvaluatedKey);
+  } while (visibleItems.length < limit && lastEvaluatedKey);
+
+  return {
+    items: visibleItems.slice(0, limit),
+    nextCursor,
+  };
 }
 
 function buildRawEventSk(event) {
@@ -279,6 +351,28 @@ export const handler = async (event) => {
       return response(200, (result.Items ?? []).map(stripSystemFields));
     }
 
+    case "GET /action-log/raw-events/page": {
+      const range = requireDateRange(event);
+      if ("error" in range) {
+        return range.error;
+      }
+      const params = event.queryStringParameters ?? {};
+      const limit = parsePageLimit(params.limit);
+      const result = await queryBetweenPage({
+        pk,
+        prefix: RAW_EVENT_PREFIX,
+        from: range.from,
+        to: range.to,
+        limit,
+        cursor: params.cursor,
+        scanIndexForward: false,
+      });
+      return response(200, {
+        items: (result.Items ?? []).map(stripSystemFields),
+        nextCursor: encodeCursor(result.LastEvaluatedKey),
+      });
+    }
+
     case "PUT /action-log/sessions": {
       const syncStartedAt = Date.now();
       const body = parseBody(event);
@@ -357,6 +451,28 @@ export const handler = async (event) => {
         to: range.to,
       });
       return response(200, (result.Items ?? []).map(stripSystemFields));
+    }
+
+    case "GET /action-log/sessions/page": {
+      const range = requireDateRange(event);
+      if ("error" in range) {
+        return range.error;
+      }
+      const params = event.queryStringParameters ?? {};
+      const limit = parsePageLimit(params.limit);
+      const includeHidden = params.includeHidden === "true";
+      const result = await queryVisibleSessionPage({
+        pk,
+        from: range.from,
+        to: range.to,
+        limit,
+        cursor: params.cursor,
+        includeHidden,
+      });
+      return response(200, {
+        items: result.items.map(stripSystemFields),
+        nextCursor: result.nextCursor,
+      });
     }
 
     case "PUT /action-log/sessions/{id}/hidden": {

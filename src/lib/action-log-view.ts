@@ -1,4 +1,5 @@
 import type {
+  ActionLogPage,
   ActivitySession,
   DailyActivityLog,
   OpenLoop,
@@ -12,7 +13,9 @@ import {
   getActionLogDailyActivityLogs,
   getActionLogOpenLoops,
   getActionLogRawEvents,
+  getActionLogRawEventsPage,
   getActionLogSessions,
+  getActionLogSessionsPage,
   putActionLogSessionHidden,
   putActionLogDailyActivityLog,
   putActionLogWeeklyActivityReview,
@@ -28,6 +31,12 @@ export interface ActivityDayViewData {
   dateKey: string
   sessions: ActivitySession[]
   rawEvents: RawEvent[]
+  dailyLog: DailyActivityLog | null
+  openLoops: OpenLoop[]
+}
+
+export interface ActivityDayShellData {
+  dateKey: string
   dailyLog: DailyActivityLog | null
   openLoops: OpenLoop[]
 }
@@ -307,6 +316,7 @@ function sortOpenLoopsNewestFirst(openLoops: OpenLoop[]) {
 
 const SESSION_COMPACT_ADJACENT_GAP_MS = 60 * 1000
 const SESSION_COMPACT_BURST_SPAN_MS = 3 * 60 * 1000
+const TIMELINE_PAGE_SIZE = 50
 
 function normalizeExecutableName(appName: string | undefined) {
   const base = (appName ?? '').trim().replace(/\.exe$/i, '')
@@ -618,6 +628,103 @@ function filterDayOpenLoops(openLoops: OpenLoop[], dateKey: string) {
 
 function filterOpenOpenLoops(openLoops: OpenLoop[]) {
   return openLoops.filter((openLoop) => openLoop.status === 'open')
+}
+
+function buildActivityDayShellData(params: {
+  dateKey: string
+  dailyLog: DailyActivityLog | null
+  openLoops: OpenLoop[]
+}): ActivityDayShellData {
+  return {
+    dateKey: params.dateKey,
+    dailyLog: params.dailyLog?.dateKey === params.dateKey ? params.dailyLog : null,
+    openLoops: sortOpenLoopsNewestFirst(filterOpenOpenLoops(filterDayOpenLoops(params.openLoops, params.dateKey))),
+  }
+}
+
+export async function fetchActivityDayShell(dateKey: string): Promise<ActivityDayShellData> {
+  const [dailyLog, openLoops] = await Promise.all([
+    getActionLogDailyActivityLog(dateKey),
+    getActionLogOpenLoops(dateKey, dateKey),
+  ])
+
+  return buildActivityDayShellData({
+    dateKey,
+    dailyLog,
+    openLoops,
+  })
+}
+
+export async function ensurePreviousDayDailyActivityLogShell(params: {
+  aiConfig: AiConfig
+  settings: UserSettings
+  dateKey: string
+  now?: Date
+}): Promise<ActivityDayShellData> {
+  const dateKey = params.dateKey
+  const now = params.now ?? new Date()
+  const [dailyLog, openLoops] = await Promise.all([
+    getActionLogDailyActivityLog(dateKey),
+    getActionLogOpenLoops(dateKey, dateKey),
+  ])
+  const filteredOpenLoops = sortOpenLoopsNewestFirst(
+    filterOpenOpenLoops(filterDayOpenLoops(openLoops, dateKey)),
+  )
+  let resolvedDailyLog = dailyLog?.dateKey === dateKey ? dailyLog : null
+
+  if (!resolvedDailyLog && dateKey === getYesterdayDateKeyJst(now)) {
+    const sessions = sortSessionsNewestFirst(filterDaySessions(await getActionLogSessions(dateKey, dateKey), dateKey))
+    const generated = await generateDailyActivityLog({
+      aiConfig: params.aiConfig,
+      settings: params.settings,
+      dateKey,
+      sessions,
+      openLoops: filteredOpenLoops,
+    })
+
+    resolvedDailyLog = await putActionLogDailyActivityLog({
+      id: `daily_${dateKey}`,
+      dateKey,
+      summary: generated.summary,
+      mainThemes: generated.mainThemes,
+      noteIds: [],
+      openLoopIds: filteredOpenLoops.map((openLoop) => openLoop.id),
+      reviewQuestions: generated.reviewQuestions,
+      generatedAt: toJstIso(),
+    })
+  }
+
+  return {
+    dateKey,
+    dailyLog: resolvedDailyLog,
+    openLoops: filteredOpenLoops,
+  }
+}
+
+export async function fetchActivityDaySessionPage(params: {
+  dateKey: string
+  cursor?: string
+  includeHidden?: boolean
+}): Promise<ActionLogPage<ActivitySession>> {
+  return getActionLogSessionsPage({
+    from: params.dateKey,
+    to: params.dateKey,
+    limit: TIMELINE_PAGE_SIZE,
+    cursor: params.cursor,
+    includeHidden: params.includeHidden ?? false,
+  })
+}
+
+export async function fetchActivityDayEventPage(params: {
+  dateKey: string
+  cursor?: string
+}): Promise<ActionLogPage<RawEvent>> {
+  return getActionLogRawEventsPage({
+    from: params.dateKey,
+    to: params.dateKey,
+    limit: TIMELINE_PAGE_SIZE,
+    cursor: params.cursor,
+  })
 }
 
 export async function fetchActivityDayView(dateKey: string): Promise<ActivityDayViewData> {

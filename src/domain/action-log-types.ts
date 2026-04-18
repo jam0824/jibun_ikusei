@@ -159,3 +159,8 @@ export interface ActionLogDeletionRequest {
   to: string
   createdAt: string
 }
+
+export interface ActionLogPage<T> {
+  items: T[]
+  nextCursor: string | null
+}

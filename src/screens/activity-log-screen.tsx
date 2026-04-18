@@ -2,7 +2,7 @@ import { CalendarDays, Clock3, Search, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { ActivityLogNav, RecordsSectionTabs } from '@/components/records-navigation'
-import type { ActivitySession } from '@/domain/action-log-types'
+import type { ActivitySession, RawEvent } from '@/domain/action-log-types'
 import { Screen } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Switch } from '@/components/ui'
 import { formatDateTime } from '@/lib/date'
@@ -11,16 +11,19 @@ import {
   buildCompactSessionBlocks,
   type CompactSessionBlock,
   type ActivityDayViewData,
+  type ActivityDayShellData,
   type ActivityLogViewMode,
   type ActivitySearchResult,
   type ActivityWeekViewData,
   canDeleteActionLogRange,
   deleteActionLogDateRange,
-  ensurePreviousDayDailyActivityLog,
+  ensurePreviousDayDailyActivityLogShell,
   ensurePreviousWeekReviewForWeb,
   exportActionLogBundle,
   fetchActivityCalendarMonth,
-  fetchActivityDayView,
+  fetchActivityDayEventPage,
+  fetchActivityDaySessionPage,
+  fetchActivityDayShell,
   fetchActivityReviewWeek,
   fetchActivityReviewYear,
   getCurrentMonthKeyJst,
@@ -39,7 +42,24 @@ import {
 import { useAppStore } from '@/store/app-store'
 
 type ActivityLogVariant = 'today' | 'day' | 'calendar' | 'search' | 'review-year' | 'review-week'
-const TIMELINE_PAGE_SIZE = 50
+
+type TimelinePageState<T> = {
+  items: T[]
+  nextCursor: string | null
+  hasLoaded: boolean
+  isLoading: boolean
+  isLoadingMore: boolean
+}
+
+function createEmptyTimelinePageState<T>(): TimelinePageState<T> {
+  return {
+    items: [],
+    nextCursor: null,
+    hasLoaded: false,
+    isLoading: false,
+    isLoadingMore: false,
+  }
+}
 
 function createDateKeyFromLocalDate(date: Date) {
   const year = date.getFullYear()
@@ -325,53 +345,50 @@ function CompactSessionListItem({
   )
 }
 
-function TimelineCountAndMore({
-  visibleCount,
-  totalCount,
+function TimelineLoadMore({
+  hasMore,
+  isLoadingMore,
   onLoadMore,
 }: {
-  visibleCount: number
-  totalCount: number
+  hasMore: boolean
+  isLoadingMore?: boolean
   onLoadMore: () => void
 }) {
+  if (!hasMore) {
+    return null
+  }
+
   return (
-    <div className="flex flex-col gap-3 border-t border-slate-100 pt-2 sm:flex-row sm:items-center sm:justify-between">
-      <div className="text-xs font-medium text-slate-500">
-        表示中: {visibleCount} / {totalCount}件
-      </div>
-      {visibleCount < totalCount ? (
-        <Button variant="outline" size="sm" onClick={onLoadMore}>
-          さらに50件表示
-        </Button>
-      ) : null}
+    <div className="border-t border-slate-100 pt-2">
+      <Button variant="outline" size="sm" onClick={onLoadMore} disabled={isLoadingMore}>
+        {isLoadingMore ? '読み込み中...' : 'さらに50件表示'}
+      </Button>
     </div>
   )
 }
 
 function SessionsOrEventsCard({
-  day,
+  sessions,
+  rawEvents,
   viewMode,
-  includeHidden,
-  sessionVisibleCount,
-  eventVisibleCount,
+  hasMoreSessions,
+  hasMoreEvents,
+  isLoadingMoreSessions,
+  isLoadingMoreEvents,
   onLoadMoreSessions,
   onLoadMoreEvents,
 }: {
-  day: ActivityDayViewData
+  sessions: ActivitySession[]
+  rawEvents: RawEvent[]
   viewMode: ActivityLogViewMode
-  includeHidden: boolean
-  sessionVisibleCount: number
-  eventVisibleCount: number
+  hasMoreSessions: boolean
+  hasMoreEvents: boolean
+  isLoadingMoreSessions?: boolean
+  isLoadingMoreEvents?: boolean
   onLoadMoreSessions: () => void
   onLoadMoreEvents: () => void
 }) {
-  const visibleSessions = day.sessions.filter((session) => includeHidden || !session.hidden)
-  const compactSessionBlocks = useMemo(
-    () => buildCompactSessionBlocks(visibleSessions),
-    [visibleSessions],
-  )
-  const displayedSessionBlocks = compactSessionBlocks.slice(0, sessionVisibleCount)
-  const displayedEvents = day.rawEvents.slice(0, eventVisibleCount)
+  const compactSessionBlocks = useMemo(() => buildCompactSessionBlocks(sessions), [sessions])
 
   return (
     <Card>
@@ -389,13 +406,13 @@ function SessionsOrEventsCard({
         </div>
 
         {viewMode === 'event' ? (
-          day.rawEvents.length === 0 ? (
+          rawEvents.length === 0 ? (
             <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
               表示できるイベントはありません。
             </div>
           ) : (
             <div className="space-y-3">
-              {displayedEvents.map((event) => (
+              {rawEvents.map((event) => (
                 <div
                   key={event.id}
                   data-testid={`activity-event-${event.id}`}
@@ -417,20 +434,20 @@ function SessionsOrEventsCard({
                   </div>
                 </div>
               ))}
-              <TimelineCountAndMore
-                visibleCount={displayedEvents.length}
-                totalCount={day.rawEvents.length}
+              <TimelineLoadMore
+                hasMore={hasMoreEvents}
+                isLoadingMore={isLoadingMoreEvents}
                 onLoadMore={onLoadMoreEvents}
               />
             </div>
           )
         ) : compactSessionBlocks.length === 0 ? (
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
-            表示できるセッションはありません。
-          </div>
-        ) : (
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-500">
+              表示できるセッションはありません。
+            </div>
+          ) : (
           <div className="space-y-3">
-            {displayedSessionBlocks.map((block) => (
+            {compactSessionBlocks.map((block) => (
               block.kind === 'single' ? (
                 <SessionListItem
                   key={block.id}
@@ -450,9 +467,9 @@ function SessionsOrEventsCard({
                 />
               )
             ))}
-            <TimelineCountAndMore
-              visibleCount={displayedSessionBlocks.length}
-              totalCount={compactSessionBlocks.length}
+            <TimelineLoadMore
+              hasMore={hasMoreSessions}
+              isLoadingMore={isLoadingMoreSessions}
               onLoadMore={onLoadMoreSessions}
             />
           </div>
@@ -473,29 +490,34 @@ function TodayOrDayView({
   const settings = useAppStore((state) => state.settings)
   const [searchParams, setSearchParams] = useSearchParams()
   const viewMode = normalizeViewMode(searchParams.get('view'))
-  const [day, setDay] = useState<ActivityDayViewData | null>(null)
+  const [dayShell, setDayShell] = useState<ActivityDayShellData | null>(null)
   const [includeHiddenSessions, setIncludeHiddenSessions] = useState(false)
-  const [sessionVisibleCount, setSessionVisibleCount] = useState(TIMELINE_PAGE_SIZE)
-  const [eventVisibleCount, setEventVisibleCount] = useState(TIMELINE_PAGE_SIZE)
+  const [sessionTimeline, setSessionTimeline] = useState<TimelinePageState<ActivitySession>>(() =>
+    createEmptyTimelinePageState<ActivitySession>(),
+  )
+  const [eventTimeline, setEventTimeline] = useState<TimelinePageState<RawEvent>>(() =>
+    createEmptyTimelinePageState<RawEvent>(),
+  )
   const [error, setError] = useState<string>()
-  const [isLoading, setIsLoading] = useState(true)
+  const [isShellLoading, setIsShellLoading] = useState(true)
 
   useEffect(() => {
     let active = true
-    setIsLoading(true)
+    setIsShellLoading(true)
     setError(undefined)
+    setDayShell(null)
+    setSessionTimeline(createEmptyTimelinePageState<ActivitySession>())
+    setEventTimeline(createEmptyTimelinePageState<RawEvent>())
 
-    const load =
+    const loadShell =
       variant === 'today'
-        ? fetchActivityDayView(dateKey)
-        : ensurePreviousDayDailyActivityLog({ aiConfig, settings, dateKey })
+        ? fetchActivityDayShell(dateKey)
+        : ensurePreviousDayDailyActivityLogShell({ aiConfig, settings, dateKey })
 
-    void load
-      .then((nextDay) => {
+    void loadShell
+      .then((nextDayShell) => {
         if (active) {
-          setDay(nextDay)
-          setSessionVisibleCount(TIMELINE_PAGE_SIZE)
-          setEventVisibleCount(TIMELINE_PAGE_SIZE)
+          setDayShell(nextDayShell)
         }
       })
       .catch((cause) => {
@@ -505,7 +527,7 @@ function TodayOrDayView({
       })
       .finally(() => {
         if (active) {
-          setIsLoading(false)
+          setIsShellLoading(false)
         }
       })
 
@@ -515,16 +537,170 @@ function TodayOrDayView({
   }, [aiConfig, dateKey, settings, variant])
 
   useEffect(() => {
-    if (viewMode === 'session') {
-      setSessionVisibleCount(TIMELINE_PAGE_SIZE)
-      return
-    }
-    setEventVisibleCount(TIMELINE_PAGE_SIZE)
-  }, [viewMode])
+    setSessionTimeline(createEmptyTimelinePageState<ActivitySession>())
+  }, [includeHiddenSessions])
 
   useEffect(() => {
-    setSessionVisibleCount(TIMELINE_PAGE_SIZE)
-  }, [includeHiddenSessions])
+    if (viewMode !== 'session' || sessionTimeline.hasLoaded || sessionTimeline.isLoading) {
+      return
+    }
+
+    let active = true
+    setSessionTimeline((current) => ({
+      ...current,
+      isLoading: true,
+    }))
+
+    void fetchActivityDaySessionPage({
+      dateKey,
+      includeHidden: includeHiddenSessions,
+    })
+      .then((page) => {
+        if (active) {
+          setSessionTimeline({
+            items: page.items,
+            nextCursor: page.nextCursor,
+            hasLoaded: true,
+            isLoading: false,
+            isLoadingMore: false,
+          })
+        }
+      })
+      .catch((cause) => {
+        if (active) {
+          setSessionTimeline((current) => ({
+            ...current,
+            isLoading: false,
+            isLoadingMore: false,
+          }))
+          setError(cause instanceof Error ? cause.message : '行動ログの読み込みに失敗しました。')
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [dateKey, includeHiddenSessions, sessionTimeline.hasLoaded, viewMode])
+
+  useEffect(() => {
+    if (viewMode !== 'event' || eventTimeline.hasLoaded || eventTimeline.isLoading) {
+      return
+    }
+
+    let active = true
+    setEventTimeline((current) => ({
+      ...current,
+      isLoading: true,
+    }))
+
+    void fetchActivityDayEventPage({ dateKey })
+      .then((page) => {
+        if (active) {
+          setEventTimeline({
+            items: page.items,
+            nextCursor: page.nextCursor,
+            hasLoaded: true,
+            isLoading: false,
+            isLoadingMore: false,
+          })
+        }
+      })
+      .catch((cause) => {
+        if (active) {
+          setEventTimeline((current) => ({
+            ...current,
+            isLoading: false,
+            isLoadingMore: false,
+          }))
+          setError(cause instanceof Error ? cause.message : '行動ログの読み込みに失敗しました。')
+        }
+      })
+
+    return () => {
+      active = false
+    }
+  }, [dateKey, eventTimeline.hasLoaded, viewMode])
+
+  const day: ActivityDayViewData | null = dayShell
+    ? {
+        dateKey: dayShell.dateKey,
+        sessions: sessionTimeline.items,
+        rawEvents: eventTimeline.items,
+        dailyLog: dayShell.dailyLog,
+        openLoops: dayShell.openLoops,
+      }
+    : null
+
+  const isLoading =
+    isShellLoading ||
+    (viewMode === 'session'
+      ? sessionTimeline.isLoading && !sessionTimeline.hasLoaded
+      : eventTimeline.isLoading && !eventTimeline.hasLoaded)
+
+  function loadMoreSessions() {
+    if (!sessionTimeline.nextCursor || sessionTimeline.isLoadingMore) {
+      return
+    }
+
+    setSessionTimeline((current) => ({
+      ...current,
+      isLoadingMore: true,
+    }))
+
+    void fetchActivityDaySessionPage({
+      dateKey,
+      cursor: sessionTimeline.nextCursor,
+      includeHidden: includeHiddenSessions,
+    })
+      .then((page) => {
+        setSessionTimeline((current) => ({
+          ...current,
+          items: [...current.items, ...page.items],
+          nextCursor: page.nextCursor,
+          isLoadingMore: false,
+          hasLoaded: true,
+        }))
+      })
+      .catch((cause) => {
+        setSessionTimeline((current) => ({
+          ...current,
+          isLoadingMore: false,
+        }))
+        setError(cause instanceof Error ? cause.message : '行動ログの読み込みに失敗しました。')
+      })
+  }
+
+  function loadMoreEvents() {
+    if (!eventTimeline.nextCursor || eventTimeline.isLoadingMore) {
+      return
+    }
+
+    setEventTimeline((current) => ({
+      ...current,
+      isLoadingMore: true,
+    }))
+
+    void fetchActivityDayEventPage({
+      dateKey,
+      cursor: eventTimeline.nextCursor,
+    })
+      .then((page) => {
+        setEventTimeline((current) => ({
+          ...current,
+          items: [...current.items, ...page.items],
+          nextCursor: page.nextCursor,
+          isLoadingMore: false,
+          hasLoaded: true,
+        }))
+      })
+      .catch((cause) => {
+        setEventTimeline((current) => ({
+          ...current,
+          isLoadingMore: false,
+        }))
+        setError(cause instanceof Error ? cause.message : '行動ログの読み込みに失敗しました。')
+      })
+  }
 
   return (
     <Screen
@@ -575,15 +751,15 @@ function TodayOrDayView({
               </label>
             ) : null}
             <SessionsOrEventsCard
-              day={day}
+              sessions={sessionTimeline.items}
+              rawEvents={eventTimeline.items}
               viewMode={viewMode}
-              includeHidden={includeHiddenSessions}
-              sessionVisibleCount={sessionVisibleCount}
-              eventVisibleCount={eventVisibleCount}
-              onLoadMoreSessions={() =>
-                setSessionVisibleCount((current) => current + TIMELINE_PAGE_SIZE)
-              }
-              onLoadMoreEvents={() => setEventVisibleCount((current) => current + TIMELINE_PAGE_SIZE)}
+              hasMoreSessions={sessionTimeline.nextCursor !== null}
+              hasMoreEvents={eventTimeline.nextCursor !== null}
+              isLoadingMoreSessions={sessionTimeline.isLoadingMore}
+              isLoadingMoreEvents={eventTimeline.isLoadingMore}
+              onLoadMoreSessions={loadMoreSessions}
+              onLoadMoreEvents={loadMoreEvents}
             />
             <OpenLoopsCard openLoops={day.openLoops} />
           </>

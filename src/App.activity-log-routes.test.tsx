@@ -286,7 +286,10 @@ function createRawEventBatch(total: number, startIndex = 0) {
 
 async function settleApp() {
   await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
     await vi.runAllTimersAsync()
+    await Promise.resolve()
     await Promise.resolve()
   })
 }
@@ -311,6 +314,18 @@ describe('activity log routes', () => {
         metadata: { elapsedSeconds: 180 },
       }),
     ])
+    vi.spyOn(api, 'getActionLogRawEventsPage').mockResolvedValue({
+      items: [
+        createRawEvent('event_2', {
+          id: 'event_2',
+          occurredAt: '2026-04-17T09:18:00+09:00',
+          eventType: 'heartbeat',
+          metadata: { elapsedSeconds: 180 },
+        }),
+        createRawEvent('event_1'),
+      ],
+      nextCursor: null,
+    })
     vi.spyOn(api, 'getActionLogSessions').mockResolvedValue([
       createSession('session_1'),
       createSession('session_2', {
@@ -327,6 +342,10 @@ describe('activity log routes', () => {
         openLoopIds: [],
       }),
     ])
+    vi.spyOn(api, 'getActionLogSessionsPage').mockResolvedValue({
+      items: [createSession('session_1')],
+      nextCursor: null,
+    })
     vi.spyOn(api, 'getActionLogDailyActivityLog').mockImplementation(async (dateKey) => {
       if (dateKey === '2026-04-17') {
         return createDailyLog('2026-04-17')
@@ -419,7 +438,6 @@ describe('activity log routes', () => {
 
     renderApp('/records/activity/today')
     await settleApp()
-
     expect(screen.getByText('対象日: 2026-04-17')).toBeInTheDocument()
     expect(screen.getByText('その日のまとめ')).toBeInTheDocument()
     expect(api.putActionLogDailyActivityLog).not.toHaveBeenCalled()
@@ -431,6 +449,8 @@ describe('activity log routes', () => {
 
     expect(screen.getByText('イベント表示')).toBeInTheDocument()
     expect(screen.getAllByText('Chrome / Manifest V3 - Chrome for Developers').length).toBeGreaterThan(0)
+    expect(api.getActionLogRawEventsPage).toHaveBeenCalledTimes(1)
+    expect(api.getActionLogSessionsPage).not.toHaveBeenCalled()
   })
 
   it('keeps the target date and session-event toggle in the same target row', async () => {
@@ -445,16 +465,19 @@ describe('activity log routes', () => {
   })
 
   it('compacts short alternating YouTube and Codex sessions into two cards on day views', async () => {
-    vi.mocked(api.getActionLogSessions).mockResolvedValue(createCompactableSessionBurst())
+    vi.mocked(api.getActionLogSessionsPage).mockResolvedValue({
+      items: createCompactableSessionBurst(),
+      nextCursor: null,
+    })
 
     renderApp('/records/activity/day/2026-04-17')
     await settleApp()
 
-    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(2)
     expect(screen.getByText('YouTubeで動画を視聴')).toBeInTheDocument()
+    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(2)
     expect(screen.getByText('Codexでコード作業')).toBeInTheDocument()
     expect(screen.getAllByText('3件')).toHaveLength(2)
-    expect(screen.getByText('表示中: 2 / 2件')).toBeInTheDocument()
+    expect(screen.queryByText(/表示中:/)).not.toBeInTheDocument()
   })
 
   it('does not render hide buttons on today session cards', async () => {
@@ -464,120 +487,195 @@ describe('activity log routes', () => {
     expect(screen.queryByRole('button', { name: 'Hide session session_1' })).not.toBeInTheDocument()
   })
 
-  it('shows only the first 50 sessions until more is requested', async () => {
-    vi.mocked(api.getActionLogSessions).mockResolvedValue(createSessionBatch(75))
+  it('shows only the first page of sessions until more is requested', async () => {
+    vi.mocked(api.getActionLogSessionsPage).mockResolvedValue({
+      items: createSessionBatch(50),
+      nextCursor: 'cursor_sessions_2',
+    })
 
     renderApp('/records/activity/today')
     await settleApp()
 
+    expect(screen.getByTestId('activity-session-session_001')).toBeInTheDocument()
     expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(50)
-    expect(screen.getByText('表示中: 50 / 75件')).toBeInTheDocument()
+    expect(screen.queryByText(/表示中:/)).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'さらに50件表示' })).toBeInTheDocument()
     expect(screen.queryByTestId('activity-session-session_051')).not.toBeInTheDocument()
   })
 
-  it('shows the next 50 sessions after pressing load more', async () => {
-    vi.mocked(api.getActionLogSessions).mockResolvedValue(createSessionBatch(120))
+  it('fetches the next session page after pressing load more', async () => {
+    vi.mocked(api.getActionLogSessionsPage).mockImplementation(async ({ cursor }) => {
+      if (cursor === 'cursor_sessions_2') {
+        return {
+          items: createSessionBatch(25, { startIndex: 50 }),
+          nextCursor: null,
+        }
+      }
+      return {
+        items: createSessionBatch(50),
+        nextCursor: 'cursor_sessions_2',
+      }
+    })
 
     renderApp('/records/activity/today')
     await settleApp()
 
     fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
+    await settleApp()
 
-    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(100)
-    expect(screen.getByText('表示中: 100 / 120件')).toBeInTheDocument()
     expect(screen.getByTestId('activity-session-session_051')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'さらに50件表示' })).toBeInTheDocument()
+    expect(api.getActionLogSessionsPage).toHaveBeenNthCalledWith(1, {
+      from: '2026-04-17',
+      to: '2026-04-17',
+      limit: 50,
+      cursor: undefined,
+      includeHidden: false,
+    })
+    expect(api.getActionLogSessionsPage).toHaveBeenNthCalledWith(2, {
+      from: '2026-04-17',
+      to: '2026-04-17',
+      limit: 50,
+      cursor: 'cursor_sessions_2',
+      includeHidden: false,
+    })
+    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(75)
+    expect(screen.queryByRole('button', { name: 'さらに50件表示' })).not.toBeInTheDocument()
   })
 
-  it('keeps session and event pagination state separate and resets when the view changes', async () => {
-    vi.mocked(api.getActionLogSessions).mockResolvedValue(createSessionBatch(120))
-    vi.mocked(api.getActionLogRawEvents).mockResolvedValue(createRawEventBatch(70))
+  it('keeps session and event page state separate and lazily loads the inactive view on first switch', async () => {
+    vi.mocked(api.getActionLogSessionsPage).mockImplementation(async ({ cursor }) => {
+      if (cursor === 'cursor_sessions_2') {
+        return {
+          items: createSessionBatch(20, { startIndex: 50 }),
+          nextCursor: null,
+        }
+      }
+      return {
+        items: createSessionBatch(50),
+        nextCursor: 'cursor_sessions_2',
+      }
+    })
+    vi.mocked(api.getActionLogRawEventsPage).mockResolvedValue({
+      items: createRawEventBatch(50),
+      nextCursor: 'cursor_events_2',
+    })
 
     renderApp('/records/activity/today')
     await settleApp()
 
+    expect(screen.getByTestId('activity-session-session_001')).toBeInTheDocument()
+    expect(api.getActionLogSessionsPage).toHaveBeenCalledTimes(1)
+    expect(api.getActionLogRawEventsPage).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
-    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(100)
+    await settleApp()
+    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(70)
 
     fireEvent.click(screen.getByRole('button', { name: 'event' }))
     await settleApp()
 
+    expect(screen.getByTestId('activity-event-event_001')).toBeInTheDocument()
+    expect(api.getActionLogRawEventsPage).toHaveBeenCalledTimes(1)
     expect(screen.getAllByTestId(/activity-event-/)).toHaveLength(50)
-    expect(screen.getByText('表示中: 50 / 70件')).toBeInTheDocument()
     expect(screen.queryByTestId('activity-event-event_051')).not.toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: 'session' }))
     await settleApp()
 
-    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(50)
-    expect(screen.getByText('表示中: 50 / 120件')).toBeInTheDocument()
-    expect(screen.queryByTestId('activity-session-session_051')).not.toBeInTheDocument()
+    expect(screen.getByTestId('activity-session-session_051')).toBeInTheDocument()
+    expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(70)
   })
 
-  it('resets the session pagination when hidden sessions are included', async () => {
-    const sessions = [
-      ...createSessionBatch(70),
-      ...createSessionBatch(10, { startIndex: 70, overrides: { hidden: true } }).map((session, index) => ({
-        ...session,
-        id: `hidden_session_${String(index + 1).padStart(3, '0')}`,
-        title: `Hidden Session ${String(index + 1).padStart(3, '0')}`,
-        searchKeywords: [`hidden_session_${index + 1}`],
-      })),
-    ]
-    vi.mocked(api.getActionLogSessions).mockResolvedValue(sessions)
+  it('refetches the session page from the beginning when hidden sessions are included', async () => {
+    vi.mocked(api.getActionLogSessionsPage).mockImplementation(async ({ cursor, includeHidden }) => {
+      if (includeHidden) {
+        return {
+          items: [
+            ...createSessionBatch(49),
+            createSession('session_hidden_day', {
+              id: 'session_hidden_day',
+              hidden: true,
+              title: 'Hidden Session 001',
+            }),
+          ],
+          nextCursor: null,
+        }
+      }
+      if (cursor === 'cursor_sessions_2') {
+        return {
+          items: createSessionBatch(20, { startIndex: 50 }),
+          nextCursor: null,
+        }
+      }
+      return {
+        items: createSessionBatch(50),
+        nextCursor: 'cursor_sessions_2',
+      }
+    })
 
     renderApp('/records/activity/day/2026-04-17')
     await settleApp()
 
+    expect(screen.getByTestId('activity-session-session_001')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'さらに50件表示' }))
+    await settleApp()
     expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(70)
-    expect(screen.getByText('表示中: 70 / 70件')).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('switch', { name: 'Include hidden sessions in timeline' }))
     await settleApp()
 
+    expect(screen.getByText('Hidden Session 001')).toBeInTheDocument()
     expect(screen.getAllByTestId(/activity-session-/)).toHaveLength(50)
-    expect(screen.getByText('表示中: 50 / 80件')).toBeInTheDocument()
-    expect(screen.queryByText('Hidden Session 001')).not.toBeInTheDocument()
+    expect(api.getActionLogSessionsPage).toHaveBeenLastCalledWith({
+      from: '2026-04-17',
+      to: '2026-04-17',
+      limit: 50,
+      cursor: undefined,
+      includeHidden: true,
+    })
   })
 
   it('shows newer sessions above older ones on the today timeline', async () => {
-    vi.mocked(api.getActionLogSessions).mockResolvedValue([
-      createSession('session_old', {
-        startedAt: '2026-04-17T09:00:00+09:00',
-        endedAt: '2026-04-17T09:20:00+09:00',
-        title: 'Older session',
-        summary: 'Older session summary.',
-      }),
-      createSession('session_new', {
-        startedAt: '2026-04-17T11:00:00+09:00',
-        endedAt: '2026-04-17T11:20:00+09:00',
-        title: 'Newer session',
-        summary: 'Newer session summary.',
-      }),
-    ])
+    vi.mocked(api.getActionLogSessionsPage).mockResolvedValue({
+      items: [
+        createSession('session_new', {
+          startedAt: '2026-04-17T11:00:00+09:00',
+          endedAt: '2026-04-17T11:20:00+09:00',
+          title: 'Newer session',
+          summary: 'Newer session summary.',
+        }),
+        createSession('session_old', {
+          startedAt: '2026-04-17T09:00:00+09:00',
+          endedAt: '2026-04-17T09:20:00+09:00',
+          title: 'Older session',
+          summary: 'Older session summary.',
+        }),
+      ],
+      nextCursor: null,
+    })
 
     renderApp('/records/activity/today')
     await settleApp()
 
-    const newerCard = getSessionCard('session_new')
-    const olderCard = getSessionCard('session_old')
+    const newerCard = screen.getByTestId('activity-session-session_new')
+    const olderCard = screen.getByTestId('activity-session-session_old')
 
     expect(newerCard.compareDocumentPosition(olderCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
   it('shows newer raw events above older ones on the day event timeline', async () => {
-    vi.mocked(api.getActionLogRawEvents).mockResolvedValue([
-      createRawEvent('event_old', {
-        occurredAt: '2026-04-17T09:05:00+09:00',
-        windowTitle: 'Older event title',
-      }),
-      createRawEvent('event_new', {
-        occurredAt: '2026-04-17T11:05:00+09:00',
-        windowTitle: 'Newer event title',
-      }),
-    ])
+    vi.mocked(api.getActionLogRawEventsPage).mockResolvedValue({
+      items: [
+        createRawEvent('event_new', {
+          occurredAt: '2026-04-17T11:05:00+09:00',
+          windowTitle: 'Newer event title',
+        }),
+        createRawEvent('event_old', {
+          occurredAt: '2026-04-17T09:05:00+09:00',
+          windowTitle: 'Older event title',
+        }),
+      ],
+      nextCursor: null,
+    })
 
     renderApp('/records/activity/day/2026-04-17?view=event')
     await settleApp()
@@ -589,12 +687,17 @@ describe('activity log routes', () => {
   })
 
   it('does not render restore buttons on day session cards even when hidden sessions are included', async () => {
-    vi.mocked(api.getActionLogSessions).mockResolvedValue([
-      createSession('session_hidden_day', {
-        id: 'session_hidden_day',
-        hidden: true,
-      }),
-    ])
+    vi.mocked(api.getActionLogSessionsPage).mockImplementation(async ({ includeHidden }) => ({
+      items: includeHidden
+        ? [
+            createSession('session_hidden_day', {
+              id: 'session_hidden_day',
+              hidden: true,
+            }),
+          ]
+        : [],
+      nextCursor: null,
+    }))
 
     renderApp('/records/activity/day/2026-04-17')
     await settleApp()
@@ -860,18 +963,21 @@ describe('activity log routes', () => {
   })
 
   it('prioritizes session summary above the generated title in the day view', async () => {
-    vi.mocked(api.getActionLogSessions).mockResolvedValue([
-      createSession('session_summary_first', {
-        title: 'Self Growth App',
-        summary: 'Reviewed browser pages for the self-growth app.',
-        appNames: ['Chrome'],
-      }),
-    ])
+    vi.mocked(api.getActionLogSessionsPage).mockResolvedValue({
+      items: [
+        createSession('session_summary_first', {
+          title: 'Self Growth App',
+          summary: 'Reviewed browser pages for the self-growth app.',
+          appNames: ['Chrome'],
+        }),
+      ],
+      nextCursor: null,
+    })
 
     renderApp('/records/activity/day/2026-04-17')
     await settleApp()
 
-    const card = getSessionCard('session_summary_first')
+    const card = screen.getByTestId('activity-session-session_summary_first')
     const summary = within(card).getByText('Reviewed browser pages for the self-growth app.')
     const title = within(card).getByText('Self Growth App')
 
@@ -879,19 +985,22 @@ describe('activity log routes', () => {
   })
 
   it('falls back to the title first and shows category-app-domain metadata when summary is missing', async () => {
-    vi.mocked(api.getActionLogSessions).mockResolvedValue([
-      createSession('session_summary_missing', {
-        title: 'Fallback Title',
-        summary: undefined,
-        appNames: ['AppOne'],
-        domains: ['domain.example'],
-      }),
-    ])
+    vi.mocked(api.getActionLogSessionsPage).mockResolvedValue({
+      items: [
+        createSession('session_summary_missing', {
+          title: 'Fallback Title',
+          summary: undefined,
+          appNames: ['AppOne'],
+          domains: ['domain.example'],
+        }),
+      ],
+      nextCursor: null,
+    })
 
     renderApp('/records/activity/day/2026-04-17')
     await settleApp()
 
-    const card = getSessionCard('session_summary_missing')
+    const card = screen.getByTestId('activity-session-session_summary_missing')
     const title = within(card).getByText('Fallback Title')
     const metadata = within(card).getByText('学習 / AppOne / domain.example')
 
