@@ -17,7 +17,6 @@ import type {
   ActionLogDeletionRequest,
   DailyActivityLog,
   Device,
-  OpenLoop,
   PrivacyRule,
   RawEvent,
   WeeklyActivityReview,
@@ -435,17 +434,6 @@ export function putActionLogPrivacyRules(rules: PrivacyRule[]) {
   })
 }
 
-export function getActionLogOpenLoops(from: string, to: string) {
-  return request<OpenLoop[]>(`/action-log/open-loops?from=${from}&to=${to}`)
-}
-
-export function putActionLogOpenLoops(input: { dateKeys: string[]; openLoops: OpenLoop[] }) {
-  return request<{ updated: number }>('/action-log/open-loops', {
-    method: 'PUT',
-    body: JSON.stringify(input),
-  })
-}
-
 export function deleteActionLogRange(from: string, to: string) {
   return request<{
     deleted: {
@@ -453,7 +441,6 @@ export function deleteActionLogRange(from: string, to: string) {
       sessions: number
       dailyLogs: number
       weeklyReviews: number
-      openLoops: number
       situationLogs: number
     }
     deletionRequestId: string

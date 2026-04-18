@@ -8,7 +8,6 @@ import {
   deviceSchema,
   normalizeActivitySessionDraft,
   normalizeRawEventDraft,
-  openLoopSchema,
   rawEventSchema,
   resolvePrivacyRuleOutcome,
   toActionLogDateKey,
@@ -62,7 +61,6 @@ describe('action-log-contract', () => {
       projectNames: ['self-growth-app'],
       searchKeywords: ['Chrome', 'developer.chrome.com'],
       noteIds: [],
-      openLoopIds: [],
       hidden: false,
     })
 
@@ -85,7 +83,6 @@ describe('action-log-contract', () => {
         projectNames: ['self-growth-app'],
         searchKeywords: ['Chrome拡張', 'developer.chrome.com'],
         noteIds: [],
-        openLoopIds: ['loop_1'],
         hidden: false,
       }),
     ).toMatchObject({
@@ -138,24 +135,6 @@ describe('action-log-contract', () => {
     ).toThrow()
   })
 
-  it('accepts OpenLoop dateKey and updatedAt fields', () => {
-    expect(
-      openLoopSchema.parse({
-        id: 'loop_1',
-        createdAt: '2026-04-17T09:15:00+09:00',
-        updatedAt: '2026-04-17T09:20:00+09:00',
-        dateKey: '2026-04-17',
-        title: 'manifestの確認',
-        description: 'manifest v3 を見直す',
-        status: 'open',
-        linkedSessionIds: ['session_1'],
-      }),
-    ).toMatchObject({
-      dateKey: '2026-04-17',
-      updatedAt: '2026-04-17T09:20:00+09:00',
-    })
-  })
-
   it('fills missing quest and health summaries for legacy DailyActivityLog data', () => {
     expect(
       dailyActivityLogSchema.parse({
@@ -164,7 +143,6 @@ describe('action-log-contract', () => {
         summary: 'その日のまとめ',
         mainThemes: ['調査'],
         noteIds: [],
-        openLoopIds: [],
         reviewQuestions: ['次に何を見るか。'],
         generatedAt: '2026-04-17T22:00:00+09:00',
       }),

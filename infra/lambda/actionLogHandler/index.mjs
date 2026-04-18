@@ -12,7 +12,6 @@ const SESSION_PREFIX = "ACTION_LOG#SESSION#";
 const DAILY_PREFIX = "ACTION_LOG#DAILY#";
 const WEEKLY_PREFIX = "ACTION_LOG#WEEKLY#";
 const DEVICE_PREFIX = "ACTION_LOG#DEVICE#";
-const OPEN_LOOP_PREFIX = "ACTION_LOG#OPEN_LOOP#";
 const DELETION_REQUEST_PREFIX = "ACTION_LOG#DELETION_REQUEST#";
 const SITUATION_PREFIX = "SITUATION#";
 const PRIVACY_RULES_SK = "ACTION_LOG#PRIVACY_RULES";
@@ -199,14 +198,6 @@ function buildDeviceItem(pk, id, existing, updates) {
     id,
     createdAt: existing?.createdAt ?? updates.createdAt ?? now,
     updatedAt: now,
-  };
-}
-
-function buildOpenLoopItem(pk, openLoop) {
-  return {
-    PK: pk,
-    SK: `${OPEN_LOOP_PREFIX}${openLoop.dateKey}#${openLoop.id}`,
-    ...openLoop,
   };
 }
 
@@ -636,66 +627,16 @@ export const handler = async (event) => {
       return response(200, { updated: rules.length });
     }
 
-    case "GET /action-log/open-loops": {
-      const range = requireDateRange(event);
-      if ("error" in range) {
-        return range.error;
-      }
-      const result = await queryBetween({
-        pk,
-        prefix: OPEN_LOOP_PREFIX,
-        from: range.from,
-        to: range.to,
-      });
-      return response(200, (result.Items ?? []).map(stripSystemFields));
-    }
-
-    case "PUT /action-log/open-loops": {
-      const body = parseBody(event);
-      const dateKeys = Array.isArray(body.dateKeys) ? body.dateKeys.filter(Boolean) : null;
-      const openLoops = Array.isArray(body.openLoops) ? body.openLoops : null;
-      if (dateKeys === null || openLoops === null) {
-        return response(400, { error: "dateKeys and openLoops are required" });
-      }
-
-      for (const dateKey of [...new Set(dateKeys)]) {
-        const existing = await queryBeginsWith({
-          pk,
-          prefix: `${OPEN_LOOP_PREFIX}${dateKey}#`,
-        });
-        for (const item of existing.Items ?? []) {
-          await db.send(
-            new DeleteCommand({
-              TableName: TABLE_NAME,
-              Key: { PK: pk, SK: item.SK },
-            }),
-          );
-        }
-      }
-
-      for (const openLoop of openLoops) {
-        await db.send(
-          new PutCommand({
-            TableName: TABLE_NAME,
-            Item: buildOpenLoopItem(pk, openLoop),
-          }),
-        );
-      }
-
-      return response(200, { updated: openLoops.length });
-    }
-
     case "DELETE /action-log/range": {
       const range = requireDateRange(event);
       if ("error" in range) {
         return range.error;
       }
 
-      const [rawEvents, sessions, dailyLogs, openLoops, situationLogs, weeklyCandidates] = await Promise.all([
+      const [rawEvents, sessions, dailyLogs, situationLogs, weeklyCandidates] = await Promise.all([
         queryBetween({ pk, prefix: RAW_EVENT_PREFIX, from: range.from, to: range.to }),
         queryBetween({ pk, prefix: SESSION_PREFIX, from: range.from, to: range.to }),
         queryBetween({ pk, prefix: DAILY_PREFIX, from: range.from, to: range.to }),
-        queryBetween({ pk, prefix: OPEN_LOOP_PREFIX, from: range.from, to: range.to }),
         queryBetween({ pk, prefix: SITUATION_PREFIX, from: range.from, to: range.to }),
         queryBeginsWith({ pk, prefix: WEEKLY_PREFIX }),
       ]);
@@ -711,7 +652,6 @@ export const handler = async (event) => {
       await deleteItems(rawEvents.Items, pk);
       await deleteItems(sessions.Items, pk);
       await deleteItems(dailyLogs.Items, pk);
-      await deleteItems(openLoops.Items, pk);
       await deleteItems(situationLogs.Items, pk);
       await deleteItems(weeklyReviews, pk);
 
@@ -734,7 +674,6 @@ export const handler = async (event) => {
           sessions: sessions.Items?.length ?? 0,
           dailyLogs: dailyLogs.Items?.length ?? 0,
           weeklyReviews: weeklyReviews.length,
-          openLoops: openLoops.Items?.length ?? 0,
           situationLogs: situationLogs.Items?.length ?? 0,
         },
         deletionRequestId: deletionRequest.id,

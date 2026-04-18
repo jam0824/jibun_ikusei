@@ -35,21 +35,7 @@ def _session(
         "summary": f"{title} を進めていた。",
         "searchKeywords": [title, "developer.chrome.com"],
         "noteIds": [],
-        "openLoopIds": ["loop_1"],
         "hidden": False,
-    }
-
-
-def _open_loop(loop_id: str, *, date_key: str, title: str) -> dict:
-    return {
-        "id": loop_id,
-        "createdAt": f"{date_key}T18:00:00+09:00",
-        "updatedAt": f"{date_key}T18:00:00+09:00",
-        "dateKey": date_key,
-        "title": title,
-        "description": f"{title} を次に確認する。",
-        "status": "open",
-        "linkedSessionIds": ["session_1"],
     }
 
 
@@ -59,12 +45,9 @@ class _FakeApiClient:
     weekly_reviews: dict[str, dict | None] = field(default_factory=dict)
     daily_sessions: dict[str, list[dict]] = field(default_factory=dict)
     weekly_sessions: dict[tuple[str, str], list[dict]] = field(default_factory=dict)
-    daily_open_loops: dict[str, list[dict]] = field(default_factory=dict)
-    weekly_open_loops: dict[tuple[str, str], list[dict]] = field(default_factory=dict)
     put_daily_calls: list[dict] = field(default_factory=list)
     put_weekly_calls: list[dict] = field(default_factory=list)
     session_calls: list[tuple[str, str]] = field(default_factory=list)
-    open_loop_calls: list[tuple[str, str]] = field(default_factory=list)
 
     async def get_action_log_daily_log(self, date_key: str) -> dict | None:
         return self.daily_logs.get(date_key)
@@ -85,12 +68,6 @@ class _FakeApiClient:
         if from_date == to_date:
             return list(self.daily_sessions.get(from_date, []))
         return list(self.weekly_sessions.get((from_date, to_date), []))
-
-    async def get_action_log_open_loops(self, from_date: str, to_date: str) -> list[dict]:
-        self.open_loop_calls.append((from_date, to_date))
-        if from_date == to_date:
-            return list(self.daily_open_loops.get(from_date, []))
-        return list(self.weekly_open_loops.get((from_date, to_date), []))
 
 
 @pytest.mark.asyncio
@@ -116,14 +93,6 @@ async def test_backfill_generates_missing_yesterday_daily_and_previous_week_week
                     ended_at="2026-04-10T10:45:00+09:00",
                     title="前週の調査",
                 )
-            ]
-        },
-        daily_open_loops={
-            "2026-04-16": [_open_loop("loop_daily", date_key="2026-04-16", title="権限設定の確認")]
-        },
-        weekly_open_loops={
-            ("2026-04-06", "2026-04-12"): [
-                _open_loop("loop_weekly", date_key="2026-04-10", title="manifest の再確認")
             ]
         },
     )
@@ -155,10 +124,6 @@ async def test_backfill_generates_missing_yesterday_daily_and_previous_week_week
     )
 
     assert api_client.session_calls == [
-        ("2026-04-16", "2026-04-16"),
-        ("2026-04-06", "2026-04-12"),
-    ]
-    assert api_client.open_loop_calls == [
         ("2026-04-16", "2026-04-16"),
         ("2026-04-06", "2026-04-12"),
     ]
@@ -226,14 +191,6 @@ async def test_backfill_uses_template_fallback_when_openai_fails(monkeypatch):
                 )
             ]
         },
-        daily_open_loops={
-            "2026-04-16": [_open_loop("loop_daily", date_key="2026-04-16", title="権限設定の確認")]
-        },
-        weekly_open_loops={
-            ("2026-04-06", "2026-04-12"): [
-                _open_loop("loop_weekly", date_key="2026-04-10", title="manifest の再確認")
-            ]
-        },
     )
 
     async def _failing_request_openai_json(**_kwargs):
@@ -258,7 +215,7 @@ async def test_backfill_uses_template_fallback_when_openai_fails(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_backfill_excludes_closed_open_loops_from_inputs_and_saved_ids(monkeypatch):
+async def test_backfill_uses_session_only_inputs_and_saves_without_open_loop_ids(monkeypatch):
     api_client = _FakeApiClient(
         daily_sessions={
             "2026-04-16": [
@@ -280,24 +237,6 @@ async def test_backfill_excludes_closed_open_loops_from_inputs_and_saved_ids(mon
                     ended_at="2026-04-10T10:45:00+09:00",
                     title="前週の調査",
                 )
-            ]
-        },
-        daily_open_loops={
-            "2026-04-16": [
-                _open_loop("loop_daily_open", date_key="2026-04-16", title="権限設定の確認"),
-                {
-                    **_open_loop("loop_daily_closed", date_key="2026-04-16", title="完了した確認"),
-                    "status": "closed",
-                },
-            ]
-        },
-        weekly_open_loops={
-            ("2026-04-06", "2026-04-12"): [
-                _open_loop("loop_weekly_open", date_key="2026-04-10", title="manifest の再確認"),
-                {
-                    **_open_loop("loop_weekly_closed", date_key="2026-04-10", title="終わった週次確認"),
-                    "status": "closed",
-                },
             ]
         },
     )
@@ -330,7 +269,7 @@ async def test_backfill_excludes_closed_open_loops_from_inputs_and_saved_ids(mon
         now=datetime(2026, 4, 17, 9, 0, tzinfo=JST)
     )
 
-    assert [item["title"] for item in captured_inputs[0]["openLoops"]] == ["権限設定の確認"]
-    assert [item["title"] for item in captured_inputs[1]["openLoops"]] == ["manifest の再確認"]
-    assert api_client.put_daily_calls[0]["openLoopIds"] == ["loop_daily_open"]
-    assert api_client.put_weekly_calls[0]["openLoopIds"] == ["loop_weekly_open"]
+    assert "openLoops" not in captured_inputs[0]
+    assert "openLoops" not in captured_inputs[1]
+    assert "openLoopIds" not in api_client.put_daily_calls[0]
+    assert "openLoopIds" not in api_client.put_weekly_calls[0]

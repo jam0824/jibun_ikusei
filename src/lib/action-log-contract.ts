@@ -5,7 +5,6 @@ import type {
   ActivitySession,
   Device,
   ManualNote,
-  OpenLoop,
   PrivacyRule,
   RawEvent,
   WeeklyActivityReview,
@@ -16,7 +15,6 @@ import {
   ACTIVITY_CATEGORIES,
   DEVICE_CAPTURE_STATES,
   DEVICE_PLATFORMS,
-  OPEN_LOOP_STATUSES,
   PRIVACY_RULE_MODES,
   PRIVACY_RULE_TYPES,
   RAW_EVENT_TYPES,
@@ -38,7 +36,6 @@ const rawEventTypeSchema = z.enum(RAW_EVENT_TYPES)
 const activityCategorySchema = z.enum(ACTIVITY_CATEGORIES)
 const devicePlatformSchema = z.enum(DEVICE_PLATFORMS)
 const deviceCaptureStateSchema = z.enum(DEVICE_CAPTURE_STATES)
-const openLoopStatusSchema = z.enum(OPEN_LOOP_STATUSES)
 const privacyRuleTypeSchema = z.enum(PRIVACY_RULE_TYPES)
 const privacyRuleModeSchema = z.enum(PRIVACY_RULE_MODES)
 
@@ -87,7 +84,6 @@ export const activitySessionSchema = z
     summary: z.string().min(1).optional(),
     searchKeywords: z.array(z.string().min(1)),
     noteIds: z.array(z.string().min(1)),
-    openLoopIds: z.array(z.string().min(1)),
     hidden: z.boolean(),
   })
   .strict() satisfies z.ZodType<ActivitySession>
@@ -109,11 +105,10 @@ const dailyActivityLogBaseSchema = z
     healthSummary: z.string().min(1).optional(),
     mainThemes: z.array(z.string().min(1)),
     noteIds: z.array(z.string().min(1)),
-    openLoopIds: z.array(z.string().min(1)),
     reviewQuestions: z.array(z.string().min(1)),
     generatedAt: jstRfc3339Schema,
   })
-  .strict()
+  .passthrough()
 
 export const dailyActivityLogSchema = dailyActivityLogBaseSchema.transform((log) => ({
   ...log,
@@ -132,7 +127,6 @@ export const weeklyActivityReviewSchema = z
     summary: z.string().min(1),
     categoryDurations: z.record(z.string(), z.number().nonnegative()),
     focusThemes: z.array(z.string().min(1)),
-    openLoopIds: z.array(z.string().min(1)),
     generatedAt: jstRfc3339Schema,
   })
   .strict() satisfies z.ZodType<WeeklyActivityReview>
@@ -146,19 +140,6 @@ export const manualNoteSchema = z
     linkedSessionId: z.string().min(1).optional(),
   })
   .strict() satisfies z.ZodType<ManualNote>
-
-export const openLoopSchema = z
-  .object({
-    id: z.string().min(1),
-    createdAt: jstRfc3339Schema,
-    updatedAt: jstRfc3339Schema,
-    dateKey: dateKeySchema,
-    title: z.string().min(1),
-    description: z.string().min(1).optional(),
-    status: openLoopStatusSchema,
-    linkedSessionIds: z.array(z.string().min(1)),
-  })
-  .strict() satisfies z.ZodType<OpenLoop>
 
 export const privacyRuleSchema = z
   .object({

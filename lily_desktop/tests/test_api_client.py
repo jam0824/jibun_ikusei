@@ -46,7 +46,6 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
                     "summary": "summary",
                     "searchKeywords": ["Chrome拡張", "developer.chrome.com"],
                     "noteIds": [],
-                    "openLoopIds": ["loop_1"],
                     "hidden": False,
                 }
             ],
@@ -63,7 +62,6 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
             "summary": "daily summary",
             "mainThemes": ["Chrome拡張"],
             "noteIds": [],
-            "openLoopIds": ["loop_1"],
             "reviewQuestions": ["次に何を確認したいか。"],
             "generatedAt": "2026-04-17T08:00:00+09:00",
         }
@@ -77,7 +75,6 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
             "summary": "weekly summary",
             "categoryDurations": {"学習": 45},
             "focusThemes": ["Chrome拡張"],
-            "openLoopIds": ["loop_1"],
             "generatedAt": "2026-04-17T08:00:00+09:00",
         }
     )
@@ -94,24 +91,6 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
                 "enabled": True,
             }
         ]
-    )
-    await client.get_action_log_open_loops("2026-04-01", "2026-04-17")
-    await client.put_action_log_open_loops(
-        {
-            "dateKeys": ["2026-04-17"],
-            "openLoops": [
-                {
-                    "id": "loop_1",
-                    "createdAt": "2026-04-17T10:00:00+09:00",
-                    "updatedAt": "2026-04-17T10:05:00+09:00",
-                    "dateKey": "2026-04-17",
-                    "title": "manifestの確認",
-                    "description": "manifest v3 を見直す",
-                    "status": "open",
-                    "linkedSessionIds": ["session_1"],
-                }
-            ],
-        }
     )
     await client.put_action_log_session_hidden(
         "session_1",
@@ -159,7 +138,6 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
                     "summary": "summary",
                     "searchKeywords": ["Chrome拡張", "developer.chrome.com"],
                     "noteIds": [],
-                    "openLoopIds": ["loop_1"],
                     "hidden": False,
                 }
             ],
@@ -191,7 +169,6 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
             "summary": "daily summary",
             "mainThemes": ["Chrome拡張"],
             "noteIds": [],
-            "openLoopIds": ["loop_1"],
             "reviewQuestions": ["次に何を確認したいか。"],
             "generatedAt": "2026-04-17T08:00:00+09:00",
         },
@@ -211,7 +188,6 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
             "summary": "weekly summary",
             "categoryDurations": {"学習": 45},
             "focusThemes": ["Chrome拡張"],
-            "openLoopIds": ["loop_1"],
             "generatedAt": "2026-04-17T08:00:00+09:00",
         },
     )
@@ -236,31 +212,6 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
                 }
             ]
         },
-    )
-    client._request.assert_any_await(
-        "GET",
-        "/action-log/open-loops",
-        params={"from": "2026-04-01", "to": "2026-04-17"},
-    )
-    client._request.assert_any_await(
-        "PUT",
-        "/action-log/open-loops",
-        json={
-            "dateKeys": ["2026-04-17"],
-            "openLoops": [
-                {
-                    "id": "loop_1",
-                    "createdAt": "2026-04-17T10:00:00+09:00",
-                    "updatedAt": "2026-04-17T10:05:00+09:00",
-                    "dateKey": "2026-04-17",
-                    "title": "manifestの確認",
-                    "description": "manifest v3 を見直す",
-                    "status": "open",
-                    "linkedSessionIds": ["session_1"],
-                }
-            ],
-        },
-        timeout=90.0,
     )
     client._request.assert_any_await(
         "PUT",

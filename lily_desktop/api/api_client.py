@@ -204,21 +204,6 @@ class ApiClient:
             "PUT", "/action-log/privacy-rules", json={"rules": rules}
         )
 
-    async def get_action_log_open_loops(
-        self, from_date: str, to_date: str
-    ) -> list[dict]:
-        return await self._request(
-            "GET", "/action-log/open-loops", params={"from": from_date, "to": to_date}
-        )
-
-    async def put_action_log_open_loops(self, payload: dict) -> dict:
-        return await self._request(
-            "PUT",
-            "/action-log/open-loops",
-            json=payload,
-            timeout=_ACTION_LOG_BULK_WRITE_TIMEOUT_SECONDS,
-        )
-
     async def delete_action_log_range(self, from_date: str, to_date: str) -> dict:
         return await self._request(
             "DELETE", "/action-log/range", params={"from": from_date, "to": to_date}

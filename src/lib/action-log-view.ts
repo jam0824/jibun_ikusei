@@ -2,7 +2,6 @@ import type {
   ActionLogPage,
   ActivitySession,
   DailyActivityLog,
-  OpenLoop,
   RawEvent,
   WeeklyActivityReview,
 } from '@/domain/action-log-types'
@@ -12,7 +11,6 @@ import {
   getCompletions,
   getActionLogDailyActivityLog,
   getActionLogDailyActivityLogs,
-  getActionLogOpenLoops,
   getActionLogRawEvents,
   getActionLogRawEventsPage,
   getActionLogSessions,
@@ -38,14 +36,12 @@ export interface ActivityDayViewData {
   rawEvents: RawEvent[]
   dailyLog: DailyActivityLog | null
   situationLogs: SituationLogEntry[]
-  openLoops: OpenLoop[]
 }
 
 export interface ActivityDayShellData {
   dateKey: string
   dailyLog: DailyActivityLog | null
   situationLogs: SituationLogEntry[]
-  openLoops: OpenLoop[]
 }
 
 export interface ActivityCalendarDay {
@@ -60,14 +56,12 @@ export interface UsageSummaryItem {
 
 export interface ActivityWeekViewData {
   review: WeeklyActivityReview | null
-  openLoops: OpenLoop[]
   topApps: UsageSummaryItem[]
   topDomains: UsageSummaryItem[]
 }
 
 export interface ActivitySearchResult {
   sessions: ActivitySession[]
-  openLoops: OpenLoop[]
 }
 
 export interface CompactSessionBlock {
@@ -90,7 +84,6 @@ export interface ActivitySearchParams {
   categories?: string[]
   apps?: string[]
   domains?: string[]
-  includeOpenLoops?: boolean
   includeHidden?: boolean
 }
 
@@ -99,7 +92,6 @@ export interface ActionLogExportBundle {
   sessions: ActivitySession[]
   dailyLogs: DailyActivityLog[]
   weeklyReviews: WeeklyActivityReview[]
-  openLoops: OpenLoop[]
   situationLogs: SituationLogEntry[]
   meta: {
     from: string
@@ -280,10 +272,6 @@ function buildSessionSearchText(session: ActivitySession) {
     .toLowerCase()
 }
 
-function buildOpenLoopSearchText(openLoop: OpenLoop) {
-  return [openLoop.title, openLoop.description ?? '', openLoop.status].join(' ').toLowerCase()
-}
-
 function normalizeFilterValues(values: string[] | undefined) {
   return (values ?? []).map((value) => value.trim().toLowerCase()).filter(Boolean)
 }
@@ -316,10 +304,6 @@ function sortSessionsNewestFirst(sessions: ActivitySession[]) {
 
 function sortRawEventsNewestFirst(rawEvents: RawEvent[]) {
   return [...rawEvents].sort((left, right) => right.occurredAt.localeCompare(left.occurredAt))
-}
-
-function sortOpenLoopsNewestFirst(openLoops: OpenLoop[]) {
-  return [...openLoops].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 }
 
 function sortSituationLogsNewestFirst(situationLogs: SituationLogEntry[]) {
@@ -634,23 +618,14 @@ function filterDayRawEvents(rawEvents: RawEvent[], dateKey: string) {
   return rawEvents.filter((event) => getDayKey(event.occurredAt) === dateKey)
 }
 
-function filterDayOpenLoops(openLoops: OpenLoop[], dateKey: string) {
-  return openLoops.filter((openLoop) => openLoop.dateKey === dateKey)
-}
-
 function filterDaySituationLogs(situationLogs: SituationLogEntry[], dateKey: string) {
   return situationLogs.filter((situationLog) => getDayKey(situationLog.timestamp) === dateKey)
-}
-
-function filterOpenOpenLoops(openLoops: OpenLoop[]) {
-  return openLoops.filter((openLoop) => openLoop.status === 'open')
 }
 
 function buildActivityDayShellData(params: {
   dateKey: string
   dailyLog: DailyActivityLog | null
   situationLogs: SituationLogEntry[]
-  openLoops: OpenLoop[]
 }): ActivityDayShellData {
   return {
     dateKey: params.dateKey,
@@ -658,14 +633,12 @@ function buildActivityDayShellData(params: {
     situationLogs: sortSituationLogsNewestFirst(
       filterDaySituationLogs(params.situationLogs, params.dateKey),
     ),
-    openLoops: sortOpenLoopsNewestFirst(filterOpenOpenLoops(filterDayOpenLoops(params.openLoops, params.dateKey))),
   }
 }
 
 export async function fetchActivityDayShell(dateKey: string): Promise<ActivityDayShellData> {
-  const [dailyLog, openLoops, situationLogs] = await Promise.all([
+  const [dailyLog, situationLogs] = await Promise.all([
     getActionLogDailyActivityLog(dateKey),
-    getActionLogOpenLoops(dateKey, dateKey),
     getSituationLogs(dateKey, dateKey),
   ])
 
@@ -673,7 +646,6 @@ export async function fetchActivityDayShell(dateKey: string): Promise<ActivityDa
     dateKey,
     dailyLog,
     situationLogs,
-    openLoops,
   })
 }
 
@@ -685,14 +657,10 @@ export async function ensurePreviousDayDailyActivityLogShell(params: {
 }): Promise<ActivityDayShellData> {
   const dateKey = params.dateKey
   const now = params.now ?? new Date()
-  const [dailyLog, openLoops, situationLogs] = await Promise.all([
+  const [dailyLog, situationLogs] = await Promise.all([
     getActionLogDailyActivityLog(dateKey),
-    getActionLogOpenLoops(dateKey, dateKey),
     getSituationLogs(dateKey, dateKey),
   ])
-  const filteredOpenLoops = sortOpenLoopsNewestFirst(
-    filterOpenOpenLoops(filterDayOpenLoops(openLoops, dateKey)),
-  )
   let resolvedDailyLog = dailyLog?.dateKey === dateKey ? dailyLog : null
 
   if (!resolvedDailyLog && dateKey === getYesterdayDateKeyJst(now)) {
@@ -708,7 +676,6 @@ export async function ensurePreviousDayDailyActivityLogShell(params: {
       settings: params.settings,
       dateKey,
       sessions: filteredSessions,
-      openLoops: filteredOpenLoops,
       quests,
       completions,
       healthData,
@@ -722,7 +689,6 @@ export async function ensurePreviousDayDailyActivityLogShell(params: {
       healthSummary: generated.healthSummary,
       mainThemes: generated.mainThemes,
       noteIds: [],
-      openLoopIds: filteredOpenLoops.map((openLoop) => openLoop.id),
       reviewQuestions: generated.reviewQuestions,
       generatedAt: toJstIso(),
     })
@@ -732,7 +698,6 @@ export async function ensurePreviousDayDailyActivityLogShell(params: {
     dateKey,
     dailyLog: resolvedDailyLog,
     situationLogs: sortSituationLogsNewestFirst(filterDaySituationLogs(situationLogs, dateKey)),
-    openLoops: filteredOpenLoops,
   }
 }
 
@@ -763,11 +728,10 @@ export async function fetchActivityDayEventPage(params: {
 }
 
 export async function fetchActivityDayView(dateKey: string): Promise<ActivityDayViewData> {
-  const [sessions, rawEvents, dailyLog, openLoops, situationLogs] = await Promise.all([
+  const [sessions, rawEvents, dailyLog, situationLogs] = await Promise.all([
     getActionLogSessions(dateKey, dateKey),
     getActionLogRawEvents(dateKey, dateKey),
     getActionLogDailyActivityLog(dateKey),
-    getActionLogOpenLoops(dateKey, dateKey),
     getSituationLogs(dateKey, dateKey),
   ])
 
@@ -777,7 +741,6 @@ export async function fetchActivityDayView(dateKey: string): Promise<ActivityDay
     rawEvents: sortRawEventsNewestFirst(filterDayRawEvents(rawEvents, dateKey)),
     dailyLog: dailyLog?.dateKey === dateKey ? dailyLog : null,
     situationLogs: sortSituationLogsNewestFirst(filterDaySituationLogs(situationLogs, dateKey)),
-    openLoops: filterOpenOpenLoops(filterDayOpenLoops(openLoops, dateKey)),
   }
 }
 
@@ -789,17 +752,15 @@ export async function ensurePreviousDayDailyActivityLog(params: {
 }): Promise<ActivityDayViewData> {
   const dateKey = params.dateKey
   const now = params.now ?? new Date()
-  const [sessions, rawEvents, dailyLog, openLoops, situationLogs] = await Promise.all([
+  const [sessions, rawEvents, dailyLog, situationLogs] = await Promise.all([
     getActionLogSessions(dateKey, dateKey),
     getActionLogRawEvents(dateKey, dateKey),
     getActionLogDailyActivityLog(dateKey),
-    getActionLogOpenLoops(dateKey, dateKey),
     getSituationLogs(dateKey, dateKey),
   ])
 
   const filteredSessions = sortSessionsNewestFirst(filterDaySessions(sessions, dateKey))
   const filteredRawEvents = sortRawEventsNewestFirst(filterDayRawEvents(rawEvents, dateKey))
-  const filteredOpenLoops = filterOpenOpenLoops(filterDayOpenLoops(openLoops, dateKey))
   let resolvedDailyLog = dailyLog?.dateKey === dateKey ? dailyLog : null
 
   if (!resolvedDailyLog && dateKey === getYesterdayDateKeyJst(now)) {
@@ -813,7 +774,6 @@ export async function ensurePreviousDayDailyActivityLog(params: {
       settings: params.settings,
       dateKey,
       sessions: filteredSessions,
-      openLoops: filteredOpenLoops,
       quests,
       completions,
       healthData,
@@ -827,7 +787,6 @@ export async function ensurePreviousDayDailyActivityLog(params: {
       healthSummary: generated.healthSummary,
       mainThemes: generated.mainThemes,
       noteIds: [],
-      openLoopIds: filteredOpenLoops.map((openLoop) => openLoop.id),
       reviewQuestions: generated.reviewQuestions,
       generatedAt: toJstIso(),
     })
@@ -839,7 +798,6 @@ export async function ensurePreviousDayDailyActivityLog(params: {
     rawEvents: filteredRawEvents,
     dailyLog: resolvedDailyLog,
     situationLogs: sortSituationLogsNewestFirst(filterDaySituationLogs(situationLogs, dateKey)),
-    openLoops: filteredOpenLoops,
   }
 }
 
@@ -859,9 +817,8 @@ export async function fetchActivityReviewYear(year: number) {
 
 export async function fetchActivityReviewWeek(weekKey: string): Promise<ActivityWeekViewData> {
   const range = buildWeekDateRangeFromWeekKey(weekKey)
-  const [review, openLoops, sessions] = await Promise.all([
+  const [review, sessions] = await Promise.all([
     getActionLogWeeklyActivityReview(weekKey),
-    getActionLogOpenLoops(range.from, range.to),
     getActionLogSessions(range.from, range.to),
   ])
   const weeklySessions = sessions.filter((session) =>
@@ -870,9 +827,6 @@ export async function fetchActivityReviewWeek(weekKey: string): Promise<Activity
 
   return {
     review,
-    openLoops: filterOpenOpenLoops(openLoops).filter((openLoop) =>
-      isWithinDateRange(openLoop.dateKey, range.from, range.to),
-    ),
     topApps: buildUsageSummaries(weeklySessions, (session) => session.appNames),
     topDomains: buildUsageSummaries(weeklySessions, (session) => session.domains),
   }
@@ -908,20 +862,13 @@ export async function ensurePreviousWeekReviewForWeb(params: {
   }
 
   const range = buildWeekDateRangeFromWeekKey(previousWeekKey)
-  const [sessions, openLoops] = await Promise.all([
-    getActionLogSessions(range.from, range.to),
-    getActionLogOpenLoops(range.from, range.to),
-  ])
-  const filteredOpenLoops = filterOpenOpenLoops(openLoops).filter((openLoop) =>
-    isWithinDateRange(openLoop.dateKey, range.from, range.to),
-  )
+  const sessions = await getActionLogSessions(range.from, range.to)
   const categoryDurations = buildCategoryDurations(sessions)
   const generated = await generateWeeklyActivityReview({
     aiConfig: params.aiConfig,
     settings: params.settings,
     weekKey: previousWeekKey,
     sessions,
-    openLoops: filteredOpenLoops,
     categoryDurations,
   })
 
@@ -931,7 +878,6 @@ export async function ensurePreviousWeekReviewForWeb(params: {
     summary: generated.summary,
     categoryDurations,
     focusThemes: generated.focusThemes,
-    openLoopIds: filteredOpenLoops.map((openLoop) => openLoop.id),
     generatedAt: toJstIso(now),
   })
 
@@ -939,16 +885,12 @@ export async function ensurePreviousWeekReviewForWeb(params: {
 }
 
 export async function searchActivityLogs(params: ActivitySearchParams): Promise<ActivitySearchResult> {
-  const [sessions, openLoops] = await Promise.all([
-    getActionLogSessions(params.from, params.to),
-    getActionLogOpenLoops(params.from, params.to),
-  ])
+  const sessions = await getActionLogSessions(params.from, params.to)
   const keyword = lower(params.keyword.trim())
   const categoryFilters = normalizeFilterValues(params.categories)
   const appFilters = normalizeFilterValues(params.apps)
   const domainFilters = normalizeFilterValues(params.domains)
   const includeHidden = params.includeHidden ?? false
-  const includeOpenLoops = params.includeOpenLoops ?? true
 
   const filteredSessions = sortSessionsNewestFirst(
     sessions.filter((session) => {
@@ -971,15 +913,8 @@ export async function searchActivityLogs(params: ActivitySearchParams): Promise<
     }),
   )
 
-  const filteredOpenLoops = includeOpenLoops
-    ? sortOpenLoopsNewestFirst(
-        openLoops.filter((openLoop) => (keyword ? buildOpenLoopSearchText(openLoop).includes(keyword) : true)),
-      )
-    : []
-
   return {
     sessions: filteredSessions,
-    openLoops: filteredOpenLoops,
   }
 }
 
@@ -1000,11 +935,10 @@ export async function exportActionLogBundle(params: {
   now?: Date
 }): Promise<ActionLogExportBundle> {
   const years = buildExportYears(params.from, params.to)
-  const [rawEvents, sessions, dailyLogs, openLoops, situationLogs, weeklyReviewBatches] = await Promise.all([
+  const [rawEvents, sessions, dailyLogs, situationLogs, weeklyReviewBatches] = await Promise.all([
     getActionLogRawEvents(params.from, params.to),
     getActionLogSessions(params.from, params.to),
     getActionLogDailyActivityLogs(params.from, params.to),
-    getActionLogOpenLoops(params.from, params.to),
     getSituationLogs(params.from, params.to),
     Promise.all(years.map((year) => getActionLogWeeklyActivityReviews(year))),
   ])
@@ -1022,7 +956,6 @@ export async function exportActionLogBundle(params: {
     sessions,
     dailyLogs,
     weeklyReviews,
-    openLoops,
     situationLogs: sortSituationLogsNewestFirst(situationLogs),
     meta: {
       from: params.from,

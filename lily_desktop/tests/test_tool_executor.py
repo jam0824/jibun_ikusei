@@ -26,7 +26,6 @@ def _make_api():
     api.get_activity_logs = AsyncMock(return_value=[])
     api.get_action_log_sessions = AsyncMock(return_value=[])
     api.get_action_log_daily_logs = AsyncMock(return_value=[])
-    api.get_action_log_open_loops = AsyncMock(return_value=[])
     api.get_situation_logs = AsyncMock(return_value=[])
     api.get_chat_sessions = AsyncMock(return_value=[])
     api.get_chat_messages = AsyncMock(return_value=[])
@@ -206,12 +205,10 @@ async def test_activity_logs_pass_explicit_range_to_api():
             "summary": "実装を進めていた。",
             "searchKeywords": ["coding"],
             "noteIds": [],
-            "openLoopIds": [],
             "hidden": False,
         },
     ]
     api.get_action_log_daily_logs.return_value = []
-    api.get_action_log_open_loops.return_value = []
     executor = ToolExecutor(api)
 
     result = await executor.execute(
@@ -221,13 +218,12 @@ async def test_activity_logs_pass_explicit_range_to_api():
 
     api.get_action_log_sessions.assert_awaited_once_with("2026-03-29", "2026-03-30")
     api.get_action_log_daily_logs.assert_awaited_once_with("2026-03-29", "2026-03-30")
-    api.get_action_log_open_loops.assert_awaited_once_with("2026-03-29", "2026-03-30")
     api.get_activity_logs.assert_not_awaited()
     assert "coding" in result
 
 
 @pytest.mark.asyncio
-async def test_activity_logs_exclude_hidden_sessions_and_include_daily_and_open_loops():
+async def test_activity_logs_exclude_hidden_sessions_and_include_daily_logs():
     api = _make_api()
     api.get_action_log_sessions.return_value = [
         {
@@ -245,7 +241,6 @@ async def test_activity_logs_exclude_hidden_sessions_and_include_daily_and_open_
             "summary": "Manifest V3 を確認していた。",
             "searchKeywords": ["Chrome拡張"],
             "noteIds": [],
-            "openLoopIds": ["loop_1"],
             "hidden": False,
         },
         {
@@ -263,7 +258,6 @@ async def test_activity_logs_exclude_hidden_sessions_and_include_daily_and_open_
             "summary": "hidden",
             "searchKeywords": ["hidden"],
             "noteIds": [],
-            "openLoopIds": [],
             "hidden": True,
         },
     ]
@@ -274,21 +268,8 @@ async def test_activity_logs_exclude_hidden_sessions_and_include_daily_and_open_
             "summary": "リリィは、この日の流れを静かに見ていた。",
             "mainThemes": ["Chrome拡張"],
             "noteIds": [],
-            "openLoopIds": ["loop_1"],
             "reviewQuestions": [],
             "generatedAt": "2026-03-29T22:00:00+09:00",
-        }
-    ]
-    api.get_action_log_open_loops.return_value = [
-        {
-            "id": "loop_1",
-            "createdAt": "2026-03-29T10:00:00+09:00",
-            "updatedAt": "2026-03-29T10:05:00+09:00",
-            "dateKey": "2026-03-29",
-            "title": "権限設定の確認",
-            "description": "permissions を見直す",
-            "status": "open",
-            "linkedSessionIds": ["session_visible"],
         }
     ]
     executor = ToolExecutor(api)
@@ -299,7 +280,6 @@ async def test_activity_logs_exclude_hidden_sessions_and_include_daily_and_open_
     )
 
     assert "Chrome 拡張の調査" in result
-    assert "権限設定の確認" in result
     assert "リリィは、この日の流れを静かに見ていた。" in result
     assert "隠しセッション" not in result
 

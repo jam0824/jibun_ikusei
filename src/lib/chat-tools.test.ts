@@ -9,7 +9,6 @@ vi.mock('./api-client', () => ({
   getActivityLogs: vi.fn(),
   getActionLogSessions: vi.fn(),
   getActionLogDailyActivityLogs: vi.fn(),
-  getActionLogOpenLoops: vi.fn(),
   getSituationLogs: vi.fn(),
   getChatMessages: vi.fn(),
   getChatMessagesRange: vi.fn(),
@@ -549,17 +548,15 @@ describe('get_messages_and_logs', () => {
   it('passes exact day to activity logs API', async () => {
     vi.mocked(api.getActionLogSessions).mockResolvedValue([])
     vi.mocked(api.getActionLogDailyActivityLogs).mockResolvedValue([])
-    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([])
 
     await executeTool('get_messages_and_logs', { type: 'activity_logs', date: '2026-03-29' }, createContext())
 
     expect(api.getActionLogSessions).toHaveBeenCalledWith('2026-03-29', '2026-03-29')
     expect(api.getActionLogDailyActivityLogs).toHaveBeenCalledWith('2026-03-29', '2026-03-29')
-    expect(api.getActionLogOpenLoops).toHaveBeenCalledWith('2026-03-29', '2026-03-29')
     expect(api.getActivityLogs).not.toHaveBeenCalled()
   })
 
-  it('renders activity logs from sessions, daily logs, and open loops while excluding hidden sessions', async () => {
+  it('renders activity logs from sessions and daily logs while excluding hidden sessions', async () => {
     vi.mocked(api.getActionLogSessions).mockResolvedValue([
       {
         id: 'session_visible',
@@ -576,7 +573,6 @@ describe('get_messages_and_logs', () => {
         summary: 'Manifest V3 を確認していた。',
         searchKeywords: ['Chrome拡張', 'Manifest V3'],
         noteIds: [],
-        openLoopIds: ['loop_1'],
         hidden: false,
       },
       {
@@ -594,7 +590,6 @@ describe('get_messages_and_logs', () => {
         summary: 'これは出ない。',
         searchKeywords: ['隠し'],
         noteIds: [],
-        openLoopIds: [],
         hidden: true,
       },
     ])
@@ -607,31 +602,8 @@ describe('get_messages_and_logs', () => {
         healthSummary: 'リリィは、この日の健康記録をそっとたどっていた。',
         mainThemes: ['Chrome拡張'],
         noteIds: [],
-        openLoopIds: ['loop_1'],
         reviewQuestions: [],
         generatedAt: '2026-03-29T23:00:00+09:00',
-      },
-    ])
-    vi.mocked(api.getActionLogOpenLoops).mockResolvedValue([
-      {
-        id: 'loop_1',
-        createdAt: '2026-03-29T10:00:00+09:00',
-        updatedAt: '2026-03-29T10:05:00+09:00',
-        dateKey: '2026-03-29',
-        title: '権限設定の確認',
-        description: 'permissions を見直す。',
-        status: 'open',
-        linkedSessionIds: ['session_visible'],
-      },
-      {
-        id: 'loop_2',
-        createdAt: '2026-03-29T11:00:00+09:00',
-        updatedAt: '2026-03-29T11:05:00+09:00',
-        dateKey: '2026-03-29',
-        title: '完了した OpenLoop',
-        description: 'これは closed なので出さない。',
-        status: 'closed',
-        linkedSessionIds: ['session_visible'],
       },
     ])
 
@@ -640,8 +612,6 @@ describe('get_messages_and_logs', () => {
     expect(result).toContain('Chrome 拡張の調査')
     expect(result).toContain('Manifest V3 を確認していた。')
     expect(result).toContain('リリィは、この日の調査の流れを静かに見つめていた。')
-    expect(result).toContain('権限設定の確認')
-    expect(result).not.toContain('完了した OpenLoop')
     expect(result).not.toContain('隠しセッション')
     expect(result).not.toContain('RawEvent')
   })

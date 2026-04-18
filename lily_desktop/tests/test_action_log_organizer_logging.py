@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-from types import SimpleNamespace
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -74,27 +74,17 @@ def _write_spool(log_dir: Path, date_key: str, events: list[dict]) -> None:
 @dataclass
 class _FakeApiClient:
     put_sessions_calls: list[dict] | None = None
-    put_open_loops_calls: list[dict] | None = None
 
     def __post_init__(self) -> None:
         self.put_sessions_calls = []
-        self.put_open_loops_calls = []
 
     async def get_action_log_sessions(self, from_date: str, to_date: str) -> list[dict]:
-        del from_date, to_date
-        return []
-
-    async def get_action_log_open_loops(self, from_date: str, to_date: str) -> list[dict]:
         del from_date, to_date
         return []
 
     async def put_action_log_sessions(self, payload: dict) -> dict:
         self.put_sessions_calls.append(payload)
         return {"updated": len(payload.get("sessions", []))}
-
-    async def put_action_log_open_loops(self, payload: dict) -> dict:
-        self.put_open_loops_calls.append(payload)
-        return {"updated": len(payload.get("openLoops", []))}
 
 
 @pytest.mark.asyncio
@@ -206,7 +196,6 @@ async def test_organizer_logs_budget_exhaustion_and_fallback_count(
                         "activityKinds": ["作業"],
                         "summary": f"AI summary {index + 1}",
                         "searchKeywords": [f"kw-{index + 1}"],
-                        "openLoops": [],
                     }
                     for index, session_id in enumerate(session_ids)
                 ]

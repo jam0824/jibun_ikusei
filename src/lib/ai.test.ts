@@ -1,6 +1,6 @@
 ﻿import { afterEach, describe, expect, it, vi } from 'vitest'
 import { hydratePersistedState } from '@/domain/logic'
-import type { ActivitySession, OpenLoop } from '@/domain/action-log-types'
+import type { ActivitySession } from '@/domain/action-log-types'
 import type { Quest, QuestCompletion } from '@/domain/types'
 import type { HealthDataEntry } from '@/lib/api-client'
 import {
@@ -31,22 +31,7 @@ function createActivitySession(id: string, overrides: Partial<ActivitySession> =
     summary: 'Chrome 拡張まわりの調査を進めていた。',
     searchKeywords: ['Chrome拡張', 'developer.chrome.com'],
     noteIds: [],
-    openLoopIds: ['open_loop_1'],
     hidden: false,
-    ...overrides,
-  }
-}
-
-function createOpenLoop(id = 'open_loop_1', overrides: Partial<OpenLoop> = {}): OpenLoop {
-  return {
-    id,
-    createdAt: '2026-04-17T09:45:00+09:00',
-    updatedAt: '2026-04-17T09:45:00+09:00',
-    dateKey: '2026-04-17',
-    title: '権限設定の確認',
-    description: 'manifest の権限設定を次に確認する。',
-    status: 'open',
-    linkedSessionIds: ['session_1'],
     ...overrides,
   }
 }
@@ -370,7 +355,6 @@ describe('ai adapter', () => {
       settings: state.settings,
       dateKey: '2026-04-17',
       sessions: [createActivitySession('session_1')],
-      openLoops: [createOpenLoop()],
       quests: [createQuest()],
       completions: [createCompletion()],
       healthData: [createHealthDataEntry()],
@@ -432,10 +416,8 @@ describe('ai adapter', () => {
           appNames: ['Code'],
           domains: [],
           searchKeywords: ['VS Code', '開発'],
-          openLoopIds: [],
         }),
       ],
-      openLoops: [createOpenLoop()],
       categoryDurations: { 学習: 45, 仕事: 30 },
     })
 
@@ -457,7 +439,6 @@ describe('ai adapter', () => {
       settings: state.settings,
       dateKey: '2026-04-17',
       sessions: [createActivitySession('session_1')],
-      openLoops: [createOpenLoop()],
       quests: [createQuest()],
       completions: [createCompletion()],
       healthData: [createHealthDataEntry()],
@@ -480,7 +461,6 @@ describe('ai adapter', () => {
       settings: state.settings,
       dateKey: '2026-04-17',
       sessions: [createActivitySession('session_1')],
-      openLoops: [],
       quests: [],
       completions: [],
       healthData: [],
@@ -501,7 +481,6 @@ describe('ai adapter', () => {
       settings: state.settings,
       weekKey: '2026-W16',
       sessions: [createActivitySession('session_1')],
-      openLoops: [createOpenLoop()],
       categoryDurations: { 学習: 45 },
     })
 

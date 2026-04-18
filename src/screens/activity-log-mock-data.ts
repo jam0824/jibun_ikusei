@@ -23,7 +23,6 @@ export type DailyActivityLogMock = {
   summary: string
   mainThemes: string[]
   notePreview: string
-  openLoops: string[]
 }
 
 export type WeeklyActivityReviewMock = {
@@ -97,7 +96,6 @@ export function getActivityDayMock(dateKey: string): ActivityDayMock {
       summary: '午前は route の形を確認しつつ、午後は mock 表示に必要な最小データを整理していた。',
       mainThemes: ['route 確認', 'mock UI', 'deep link 着地'],
       notePreview: '手動メモ枠の見た目だけ先に置いて、保存は後続フェーズで実装する。',
-      openLoops: ['desktop 側の Web 起動を本実装へ接続する', 'session 化と AI 要約は次フェーズへ送る'],
     },
   }
 }

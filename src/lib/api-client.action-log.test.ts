@@ -10,7 +10,6 @@ import {
   getActionLogDailyActivityLog,
   getActionLogDeletionRequests,
   getActionLogDevices,
-  getActionLogOpenLoops,
   getActionLogPrivacyRules,
   getActionLogRawEvents,
   getActionLogSessions,
@@ -22,7 +21,6 @@ import {
   postActionLogDeletionRequestAck,
   putActionLogDailyActivityLog,
   putActionLogDevice,
-  putActionLogOpenLoops,
   putActionLogPrivacyRules,
   putActionLogSessionHidden,
   putActionLogSessions,
@@ -95,7 +93,6 @@ describe('api-client action-log stubs', () => {
           projectNames: ['self-growth-app'],
           searchKeywords: ['Chrome extension', 'developer.chrome.com'],
           noteIds: [],
-          openLoopIds: [],
           hidden: false,
         },
       ],
@@ -122,7 +119,6 @@ describe('api-client action-log stubs', () => {
           projectNames: ['self-growth-app'],
           searchKeywords: ['Chrome extension', 'developer.chrome.com'],
           noteIds: [],
-          openLoopIds: [],
           hidden: false,
         },
       ],
@@ -150,7 +146,6 @@ describe('api-client action-log stubs', () => {
               healthSummary: 'health summary',
               mainThemes: ['調査'],
               noteIds: [],
-              openLoopIds: [],
               reviewQuestions: ['q1'],
               generatedAt: '2026-04-17T23:59:00+09:00',
             }),
@@ -174,7 +169,6 @@ describe('api-client action-log stubs', () => {
       healthSummary: 'health summary',
       mainThemes: ['調査'],
       noteIds: [],
-      openLoopIds: [],
       reviewQuestions: ['q1'],
       generatedAt: '2026-04-17T23:59:00+09:00',
     })
@@ -186,7 +180,6 @@ describe('api-client action-log stubs', () => {
       summary: 'summary',
       categoryDurations: { 仕事: 120 },
       focusThemes: ['実装'],
-      openLoopIds: [],
       generatedAt: '2026-04-17T23:59:00+09:00',
     })
     await getActionLogDevices()
@@ -201,22 +194,6 @@ describe('api-client action-log stubs', () => {
         enabled: true,
       },
     ])
-    await getActionLogOpenLoops('2026-04-01', '2026-04-17')
-    await putActionLogOpenLoops({
-      dateKeys: ['2026-04-17'],
-      openLoops: [
-        {
-          id: 'loop_1',
-          createdAt: '2026-04-17T10:00:00+09:00',
-          updatedAt: '2026-04-17T10:05:00+09:00',
-          dateKey: '2026-04-17',
-          title: 'manifestの確認',
-          description: 'manifest v3 を見直す',
-          status: 'open',
-          linkedSessionIds: ['session_1'],
-        },
-      ],
-    })
     await putActionLogSessionHidden('session_1', {
       dateKey: '2026-04-17',
       hidden: true,
@@ -240,8 +217,6 @@ describe('api-client action-log stubs', () => {
         expect.stringContaining('/action-log/devices/device_1'),
         expect.stringContaining('/action-log/privacy-rules'),
         expect.stringContaining('/action-log/privacy-rules'),
-        expect.stringContaining('/action-log/open-loops?from=2026-04-01&to=2026-04-17'),
-        expect.stringContaining('/action-log/open-loops'),
         expect.stringContaining('/action-log/sessions/session_1/hidden'),
         expect.stringContaining('/action-log/range?from=2026-04-01&to=2026-04-17'),
         expect.stringContaining('/action-log/deletion-requests'),

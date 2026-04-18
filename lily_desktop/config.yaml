@@ -16,6 +16,7 @@ chat:
     - youtube.com
     - netflix.com
     - primevideo.com
+    - amazon.co.jp
 display:
   lily_scale: 0.3
   haruka_scale: 0.65
@@ -40,6 +41,7 @@ voice:
     - DD
     - D D
     - ギリー
+    - ビリー
     - 3 D
   ignore_words:
     - alexa
