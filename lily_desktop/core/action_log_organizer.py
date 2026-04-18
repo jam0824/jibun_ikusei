@@ -26,9 +26,9 @@ HTTP_TIMEOUT_SECONDS = 30.0
 OPENAI_BATCH_SIZE = 8
 DEFAULT_ACTIVITY_PROCESSING_CONFIG = {
     "enabled": True,
-    "provider": "ollama",
+    "provider": "openai",
     "base_url": "http://127.0.0.1:11434",
-    "model": "gemma4:e4b",
+    "model": "gpt-5-nano",
     "max_completion_tokens": 400,
 }
 _CODE_APPS = ("code.exe", "cursor.exe", "wezterm", "powershell", "windows terminal", "git")

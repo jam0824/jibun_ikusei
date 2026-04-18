@@ -97,7 +97,7 @@ activity_capture:
   sync_interval_seconds: 30
 activity_processing:
   enabled: true
-  provider: ollama
+  provider: openai
   base_url: http://127.0.0.1:11434
-  model: gemma4:e4b
+  model: gpt-5-nano
   max_completion_tokens: 400

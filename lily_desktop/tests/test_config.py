@@ -244,16 +244,16 @@ def test_activity_capture_invalid_sync_interval_falls_back_to_30_seconds(tmp_pat
     assert config.activity_capture.sync_interval_seconds == 30
 
 
-def test_activity_processing_defaults_to_ollama_gemma4(tmp_path):
+def test_activity_processing_defaults_to_openai_gpt_5_nano(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text("", encoding="utf-8")
 
     config = load_config(config_path)
 
     assert config.activity_processing.enabled is True
-    assert config.activity_processing.provider == "ollama"
+    assert config.activity_processing.provider == "openai"
     assert config.activity_processing.base_url == "http://127.0.0.1:11434"
-    assert config.activity_processing.model == "gemma4:e4b"
+    assert config.activity_processing.model == "gpt-5-nano"
     assert config.activity_processing.max_completion_tokens == 400
 
 

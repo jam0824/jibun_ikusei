@@ -25,6 +25,16 @@ def _processing_disabled():
     )
 
 
+def _processing_ollama():
+    return SimpleNamespace(
+        enabled=True,
+        provider="ollama",
+        base_url="http://127.0.0.1:11434",
+        model="gemma4:e4b",
+        max_completion_tokens=400,
+    )
+
+
 def _event(
     event_id: str,
     occurred_at: datetime,
@@ -335,6 +345,7 @@ async def test_organize_and_sync_preserves_hidden_when_candidate_id_changes(tmp_
         device_id="device_1",
         api_client=api_client,
         raw_event_log_dir=log_dir,
+        processing_config=_processing_disabled(),
     )
 
     await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
@@ -393,6 +404,7 @@ async def test_organize_and_sync_full_replaces_today_and_yesterday_even_when_one
         device_id="device_1",
         api_client=api_client,
         raw_event_log_dir=log_dir,
+        processing_config=_processing_ollama(),
     )
 
     await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
@@ -465,6 +477,7 @@ async def test_organizer_uses_ollama_batch_and_saves_open_loops(tmp_path, monkey
         device_id="device_1",
         api_client=api_client,
         raw_event_log_dir=log_dir,
+        processing_config=_processing_ollama(),
     )
     expected_session_id = organizer.build_candidate_sessions(
         organizer.load_recent_raw_events(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))

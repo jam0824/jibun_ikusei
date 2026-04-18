@@ -392,9 +392,9 @@ class ActivityCaptureConfig:
 @dataclass
 class ActivityProcessingConfig:
     enabled: bool = True
-    provider: str = "ollama"
+    provider: str = "openai"
     base_url: str = DEFAULT_OLLAMA_BASE_URL
-    model: str = "gemma4:e4b"
+    model: str = "gpt-5-nano"
     max_completion_tokens: int = DEFAULT_ACTIVITY_PROCESSING_MAX_COMPLETION_TOKENS
 
 
@@ -496,7 +496,7 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
     else:
         activity_processing_raw = dict(activity_processing_raw)
     activity_processing_raw["provider"] = normalize_ai_provider(
-        activity_processing_raw.get("provider", "ollama")
+        activity_processing_raw.get("provider", "openai")
     )
     activity_processing_raw["base_url"] = normalize_ai_base_url(
         activity_processing_raw.get("base_url", DEFAULT_OLLAMA_BASE_URL)

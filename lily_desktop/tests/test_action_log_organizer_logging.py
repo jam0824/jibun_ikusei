@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -11,6 +12,16 @@ from core.action_log_organizer import ActionLogOrganizer
 
 
 JST = timezone(timedelta(hours=9))
+
+
+def _processing_ollama():
+    return SimpleNamespace(
+        enabled=True,
+        provider="ollama",
+        base_url="http://127.0.0.1:11434",
+        model="gemma4:e4b",
+        max_completion_tokens=400,
+    )
 
 
 def _event(
@@ -96,6 +107,7 @@ async def test_organizer_logs_raw_response_when_json_parse_fails(tmp_path, monke
         device_id="device_1",
         api_client=api_client,
         raw_event_log_dir=log_dir,
+        processing_config=_processing_ollama(),
     )
 
     class _MalformedResponse:
