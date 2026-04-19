@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import * as domainLogic from '@/domain/logic'
 import { hydratePersistedState } from '@/domain/logic'
-import type { Quest, SkillResolutionResult } from '@/domain/types'
+import type { PersistedAppState, Quest, Skill, SkillResolutionResult } from '@/domain/types'
 import * as aiLib from '@/lib/ai'
 import * as api from '@/lib/api-client'
 import * as storage from '@/lib/storage'
@@ -14,6 +14,59 @@ function resetStore() {
     ...state,
     ...base,
     hydrated: true,
+    importMode: 'merge',
+    currentEffectCompletionId: undefined,
+    busyQuestId: undefined,
+    connectionState: {
+      openai: { status: 'idle' },
+      gemini: { status: 'idle' },
+    },
+  }))
+}
+
+function createTestSkill(id: string, name: string, category: string, source: Skill['source'] = 'seed'): Skill {
+  return {
+    id,
+    name,
+    normalizedName: name.trim().toLowerCase().replace(/\s+/g, ''),
+    category,
+    level: 1,
+    totalXp: 0,
+    source,
+    status: 'active',
+    createdAt: '2026-04-19T09:30:00+09:00',
+    updatedAt: '2026-04-19T09:30:00+09:00',
+  }
+}
+
+function createTestQuest(
+  id: string,
+  title: string,
+  overrides: Partial<Quest> = {},
+): Quest {
+  return {
+    id,
+    title,
+    description: '',
+    questType: 'repeatable',
+    xpReward: 5,
+    category: '学習',
+    skillMappingMode: 'fixed',
+    status: 'active',
+    privacyMode: 'normal',
+    pinned: false,
+    createdAt: '2026-04-19T09:30:00+09:00',
+    updatedAt: '2026-04-19T09:30:00+09:00',
+    ...overrides,
+  }
+}
+
+function resetStoreForInitialize(partial: Partial<PersistedAppState> = {}) {
+  const base = hydratePersistedState(partial)
+  useAppStore.setState((state) => ({
+    ...state,
+    ...base,
+    hydrated: false,
     importMode: 'merge',
     currentEffectCompletionId: undefined,
     busyQuestId: undefined,
@@ -419,6 +472,110 @@ describe('app store', () => {
       expect(store.completions.find((entry) => entry.id === 'completion_orphan_local')).toBeUndefined()
       expect(store.assistantMessages.find((entry) => entry.id === 'msg_orphan_local')).toBeUndefined()
       expect(store.user.totalXp).toBe(0)
+    })
+  })
+
+  it('reuses cloud auto-generated quests during initialize instead of adding duplicates', async () => {
+    vi.spyOn(storage, 'loadPersistedState').mockReturnValue({})
+    vi.spyOn(storage, 'loadFromCloud').mockResolvedValue({
+      quests: [
+        createTestQuest('quest_cloud_read', '読書する', {
+          source: 'seed',
+          fixedSkillId: 'skill_cloud_reading',
+        }),
+        createTestQuest('quest_cloud_bike', 'エアロバイクを漕ぐ', {
+          source: 'seed',
+          category: '運動',
+          fixedSkillId: 'skill_cloud_bike',
+          xpReward: 8,
+        }),
+        createTestQuest('quest_cloud_write', '企画メモを2ページ書く', {
+          source: 'seed',
+          questType: 'one_time',
+          category: '仕事',
+          skillMappingMode: 'ai_auto',
+          defaultSkillId: 'skill_cloud_writing',
+          xpReward: 20,
+        }),
+        createTestQuest('quest_cloud_meal', '食事登録', {
+          source: 'system',
+          category: '生活',
+          fixedSkillId: 'skill_cloud_health',
+          systemKey: 'meal_register',
+          cooldownMinutes: 0,
+          dailyCompletionCap: 4,
+          xpReward: 2,
+        }),
+      ],
+      completions: [],
+      skills: [
+        createTestSkill('skill_cloud_reading', '読書', '学習'),
+        createTestSkill('skill_cloud_bike', '有酸素運動', '運動'),
+        createTestSkill('skill_cloud_writing', '文書作成', '仕事'),
+        createTestSkill('skill_cloud_health', '健康管理', '生活'),
+      ],
+      personalSkillDictionary: [],
+      assistantMessages: [],
+    })
+
+    resetStoreForInitialize({
+      meta: {
+        schemaVersion: 1,
+        seededSampleData: true,
+      },
+      quests: [],
+      completions: [],
+      skills: [],
+      assistantMessages: [],
+      personalSkillDictionary: [],
+    })
+
+    useAppStore.getState().initialize()
+
+    await vi.waitFor(() => {
+      const store = useAppStore.getState()
+      expect(store.quests.filter((quest) => quest.title === '読書する')).toHaveLength(1)
+      expect(store.quests.find((quest) => quest.title === '読書する')?.id).toBe('quest_cloud_read')
+      expect(store.quests.filter((quest) => quest.title === 'エアロバイクを漕ぐ')).toHaveLength(1)
+      expect(store.quests.find((quest) => quest.title === 'エアロバイクを漕ぐ')?.id).toBe('quest_cloud_bike')
+      expect(store.quests.filter((quest) => quest.title === '企画メモを2ページ書く')).toHaveLength(1)
+      expect(store.quests.find((quest) => quest.title === '企画メモを2ページ書く')?.id).toBe('quest_cloud_write')
+      expect(store.quests.filter((quest) => quest.systemKey === 'meal_register')).toHaveLength(1)
+      expect(store.quests.find((quest) => quest.systemKey === 'meal_register')?.id).toBe('quest_cloud_meal')
+    })
+  })
+
+  it('relinks generated seed quest skills to cloud skills during initialize', async () => {
+    vi.spyOn(storage, 'loadPersistedState').mockReturnValue({})
+    vi.spyOn(storage, 'loadFromCloud').mockResolvedValue({
+      quests: [],
+      completions: [],
+      skills: [
+        createTestSkill('skill_cloud_reading', ' 読 書 ', '学習'),
+      ],
+      personalSkillDictionary: [],
+      assistantMessages: [],
+    })
+
+    resetStoreForInitialize({
+      meta: {
+        schemaVersion: 1,
+        seededSampleData: true,
+      },
+      quests: [],
+      completions: [],
+      skills: [],
+      assistantMessages: [],
+      personalSkillDictionary: [],
+    })
+
+    useAppStore.getState().initialize()
+
+    await vi.waitFor(() => {
+      const store = useAppStore.getState()
+      expect(store.skills.filter((skill) => skill.normalizedName === '読書')).toHaveLength(1)
+      expect(store.skills.find((skill) => skill.normalizedName === '読書')?.id).toBe('skill_cloud_reading')
+      expect(store.quests.find((quest) => quest.title === '読書する')?.fixedSkillId).toBe('skill_cloud_reading')
     })
   })
 

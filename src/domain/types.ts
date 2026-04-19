@@ -1,4 +1,4 @@
-export type QuestSource = 'manual' | 'browsing'
+export type QuestSource = 'manual' | 'browsing' | 'seed' | 'system'
 export type BrowsingQuestType = 'good' | 'bad'
 export type QuestType = 'repeatable' | 'one_time'
 export type SkillMappingMode = 'fixed' | 'ai_auto' | 'ask_each_time'

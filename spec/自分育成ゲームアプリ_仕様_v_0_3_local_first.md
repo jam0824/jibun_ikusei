@@ -131,6 +131,9 @@
 - 起動時はまず localStorage を読み込み、画面を即時表示する
 - その後、クラウドの各 API を並列取得し、ローカル状態とマージする
 - エンティティ配列は `updatedAt` または `createdAt` が新しい方を優先する
+- 起動時マージでは、ローカルで自動生成された `seed` / `system` quest と `seed` skill をクラウド既存データへ寄せる
+- `seed` quest は title 完全一致、`system` quest は `systemKey` 一致で重複判定する
+- 旧データ互換として、source 未設定でもサンプル quest title 完全一致なら `seed` とみなす
 - `aiConfig` と `meta` は起動時マージでローカル値を優先する
 - 各操作後のクラウド反映はベストエフォートで行う
 - API 失敗時の自動再送キューは未実装
@@ -717,6 +720,7 @@ nextSkillLevelXp = 50
 
 - 具体クエスト名ではなく抽象スキル名にする
 - 正規化名を内部保持する
+- active skill は同一 `normalizedName` で重複生成しない
 - 統合済みスキルは `status = merged` とし、参照先を保持する
 
 ### 10-4. スキル統合
@@ -980,6 +984,10 @@ app.meta
 
 ### 15-4. 更新 API の扱い
 
+- `POST /skills` は active な同名 `normalizedName` の skill が既に存在する場合、既存 skill を `200` で返し、新規作成しない
+- `POST /quests` は `seed` / `system` quest のみ重複防止対象とし、既存 quest があれば `200` で返し、新規作成しない
+- `POST /quests` の重複判定は `systemKey`、または旧サンプル互換の title 完全一致で行う
+- 既存の重複データは自動クリーンアップしない
 - `PUT /completions/{id}` は既存データを読み込んでマージする
 - `PUT /completions/{id}` 実行後は、active completion の集合を正本として `USER#profile.totalXp` / `level` と既存 `SKILL#*` の `totalXp` / `level` を再集計する
 - この再集計は AI 再判定による `resolvedSkillId` / `skillXpAwarded` の後付け、手動スキル確定、undo の `undoneAt` 更新、skill merge に伴う `resolvedSkillId` の付け替えに共通で適用する
@@ -1024,6 +1032,7 @@ PK = user#<cognito-sub>
 ## 17. データモデル
 
 ```ts
+type QuestSource = "manual" | "browsing" | "seed" | "system"
 type QuestType = "repeatable" | "one_time"
 type SkillMappingMode = "fixed" | "ai_auto" | "ask_each_time"
 type PrivacyMode = "normal" | "no_ai"
@@ -1091,6 +1100,8 @@ interface Quest {
   status: QuestStatus
   privacyMode: PrivacyMode
   pinned: boolean
+  source?: QuestSource
+  systemKey?: "meal_register"
   createdAt: string
   updatedAt: string
 }

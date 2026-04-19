@@ -305,9 +305,38 @@ export interface WeeklyReflectionStatus {
 
 const DELETED_QUEST_TITLE = '削除されたクエスト'
 const WEEKDAY_LABELS = ['月', '火', '水', '木', '金', '土', '日'] as const
+const LEGACY_SEED_QUEST_TITLES = new Set(SAMPLE_QUESTS.map((sample) => sample.title.trim()))
 
 export function normalizeSkillName(name: string) {
   return name.trim().toLowerCase().replace(/\s+/g, '')
+}
+
+export function normalizeQuestTitleForDuplicateKey(title: string) {
+  return title.trim()
+}
+
+export function isLegacySeedQuestTitle(title: string) {
+  return LEGACY_SEED_QUEST_TITLES.has(normalizeQuestTitleForDuplicateKey(title))
+}
+
+export function isSeedQuest(quest: Pick<Quest, 'title' | 'source'>) {
+  return quest.source === 'seed' || (!quest.source && isLegacySeedQuestTitle(quest.title))
+}
+
+export function isSystemQuest(quest: Pick<Quest, 'source' | 'systemKey'>) {
+  return quest.source === 'system' || Boolean(quest.systemKey)
+}
+
+export function getAutoQuestDuplicateKey(quest: Pick<Quest, 'title' | 'source' | 'systemKey'>) {
+  if (quest.systemKey && isSystemQuest(quest)) {
+    return `system:${quest.systemKey}`
+  }
+
+  if (isSeedQuest(quest)) {
+    return `seed:${normalizeQuestTitleForDuplicateKey(quest.title)}`
+  }
+
+  return undefined
 }
 
 export function getLevelFromXp(totalXp: number, stepXp: number) {
@@ -400,13 +429,13 @@ export function resolveMergedSkillId(skillId: string | undefined, skills: Skill[
   return current
 }
 
-function findSkillByName(skills: Skill[], skillName: string) {
+export function findActiveSkillByName(skills: Skill[], skillName: string) {
   const normalized = normalizeSkillName(skillName)
   return skills.find((skill) => skill.status === 'active' && skill.normalizedName === normalized)
 }
 
 function ensureSkill(skills: Skill[], skillName: string, category: string, source: Skill['source'] = 'manual') {
-  const existing = findSkillByName(skills, skillName)
+  const existing = findActiveSkillByName(skills, skillName)
   if (existing) {
     return { skill: existing, skills }
   }
@@ -450,6 +479,7 @@ export function ensureSystemQuests(baseState: PersistedAppState): PersistedAppSt
     status: 'active',
     privacyMode: 'normal',
     pinned: false,
+    source: 'system',
     systemKey: 'meal_register',
     createdAt: now,
     updatedAt: now,
@@ -484,6 +514,7 @@ function createSampleState(baseState: PersistedAppState) {
       status: 'active',
       privacyMode: 'normal',
       pinned: index === 0,
+      source: 'seed',
       createdAt: now,
       updatedAt: now,
     }
@@ -1424,6 +1455,7 @@ export function buildQuestDraft(quest?: Quest): Quest {
     status: 'active',
     privacyMode: 'normal',
     pinned: false,
+    source: 'manual',
     createdAt: now,
     updatedAt: now,
   }
