@@ -174,6 +174,39 @@ def test_candidate_sessions_group_nearby_events_into_one_session(tmp_path):
     assert sessions[0]["dateKey"] == "2026-04-17"
 
 
+def test_candidate_sessions_allow_long_running_session_when_gaps_stay_below_threshold(tmp_path):
+    organizer = _make_organizer(tmp_path)
+    events = [
+        _event(
+            "raw_1",
+            datetime(2026, 4, 17, 9, 0, tzinfo=JST),
+            app_name="Code.exe",
+            window_title="main.py - VS Code",
+        ),
+        _event(
+            "raw_2",
+            datetime(2026, 4, 17, 9, 9, tzinfo=JST),
+            event_type="heartbeat",
+            app_name="Code.exe",
+            window_title="main.py - VS Code",
+        ),
+        _event(
+            "raw_3",
+            datetime(2026, 4, 17, 9, 18, tzinfo=JST),
+            event_type="heartbeat",
+            app_name="Code.exe",
+            window_title="main.py - VS Code",
+        ),
+    ]
+
+    sessions = organizer.build_candidate_sessions(events)
+
+    assert len(sessions) == 1
+    assert sessions[0]["startedAt"] == "2026-04-17T09:00:00+09:00"
+    assert sessions[0]["endedAt"] == "2026-04-17T09:18:00+09:00"
+    assert sessions[0]["rawEventIds"] == ["raw_1", "raw_2", "raw_3"]
+
+
 def test_candidate_sessions_group_browser_processes_and_extension_by_domain(tmp_path):
     organizer = _make_organizer(tmp_path)
     events = [
@@ -225,7 +258,9 @@ def test_candidate_sessions_group_browser_processes_and_extension_by_domain(tmp_
     ]
 
 
-def test_candidate_sessions_split_on_gap_idle_app_domain_and_file_context(tmp_path):
+def test_candidate_sessions_split_on_gap_idle_app_and_domain_but_not_project_or_file_context(
+    tmp_path,
+):
     organizer = _make_organizer(tmp_path)
     events = [
         _event(
@@ -238,34 +273,41 @@ def test_candidate_sessions_split_on_gap_idle_app_domain_and_file_context(tmp_pa
         ),
         _event(
             "raw_2",
-            datetime(2026, 4, 17, 9, 2, tzinfo=JST),
-            event_type="heartbeat",
+            datetime(2026, 4, 17, 9, 4, tzinfo=JST),
             app_name="Code.exe",
-            window_title="main.py - VS Code",
-            project_name="self-growth-app",
-            file_name="main.py",
+            window_title="workspace - VS Code",
+            project_name="another-project",
+            file_name="notes.py",
         ),
         _event(
             "raw_3",
-            datetime(2026, 4, 17, 9, 10, tzinfo=JST),
+            datetime(2026, 4, 17, 9, 9, tzinfo=JST),
             app_name="Code.exe",
-            window_title="main.py - VS Code",
+            window_title="todo.py - VS Code",
             project_name="self-growth-app",
-            file_name="main.py",
+            file_name="todo.py",
         ),
-        _event("raw_4", datetime(2026, 4, 17, 9, 11, tzinfo=JST), event_type="idle_started"),
-        _event("raw_5", datetime(2026, 4, 17, 9, 12, tzinfo=JST), event_type="idle_ended"),
         _event(
-            "raw_6",
-            datetime(2026, 4, 17, 9, 13, tzinfo=JST),
+            "raw_4",
+            datetime(2026, 4, 17, 9, 19, tzinfo=JST),
             app_name="Code.exe",
             window_title="main.py - VS Code",
             project_name="self-growth-app",
             file_name="main.py",
         ),
+        _event("raw_5", datetime(2026, 4, 17, 9, 20, tzinfo=JST), event_type="idle_started"),
+        _event("raw_6", datetime(2026, 4, 17, 9, 21, tzinfo=JST), event_type="idle_ended"),
         _event(
             "raw_7",
-            datetime(2026, 4, 17, 9, 14, tzinfo=JST),
+            datetime(2026, 4, 17, 9, 22, tzinfo=JST),
+            app_name="Code.exe",
+            window_title="main.py - VS Code",
+            project_name="self-growth-app",
+            file_name="main.py",
+        ),
+        _event(
+            "raw_8",
+            datetime(2026, 4, 17, 9, 23, tzinfo=JST),
             source="chrome_extension",
             event_type="browser_page_changed",
             url="https://developer.chrome.com/docs/extensions/",
@@ -273,8 +315,8 @@ def test_candidate_sessions_split_on_gap_idle_app_domain_and_file_context(tmp_pa
             window_title="Chrome Extensions",
         ),
         _event(
-            "raw_8",
-            datetime(2026, 4, 17, 9, 15, tzinfo=JST),
+            "raw_9",
+            datetime(2026, 4, 17, 9, 24, tzinfo=JST),
             source="chrome_extension",
             event_type="browser_page_changed",
             url="https://docs.python.org/3/",
@@ -282,41 +324,24 @@ def test_candidate_sessions_split_on_gap_idle_app_domain_and_file_context(tmp_pa
             window_title="Python Docs",
         ),
         _event(
-            "raw_9",
-            datetime(2026, 4, 17, 9, 16, tzinfo=JST),
+            "raw_10",
+            datetime(2026, 4, 17, 9, 25, tzinfo=JST),
             app_name="Code.exe",
             window_title="main.py - VS Code",
             project_name="self-growth-app",
             file_name="main.py",
-        ),
-        _event(
-            "raw_10",
-            datetime(2026, 4, 17, 9, 16, 30, tzinfo=JST),
-            event_type="heartbeat",
-            app_name="Code.exe",
-            window_title="workspace - VS Code",
-            project_name="self-growth-app",
-        ),
-        _event(
-            "raw_11",
-            datetime(2026, 4, 17, 9, 17, tzinfo=JST),
-            app_name="Code.exe",
-            window_title="notes.py - VS Code",
-            project_name="self-growth-app",
-            file_name="notes.py",
         ),
     ]
 
     sessions = organizer.build_candidate_sessions(events)
 
     assert [session["rawEventIds"] for session in sessions] == [
-        ["raw_1", "raw_2"],
-        ["raw_3"],
-        ["raw_6"],
+        ["raw_1", "raw_2", "raw_3"],
+        ["raw_4"],
         ["raw_7"],
         ["raw_8"],
-        ["raw_9", "raw_10"],
-        ["raw_11"],
+        ["raw_9"],
+        ["raw_10"],
     ]
 
 

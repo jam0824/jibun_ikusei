@@ -194,7 +194,7 @@ def test_activity_capture_defaults_to_enabled_active_and_2_second_poll(tmp_path)
     assert config.activity_capture.enabled is True
     assert config.activity_capture.initial_state == "active"
     assert config.activity_capture.poll_interval_seconds == 2
-    assert config.activity_capture.sync_interval_seconds == 30
+    assert config.activity_capture.sync_interval_seconds == 600
 
 
 def test_activity_capture_uses_config_values(tmp_path):
@@ -231,7 +231,7 @@ def test_activity_capture_uses_config_values(tmp_path):
     ]
 
 
-def test_activity_capture_invalid_sync_interval_falls_back_to_30_seconds(tmp_path):
+def test_activity_capture_invalid_sync_interval_falls_back_to_600_seconds(tmp_path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         "activity_capture:\n"
@@ -241,7 +241,7 @@ def test_activity_capture_invalid_sync_interval_falls_back_to_30_seconds(tmp_pat
 
     config = load_config(config_path)
 
-    assert config.activity_capture.sync_interval_seconds == 30
+    assert config.activity_capture.sync_interval_seconds == 600
 
 
 def test_activity_processing_defaults_to_openai_gpt_5_nano(tmp_path):
