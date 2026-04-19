@@ -56,6 +56,14 @@ _TELEMETRY_OUTPUT_REQUIREMENT = (
     "Never mention internal telemetry or raw event names such as heartbeat, browser_page_changed, active_window_changed, or raw event. "
     "Describe the user's activity in natural language instead."
 )
+_ACTION_FOCUS_OUTPUT_REQUIREMENT = (
+    "Focus on what the user did or tried to do, not on how the session was recorded. "
+    "Do not frame the output as a session description. "
+    "Avoid mechanical phrasing about executable files, raw window switching, or telemetry unless that is itself the meaningful user action. "
+    'Prefer concrete behavior summaries such as "VOICEVOXの設定を確認した" over '
+    '"VOICEVOX の実行ファイルを起動し、ウィンドウの切替を行ったセッション". '
+    "Infer likely tasks from app names, domains, window titles, file names, and project names."
+)
 
 logger = logging.getLogger(__name__)
 
@@ -377,6 +385,15 @@ class ActionLogOrganizer:
         )
 
     def _candidate_payload(self, candidate: dict[str, Any]) -> dict[str, Any]:
+        window_titles = _first_seen(
+            [
+                str(event.get("windowTitle") or "").strip()
+                for event in candidate.get("rawEvents", [])
+            ]
+        )[:5]
+        file_names = _first_seen(
+            [str(event.get("fileName") or "").strip() for event in candidate.get("rawEvents", [])]
+        )[:5]
         return {
             "sessionId": candidate["id"],
             "timeRange": f'{candidate["startedAt"]} - {candidate["endedAt"]}',
@@ -384,6 +401,8 @@ class ActionLogOrganizer:
             "domains": candidate["domains"],
             "projectNames": candidate["projectNames"],
             "representativeTitle": candidate["representativeTitle"],
+            "windowTitles": window_titles,
+            "fileNames": file_names,
             "eventTypeCounts": candidate["eventTypeCounts"],
         }
 
@@ -701,6 +720,7 @@ class ActionLogOrganizer:
             "Return only valid JSON that strictly matches the provided schema. "
             f"{_JAPANESE_OUTPUT_REQUIREMENT} "
             f"{_TELEMETRY_OUTPUT_REQUIREMENT} "
+            f"{_ACTION_FOCUS_OUTPUT_REQUIREMENT} "
             "Use only the provided metadata."
         )
         results: dict[str, dict[str, Any]] = {}
@@ -760,6 +780,7 @@ class ActionLogOrganizer:
             '"activityKinds":["..."],"summary":"...","searchKeywords":["..."]}]}. '
             f"{_JAPANESE_OUTPUT_REQUIREMENT} "
             f"{_TELEMETRY_OUTPUT_REQUIREMENT} "
+            f"{_ACTION_FOCUS_OUTPUT_REQUIREMENT} "
             "Use only the provided metadata."
         )
         text = ""
