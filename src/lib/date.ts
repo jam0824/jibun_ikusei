@@ -6,8 +6,6 @@ import {
   format,
   isAfter,
   isBefore,
-  isSameDay,
-  isToday,
   parseISO,
   startOfISOWeek,
   startOfDay,
@@ -100,7 +98,7 @@ export function fromRelativeOption(
 }
 
 export function isSameCalendarDay(left: string | Date, right: string | Date) {
-  return isSameDay(parseDate(left), parseDate(right))
+  return getDayKey(left) === getDayKey(right)
 }
 
 export function isUndoable(completedAt: string, undoneAt?: string) {
@@ -160,5 +158,5 @@ export function isReminderDue(reminderTime?: string) {
 }
 
 export function isTodayDate(value?: string) {
-  return value ? isToday(parseDate(value)) : false
+  return value ? getDayKey(value) === getDayKey(new Date()) : false
 }
