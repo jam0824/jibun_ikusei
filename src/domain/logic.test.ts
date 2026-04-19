@@ -343,6 +343,37 @@ describe('domain logic', () => {
     expect(todayCompletions[0]?.id).toBe('completion_today_active')
   })
 
+  it('treats same-day JST completions as today even when their UTC date differs', () => {
+    const referenceDate = new Date('2026-04-20T08:00:00+09:00')
+    const lateNightJst = '2026-04-20T14:59:59Z'
+    const nextDayJst = '2026-04-20T15:00:00Z'
+
+    const completions = [
+      {
+        id: 'completion_late_night_jst',
+        questId: 'quest_repeatable',
+        clientRequestId: 'req_late_night_jst',
+        completedAt: lateNightJst,
+        userXpAwarded: 5,
+        skillResolutionStatus: 'resolved' as const,
+        createdAt: lateNightJst,
+      },
+      {
+        id: 'completion_next_day_jst',
+        questId: 'quest_repeatable',
+        clientRequestId: 'req_next_day_jst',
+        completedAt: nextDayJst,
+        userXpAwarded: 5,
+        skillResolutionStatus: 'resolved' as const,
+        createdAt: nextDayJst,
+      },
+    ]
+
+    const todayCompletions = getTodayActiveCompletions(completions, referenceDate)
+    expect(todayCompletions).toHaveLength(1)
+    expect(todayCompletions[0]?.id).toBe('completion_late_night_jst')
+  })
+
   it('returns only active completions completed during the same ISO week', () => {
     const referenceDate = new Date('2026-03-19T12:00:00+09:00')
     const completions = [

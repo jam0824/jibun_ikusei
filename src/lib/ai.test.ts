@@ -592,6 +592,8 @@ describe('Lily chat prompt', () => {
     expect(prompt).toContain('YYYY-MM-DD')
     expect(prompt).toContain('date 引数')
     expect(prompt).toContain('period=today/week/month')
+    expect(prompt).toContain('今日や特定日のクエスト完了件数・タイトル')
+    expect(prompt).toContain('get_quest_data')
     expect(prompt).toContain('type=chat_messages')
     expect(prompt).toContain('sessionId なしで全セッション横断検索')
     expect(prompt).toContain('漢字・ひらがな・カタカナの表記ゆれや言い換え、近いニュアンスの差を許容')
@@ -601,6 +603,21 @@ describe('Lily chat prompt', () => {
     expect(prompt).not.toContain('はるちん')
     expect(prompt).not.toContain('pose_category')
     expect(prompt).not.toContain('JSON形式で回答してください')
+  })
+
+  it('formats recent completion dates in JST inside the prompt', () => {
+    const state = hydratePersistedState()
+
+    const prompt = buildLilyChatSystemPrompt({
+      user: state.user,
+      skills: [],
+      quests: [],
+      recentCompletions: [{ questTitle: '夜のストレッチ', completedAt: '2026-04-19T15:30:00Z' }],
+      activityLogs: [],
+    })
+
+    expect(prompt).toContain('夜のストレッチ（2026-04-20）')
+    expect(prompt).not.toContain('夜のストレッチ（2026-04-19）')
   })
 
   it('handles empty context', () => {

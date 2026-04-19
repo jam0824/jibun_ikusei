@@ -1429,7 +1429,7 @@ export function buildLilyChatSystemPromptLegacy(params: {
   const completionSummary = recentCompletions.length > 0
     ? recentCompletions
         .slice(0, 15)
-        .map((c) => `- ${c.questTitle}（${c.completedAt.slice(0, 10)}）`)
+        .map((c) => `- ${c.questTitle}（${getDayKey(c.completedAt)}）`)
         .join('\n')
     : 'まだ完了記録がありません'
 
@@ -1519,7 +1519,7 @@ export function buildLilyChatSystemPrompt(params: {
   const completionSummary = recentCompletions.length > 0
     ? recentCompletions
         .slice(0, 15)
-        .map((completion) => `- ${completion.questTitle}（${completion.completedAt.slice(0, 10)}）`)
+        .map((completion) => `- ${completion.questTitle}（${getDayKey(completion.completedAt)}）`)
         .join('\n')
     : 'まだ完了記録がありません'
 
@@ -1550,6 +1550,7 @@ export function buildLilyChatSystemPrompt(params: {
     '明示日付の扱いは必ず JST 固定です。3/29、3月29日、2026-03-29 のような指定は JST の YYYY-MM-DD に正規化して date 引数を使ってください。',
     'fromDate / toDate も JST の YYYY-MM-DD です。明示日付があるときは period=today/week/month を使わず、date または fromDate / toDate を優先してください。',
     'today / week / month は明示日付がないときだけ使ってください。',
+    '今日や特定日のクエスト完了件数・タイトルを聞かれたら、直近完了の要約だけで答えず、必ず get_quest_data の type=completions を period=today または JST の date / fromDate / toDate 付きで呼んで確認してください。',
     '特定日の会話内容・本文・要約を聞かれたら、まず get_messages_and_logs の type=chat_messages を date 付きで呼んで本文を取りに行ってください。',
     'chat_sessions はセッション一覧を知りたいときや追加で絞り込みたいときだけ使ってください。本文が必要な質問で chat_sessions の結果だけを返して止まらないでください。',
     'クエスト完了の発話は、漢字・ひらがな・カタカナの表記ゆれや言い換え、近いニュアンスの差を許容して解釈してください。complete_quest を使うときは、最も近いクエストを表す短い検索クエリに言い換えて構いません。',
