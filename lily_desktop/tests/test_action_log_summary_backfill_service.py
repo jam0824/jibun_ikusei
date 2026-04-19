@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 
@@ -188,7 +190,7 @@ class _FakeApiClient:
 
 
 @pytest.mark.asyncio
-async def test_backfill_generates_missing_yesterday_daily_and_previous_week_weekly(monkeypatch):
+async def test_backfill_generates_missing_yesterday_daily_and_previous_week_weekly(monkeypatch, tmp_path):
     api_client = _FakeApiClient(
         daily_sessions={
             "2026-04-16": [
@@ -262,6 +264,7 @@ async def test_backfill_generates_missing_yesterday_daily_and_previous_week_week
     service = ActionLogSummaryBackfillService(
         api_client=api_client,
         openai_api_key="sk-test",
+        state_path=_fresh_state_path(tmp_path),
     )
 
     await service.backfill_missing_summaries(
@@ -291,7 +294,7 @@ async def test_backfill_generates_missing_yesterday_daily_and_previous_week_week
 
 
 @pytest.mark.asyncio
-async def test_backfill_does_not_regenerate_existing_complete_daily_or_weekly(monkeypatch):
+async def test_backfill_does_not_regenerate_existing_complete_daily_or_weekly(monkeypatch, tmp_path):
     api_client = _FakeApiClient(
         daily_logs={
             "2026-04-16": {
@@ -319,6 +322,7 @@ async def test_backfill_does_not_regenerate_existing_complete_daily_or_weekly(mo
     service = ActionLogSummaryBackfillService(
         api_client=api_client,
         openai_api_key="sk-test",
+        state_path=_fresh_state_path(tmp_path),
     )
 
     await service.backfill_missing_summaries(
@@ -331,7 +335,7 @@ async def test_backfill_does_not_regenerate_existing_complete_daily_or_weekly(mo
 
 
 @pytest.mark.asyncio
-async def test_backfill_saves_only_successful_daily_sections_when_some_generations_fail(monkeypatch):
+async def test_backfill_saves_only_successful_daily_sections_when_some_generations_fail(monkeypatch, tmp_path):
     api_client = _FakeApiClient(
         daily_sessions={
             "2026-04-16": [
@@ -400,6 +404,7 @@ async def test_backfill_saves_only_successful_daily_sections_when_some_generatio
     service = ActionLogSummaryBackfillService(
         api_client=api_client,
         openai_api_key="sk-test",
+        state_path=_fresh_state_path(tmp_path),
     )
 
     await service.backfill_missing_summaries(
@@ -416,7 +421,7 @@ async def test_backfill_saves_only_successful_daily_sections_when_some_generatio
 
 
 @pytest.mark.asyncio
-async def test_backfill_regenerates_only_missing_daily_sections(monkeypatch):
+async def test_backfill_regenerates_only_missing_daily_sections(monkeypatch, tmp_path):
     api_client = _FakeApiClient(
         daily_logs={
             "2026-04-16": {
@@ -494,6 +499,7 @@ async def test_backfill_regenerates_only_missing_daily_sections(monkeypatch):
     service = ActionLogSummaryBackfillService(
         api_client=api_client,
         openai_api_key="sk-test",
+        state_path=_fresh_state_path(tmp_path),
     )
 
     await service.backfill_missing_summaries(
@@ -508,3 +514,464 @@ async def test_backfill_regenerates_only_missing_daily_sections(monkeypatch):
     assert api_client.put_daily_calls[0]["questSummary"].startswith("リリィ")
     assert api_client.put_daily_calls[0]["healthSummary"].startswith("リリィ")
     assert "openLoopIds" not in api_client.put_weekly_calls[0]
+
+
+def _fresh_state_path(tmp_path: Path) -> Path:
+    return tmp_path / "daily_log_backfill_state.json"
+
+
+def _write_backfill_state(path: Path, date_key: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({"lastBackfillDate": date_key}), encoding="utf-8")
+
+
+@pytest.mark.asyncio
+async def test_backfill_skips_failed_section_within_cooldown_window(monkeypatch, tmp_path):
+    """6時間以内に失敗した section はクールダウンで再試行しない"""
+    api_client = _FakeApiClient(
+        daily_logs={
+            "2026-04-16": {
+                "id": "daily_2026-04-16",
+                "dateKey": "2026-04-16",
+                "summary": "既存のまとめ",
+                "healthSummary": "既存の健康",
+                "mainThemes": [],
+                "noteIds": [],
+                "reviewQuestions": [],
+                "generatedAt": "2026-04-16T22:00:00+09:00",
+                "sectionLastFailedAt": {
+                    "questSummary": "2026-04-17T06:00:00+09:00",
+                },
+            }
+        },
+        weekly_reviews={"2026-W15": {"id": "weekly_2026-W15"}},
+    )
+
+    openai_calls: list[str] = []
+
+    async def _fake_request_openai_json(**kwargs):
+        openai_calls.append(kwargs["schema_name"])
+        return {"questSummary": "should not happen"}
+
+    monkeypatch.setattr(
+        "core.action_log_summary_backfill_service.request_openai_json",
+        _fake_request_openai_json,
+    )
+
+    service = ActionLogSummaryBackfillService(
+        api_client=api_client,
+        openai_api_key="sk-test",
+        state_path=_fresh_state_path(tmp_path),
+    )
+
+    # now は失敗時刻から 3 時間後 → クールダウン 6h 未満
+    await service.backfill_missing_summaries(
+        now=datetime(2026, 4, 17, 9, 0, tzinfo=JST)
+    )
+
+    assert openai_calls == []
+    assert api_client.put_daily_calls == []
+
+
+@pytest.mark.asyncio
+async def test_backfill_retries_failed_section_after_cooldown(monkeypatch, tmp_path):
+    """6時間を過ぎた section は再試行する"""
+    api_client = _FakeApiClient(
+        daily_logs={
+            "2026-04-16": {
+                "id": "daily_2026-04-16",
+                "dateKey": "2026-04-16",
+                "summary": "既存のまとめ",
+                "healthSummary": "既存の健康",
+                "mainThemes": [],
+                "noteIds": [],
+                "reviewQuestions": [],
+                "generatedAt": "2026-04-16T22:00:00+09:00",
+                "sectionLastFailedAt": {
+                    "questSummary": "2026-04-17T02:00:00+09:00",
+                },
+            }
+        },
+        quests=[_quest("quest_a", "読書")],
+        completions=[
+            _completion(
+                "completion_a",
+                quest_id="quest_a",
+                completed_at="2026-04-16T08:00:00+09:00",
+            )
+        ],
+        weekly_reviews={"2026-W15": {"id": "weekly_2026-W15"}},
+    )
+
+    openai_calls: list[str] = []
+
+    async def _fake_request_openai_json(**kwargs):
+        openai_calls.append(kwargs["schema_name"])
+        return {"questSummary": "リリィは、クエストの区切りを静かに見つめていた。"}
+
+    monkeypatch.setattr(
+        "core.action_log_summary_backfill_service.request_openai_json",
+        _fake_request_openai_json,
+    )
+
+    service = ActionLogSummaryBackfillService(
+        api_client=api_client,
+        openai_api_key="sk-test",
+        state_path=_fresh_state_path(tmp_path),
+    )
+
+    # 失敗時刻 02:00 → 09:00 は 7 時間後（6h を超過）
+    await service.backfill_missing_summaries(
+        now=datetime(2026, 4, 17, 9, 0, tzinfo=JST)
+    )
+
+    assert openai_calls == ["daily_activity_log_quest_summary"]
+    assert api_client.put_daily_calls[0]["questSummary"].startswith("リリィ")
+    # 成功したので sectionLastFailedAt からは消える
+    assert "questSummary" not in api_client.put_daily_calls[0].get(
+        "sectionLastFailedAt", {}
+    )
+
+
+@pytest.mark.asyncio
+async def test_backfill_records_failure_timestamp_on_openai_error(monkeypatch, tmp_path):
+    """OpenAI 呼び出しが失敗した section は sectionLastFailedAt に JST タイムスタンプを記録する"""
+    api_client = _FakeApiClient(
+        daily_logs={
+            "2026-04-16": {
+                "id": "daily_2026-04-16",
+                "dateKey": "2026-04-16",
+                "summary": "既存のまとめ",
+                "healthSummary": "既存の健康",
+                "mainThemes": [],
+                "noteIds": [],
+                "reviewQuestions": [],
+                "generatedAt": "2026-04-16T22:00:00+09:00",
+            }
+        },
+        quests=[_quest("quest_a", "読書")],
+        completions=[
+            _completion(
+                "completion_a",
+                quest_id="quest_a",
+                completed_at="2026-04-16T08:00:00+09:00",
+            )
+        ],
+        weekly_reviews={"2026-W15": {"id": "weekly_2026-W15"}},
+    )
+
+    async def _fake_request_openai_json(**kwargs):
+        raise RuntimeError("openai down")
+
+    monkeypatch.setattr(
+        "core.action_log_summary_backfill_service.request_openai_json",
+        _fake_request_openai_json,
+    )
+
+    service = ActionLogSummaryBackfillService(
+        api_client=api_client,
+        openai_api_key="sk-test",
+        state_path=_fresh_state_path(tmp_path),
+    )
+
+    await service.backfill_missing_summaries(
+        now=datetime(2026, 4, 17, 9, 0, tzinfo=JST)
+    )
+
+    assert len(api_client.put_daily_calls) == 1
+    assert api_client.put_daily_calls[0]["sectionLastFailedAt"] == {
+        "questSummary": "2026-04-17T09:00:00+09:00",
+    }
+
+
+@pytest.mark.asyncio
+async def test_backfill_clears_failure_timestamp_on_section_success(monkeypatch, tmp_path):
+    """前回失敗した section が成功したら sectionLastFailedAt から該当キーを削除する"""
+    api_client = _FakeApiClient(
+        daily_logs={
+            "2026-04-16": {
+                "id": "daily_2026-04-16",
+                "dateKey": "2026-04-16",
+                "summary": "既存のまとめ",
+                "healthSummary": "既存の健康",
+                "mainThemes": [],
+                "noteIds": [],
+                "reviewQuestions": [],
+                "generatedAt": "2026-04-16T22:00:00+09:00",
+                "sectionLastFailedAt": {
+                    "questSummary": "2026-04-16T23:00:00+09:00",
+                    "summary": "2026-04-16T23:30:00+09:00",
+                },
+            }
+        },
+        quests=[_quest("quest_a", "読書")],
+        completions=[
+            _completion(
+                "completion_a",
+                quest_id="quest_a",
+                completed_at="2026-04-16T08:00:00+09:00",
+            )
+        ],
+        weekly_reviews={"2026-W15": {"id": "weekly_2026-W15"}},
+    )
+
+    async def _fake_request_openai_json(**kwargs):
+        return {"questSummary": "リリィは、静かな区切りを見ていた。"}
+
+    monkeypatch.setattr(
+        "core.action_log_summary_backfill_service.request_openai_json",
+        _fake_request_openai_json,
+    )
+
+    service = ActionLogSummaryBackfillService(
+        api_client=api_client,
+        openai_api_key="sk-test",
+        state_path=_fresh_state_path(tmp_path),
+    )
+
+    await service.backfill_missing_summaries(
+        now=datetime(2026, 4, 17, 9, 0, tzinfo=JST)
+    )
+
+    saved = api_client.put_daily_calls[0]
+    # questSummary は成功 → クリア。summary は既存テキストで対象外（既に完成済み）だが
+    # 失敗記録としては残したまま（ただし既存 summary があるのでそもそも target から外れている）
+    assert "questSummary" not in saved.get("sectionLastFailedAt", {})
+    assert saved.get("sectionLastFailedAt", {}).get("summary") == "2026-04-16T23:30:00+09:00"
+
+
+@pytest.mark.asyncio
+async def test_backfill_persists_failure_state_even_when_no_section_succeeds(
+    monkeypatch, tmp_path
+):
+    """すべての section が失敗した場合も、次回のクールダウン判定のため sectionLastFailedAt を保存する"""
+    api_client = _FakeApiClient(
+        daily_logs={
+            "2026-04-16": None,
+        },
+        daily_sessions={
+            "2026-04-16": [
+                _session(
+                    "session_a",
+                    date_key="2026-04-16",
+                    started_at="2026-04-16T09:00:00+09:00",
+                    ended_at="2026-04-16T09:30:00+09:00",
+                    title="調査",
+                )
+            ]
+        },
+        quests=[_quest("quest_a", "読書")],
+        completions=[
+            _completion(
+                "completion_a",
+                quest_id="quest_a",
+                completed_at="2026-04-16T08:00:00+09:00",
+            )
+        ],
+        health_data={
+            ("2026-04-16", "2026-04-16"): [_health_entry("2026-04-16")]
+        },
+        fitbit_data={
+            ("2026-04-16", "2026-04-16"): [_fitbit_entry("2026-04-16")]
+        },
+        nutrition_range={
+            ("2026-04-16", "2026-04-16"): _nutrition_day("2026-04-16")
+        },
+        weekly_reviews={"2026-W15": {"id": "weekly_2026-W15"}},
+    )
+
+    async def _fake_request_openai_json(**kwargs):
+        raise RuntimeError("openai down")
+
+    monkeypatch.setattr(
+        "core.action_log_summary_backfill_service.request_openai_json",
+        _fake_request_openai_json,
+    )
+
+    service = ActionLogSummaryBackfillService(
+        api_client=api_client,
+        openai_api_key="sk-test",
+        state_path=_fresh_state_path(tmp_path),
+    )
+
+    await service.backfill_missing_summaries(
+        now=datetime(2026, 4, 17, 9, 0, tzinfo=JST)
+    )
+
+    assert len(api_client.put_daily_calls) == 1
+    saved = api_client.put_daily_calls[0]
+    assert saved["sectionLastFailedAt"] == {
+        "summary": "2026-04-17T09:00:00+09:00",
+        "questSummary": "2026-04-17T09:00:00+09:00",
+        "healthSummary": "2026-04-17T09:00:00+09:00",
+    }
+
+
+@pytest.mark.asyncio
+async def test_backfill_runs_only_once_per_jst_day(monkeypatch, tmp_path):
+    """同一 JST 日の 2 回目の backfill は OpenAI を呼ばずにスキップする"""
+    state_path = _fresh_state_path(tmp_path)
+    _write_backfill_state(state_path, "2026-04-17")
+
+    api_client = _FakeApiClient(
+        daily_logs={"2026-04-16": None},
+        weekly_reviews={"2026-W15": None},
+    )
+
+    openai_calls: list[str] = []
+
+    async def _fake_request_openai_json(**kwargs):
+        openai_calls.append(kwargs["schema_name"])
+        return {}
+
+    monkeypatch.setattr(
+        "core.action_log_summary_backfill_service.request_openai_json",
+        _fake_request_openai_json,
+    )
+
+    service = ActionLogSummaryBackfillService(
+        api_client=api_client,
+        openai_api_key="sk-test",
+        state_path=state_path,
+    )
+
+    await service.backfill_missing_summaries(
+        now=datetime(2026, 4, 17, 15, 0, tzinfo=JST)
+    )
+
+    assert openai_calls == []
+    assert api_client.put_daily_calls == []
+    assert api_client.put_weekly_calls == []
+
+
+@pytest.mark.asyncio
+async def test_backfill_runs_again_on_next_jst_day(monkeypatch, tmp_path):
+    """翌 JST 日になれば再び backfill を実行し、state を更新する"""
+    state_path = _fresh_state_path(tmp_path)
+    _write_backfill_state(state_path, "2026-04-17")
+
+    api_client = _FakeApiClient(
+        daily_logs={
+            "2026-04-17": {
+                "id": "daily_2026-04-17",
+                "summary": "既に完成",
+                "questSummary": "既に完成",
+                "healthSummary": "既に完成",
+            }
+        },
+        weekly_reviews={"2026-W15": {"id": "weekly_2026-W15"}},
+    )
+
+    async def _fake_request_openai_json(**kwargs):
+        return {}
+
+    monkeypatch.setattr(
+        "core.action_log_summary_backfill_service.request_openai_json",
+        _fake_request_openai_json,
+    )
+
+    service = ActionLogSummaryBackfillService(
+        api_client=api_client,
+        openai_api_key="sk-test",
+        state_path=state_path,
+    )
+
+    await service.backfill_missing_summaries(
+        now=datetime(2026, 4, 18, 9, 0, tzinfo=JST)
+    )
+
+    saved = json.loads(state_path.read_text(encoding="utf-8"))
+    assert saved == {"lastBackfillDate": "2026-04-18"}
+
+
+@pytest.mark.asyncio
+async def test_regenerate_previous_day_bypasses_once_per_day_guard(monkeypatch, tmp_path):
+    """デバッグメニューの強制再生成は一日一回ガードを無視する"""
+    state_path = _fresh_state_path(tmp_path)
+    _write_backfill_state(state_path, "2026-04-17")
+
+    api_client = _FakeApiClient(
+        daily_logs={
+            "2026-04-16": {
+                "id": "daily_2026-04-16",
+                "summary": "既存のまとめ",
+                "questSummary": "既存のクエスト",
+                "healthSummary": "既存の健康",
+                "mainThemes": [],
+                "noteIds": [],
+                "reviewQuestions": [],
+                "generatedAt": "2026-04-16T22:00:00+09:00",
+            }
+        },
+        daily_sessions={
+            "2026-04-16": [
+                _session(
+                    "session_a",
+                    date_key="2026-04-16",
+                    started_at="2026-04-16T09:00:00+09:00",
+                    ended_at="2026-04-16T09:30:00+09:00",
+                    title="調査",
+                )
+            ]
+        },
+        quests=[_quest("quest_a", "読書")],
+        completions=[
+            _completion(
+                "completion_a",
+                quest_id="quest_a",
+                completed_at="2026-04-16T08:00:00+09:00",
+            )
+        ],
+        health_data={
+            ("2026-04-16", "2026-04-16"): [_health_entry("2026-04-16")]
+        },
+        fitbit_data={
+            ("2026-04-16", "2026-04-16"): [_fitbit_entry("2026-04-16")]
+        },
+        nutrition_range={
+            ("2026-04-16", "2026-04-16"): _nutrition_day("2026-04-16")
+        },
+    )
+
+    openai_calls: list[str] = []
+
+    async def _fake_request_openai_json(**kwargs):
+        openai_calls.append(kwargs["schema_name"])
+        if kwargs["schema_name"] == "daily_activity_log_summary":
+            return {
+                "summary": "再生成されたまとめ",
+                "mainThemes": ["テーマ"],
+                "reviewQuestions": ["問い"],
+            }
+        if kwargs["schema_name"] == "daily_activity_log_quest_summary":
+            return {"questSummary": "再生成されたクエストまとめ"}
+        if kwargs["schema_name"] == "daily_activity_log_health_summary":
+            return {"healthSummary": "再生成された健康まとめ"}
+        return {}
+
+    monkeypatch.setattr(
+        "core.action_log_summary_backfill_service.request_openai_json",
+        _fake_request_openai_json,
+    )
+
+    service = ActionLogSummaryBackfillService(
+        api_client=api_client,
+        openai_api_key="sk-test",
+        state_path=state_path,
+    )
+
+    result = await service.regenerate_previous_day_daily_log(
+        now=datetime(2026, 4, 17, 15, 0, tzinfo=JST)
+    )
+
+    assert set(openai_calls) == {
+        "daily_activity_log_summary",
+        "daily_activity_log_quest_summary",
+        "daily_activity_log_health_summary",
+    }
+    assert result["completed_sections"] == [
+        "summary",
+        "questSummary",
+        "healthSummary",
+    ]
+    assert api_client.put_daily_calls[0]["summary"] == "再生成されたまとめ"

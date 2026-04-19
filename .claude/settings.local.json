@@ -67,7 +67,11 @@
       "WebFetch(domain:www.healthplanet.jp)",
       "Bash(.venv/Scripts/python.exe -c \"from core.config import load_config, save_healthplanet_token; print\\(''config OK''\\)\")",
       "Bash(.venv/Scripts/python.exe -c \"from health.healthplanet_client import is_token_valid, build_auth_url, sync_health_data; from health.oauth_dialog import HealthPlanetOAuthDialog; print\\(''health OK''\\)\")",
-      "Bash(.venv/Scripts/python.exe -c \"from ai.tool_definitions import CHAT_TOOLS; names=[t[''function''][''name''] for t in CHAT_TOOLS]; print\\(names\\)\")"
+      "Bash(.venv/Scripts/python.exe -c \"from ai.tool_definitions import CHAT_TOOLS; names=[t[''function''][''name''] for t in CHAT_TOOLS]; print\\(names\\)\")",
+      "Bash(VITE_COGNITO_USER_POOL_ID=dummy VITE_COGNITO_CLIENT_ID=dummy npx vitest run)",
+      "Bash(python -m pytest lily_desktop/tests/test_action_log_summary_backfill_service.py -v)",
+      "Bash(ls venv/Scripts/python.exe)",
+      "Bash(ls .venv/Scripts/python.exe)"
     ]
   }
 }

@@ -48,8 +48,6 @@ import {
   buildCompactSessionBlocks,
   canDeleteActionLogRange,
   deleteActionLogDateRange,
-  ensurePreviousDayDailyActivityLog,
-  ensurePreviousDayDailyActivityLogShell,
   ensurePreviousWeekReviewForWeb,
   exportActionLogBundle,
   fetchActivityDayEventPage,
@@ -325,58 +323,6 @@ describe('action log view orchestration', () => {
     })
   })
 
-  it('generates and saves missing DailyActivityLog sections only for yesterday', async () => {
-    const state = hydratePersistedState()
-    vi.mocked(ai.generateDailyActivityLogSummary).mockResolvedValue({
-      summary: 'Lily stitched together the day from the surrounding sessions.',
-      mainThemes: ['Chrome docs', 'research'],
-      reviewQuestions: ['What should be explored next?'],
-    })
-    vi.mocked(ai.generateDailyQuestSummary).mockRejectedValue(new Error('quest failed'))
-    vi.mocked(ai.generateDailyHealthSummary).mockResolvedValue({
-      healthSummary: 'Lily saw a single health record quietly anchor the morning.',
-    })
-
-    const result = await ensurePreviousDayDailyActivityLog({
-      aiConfig: state.aiConfig,
-      settings: state.settings,
-      dateKey: '2026-04-16',
-      now: new Date('2026-04-17T09:00:00+09:00'),
-    })
-
-    expect(ai.generateDailyActivityLogSummary).toHaveBeenCalledTimes(1)
-    expect(ai.generateDailyQuestSummary).toHaveBeenCalledTimes(1)
-    expect(ai.generateDailyHealthSummary).toHaveBeenCalledTimes(1)
-    expect(vi.mocked(ai.generateDailyActivityLogSummary).mock.calls[0][0]).toMatchObject({
-      dateKey: '2026-04-16',
-      sessions: [createSession('session_1')],
-    })
-    expect(vi.mocked(ai.generateDailyActivityLogSummary).mock.calls[0][0]).not.toHaveProperty('rawEvents')
-    expect(vi.mocked(ai.generateDailyQuestSummary).mock.calls[0][0]).toMatchObject({
-      dateKey: '2026-04-16',
-      quests: [createQuest()],
-      completions: [createCompletion()],
-    })
-    expect(vi.mocked(ai.generateDailyHealthSummary).mock.calls[0][0]).toMatchObject({
-      dateKey: '2026-04-16',
-      healthData: [createHealthDataEntry()],
-      fitbitData: [createFitbitSummary()],
-      nutritionData: createNutritionDayResult(),
-    })
-    expect(api.putActionLogDailyActivityLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'daily_2026-04-16',
-        dateKey: '2026-04-16',
-        summary: 'Lily stitched together the day from the surrounding sessions.',
-        healthSummary: 'Lily saw a single health record quietly anchor the morning.',
-        questSummary: undefined,
-      }),
-    )
-    expect(result.dailyLog?.summary).toBe('Lily stitched together the day from the surrounding sessions.')
-    expect(result.dailyLog?.questSummary).toBeUndefined()
-    expect(result.dailyLog?.healthSummary).toBe('Lily saw a single health record quietly anchor the morning.')
-  })
-
   it('sorts same-day sessions and raw events newest first in fetchActivityDayView', async () => {
     vi.mocked(api.getActionLogSessions).mockResolvedValue([
       createSession('session_old', {
@@ -402,43 +348,6 @@ describe('action log view orchestration', () => {
     ])
 
     const result = await fetchActivityDayView('2026-04-16')
-
-    expect(result.sessions.map((session) => session.id)).toEqual(['session_new', 'session_old'])
-    expect(result.rawEvents.map((event) => event.id)).toEqual(['event_new', 'event_old'])
-  })
-
-  it('sorts same-day sessions and raw events newest first in ensurePreviousDayDailyActivityLog', async () => {
-    const state = hydratePersistedState()
-    vi.mocked(api.getActionLogSessions).mockResolvedValue([
-      createSession('session_old', {
-        dateKey: '2026-04-16',
-        startedAt: '2026-04-16T09:00:00+09:00',
-        endedAt: '2026-04-16T09:20:00+09:00',
-      }),
-      createSession('session_new', {
-        dateKey: '2026-04-16',
-        startedAt: '2026-04-16T11:00:00+09:00',
-        endedAt: '2026-04-16T11:20:00+09:00',
-      }),
-    ])
-    vi.mocked(api.getActionLogRawEvents).mockResolvedValue([
-      createRawEvent('event_old', {
-        occurredAt: '2026-04-16T09:05:00+09:00',
-        windowTitle: 'Older event',
-      }),
-      createRawEvent('event_new', {
-        occurredAt: '2026-04-16T11:05:00+09:00',
-        windowTitle: 'Newer event',
-      }),
-    ])
-    vi.mocked(api.getActionLogDailyActivityLog).mockResolvedValue(createDailyLog('2026-04-16'))
-
-    const result = await ensurePreviousDayDailyActivityLog({
-      aiConfig: state.aiConfig,
-      settings: state.settings,
-      dateKey: '2026-04-16',
-      now: new Date('2026-04-17T09:00:00+09:00'),
-    })
 
     expect(result.sessions.map((session) => session.id)).toEqual(['session_new', 'session_old'])
     expect(result.rawEvents.map((event) => event.id)).toEqual(['event_new', 'event_old'])
@@ -513,36 +422,6 @@ describe('action log view orchestration', () => {
     })
     expect(result.items.map((event) => event.id)).toEqual(['event_new'])
     expect(result.nextCursor).toBe('cursor_events_2')
-  })
-
-  it('ensures a missing previous-day daily log shell without loading timeline pages', async () => {
-    const state = hydratePersistedState()
-    vi.mocked(api.getActionLogDailyActivityLog).mockResolvedValue(null)
-    vi.mocked(ai.generateDailyActivityLogSummary).mockResolvedValue({
-      summary: 'Generated summary for yesterday only.',
-      mainThemes: ['Chrome docs'],
-      reviewQuestions: ['What remains open?'],
-    })
-    vi.mocked(ai.generateDailyQuestSummary).mockResolvedValue({
-      questSummary: 'Generated quest summary for yesterday only.',
-    })
-    vi.mocked(ai.generateDailyHealthSummary).mockResolvedValue({
-      healthSummary: 'Generated health summary for yesterday only.',
-    })
-
-    const result = await ensurePreviousDayDailyActivityLogShell({
-      aiConfig: state.aiConfig,
-      settings: state.settings,
-      dateKey: '2026-04-16',
-      now: new Date('2026-04-17T09:00:00+09:00'),
-    })
-
-    expect(api.getActionLogSessions).toHaveBeenCalledWith('2026-04-16', '2026-04-16')
-    expect(api.getActionLogSessionsPage).not.toHaveBeenCalled()
-    expect(api.getActionLogRawEventsPage).not.toHaveBeenCalled()
-    expect(result.dailyLog?.summary).toBe('Generated summary for yesterday only.')
-    expect(result.dailyLog?.questSummary).toBe('Generated quest summary for yesterday only.')
-    expect(result.dailyLog?.healthSummary).toBe('Generated health summary for yesterday only.')
   })
 
   it('compacts short alternating YouTube and Codex sessions into two blocks', async () => {
@@ -676,79 +555,6 @@ describe('action log view orchestration', () => {
 
     expect(blocks).toHaveLength(3)
     expect(blocks.every((block) => block.kind === 'single')).toBe(true)
-  })
-
-  it('retries only missing previous-day daily log sections for incomplete logs', async () => {
-    const state = hydratePersistedState()
-    vi.mocked(api.getActionLogDailyActivityLog).mockResolvedValue(
-      createDailyLog('2026-04-16', {
-        questSummary: undefined,
-        healthSummary: undefined,
-      }),
-    )
-    vi.mocked(ai.generateDailyActivityLogSummary).mockResolvedValue({
-      summary: 'This should not be regenerated.',
-      mainThemes: ['unexpected'],
-      reviewQuestions: ['unexpected'],
-    })
-    vi.mocked(ai.generateDailyQuestSummary).mockResolvedValue({
-      questSummary: 'Quest summary based on same-day quest completions.',
-    })
-    vi.mocked(ai.generateDailyHealthSummary).mockResolvedValue({
-      healthSummary: 'Health summary based on same-day health data.',
-    })
-
-    const generated = await ensurePreviousDayDailyActivityLog({
-      aiConfig: state.aiConfig,
-      settings: state.settings,
-      dateKey: '2026-04-16',
-      now: new Date('2026-04-17T09:00:00+09:00'),
-    })
-
-    expect(ai.generateDailyActivityLogSummary).not.toHaveBeenCalled()
-    expect(ai.generateDailyQuestSummary).toHaveBeenCalledTimes(1)
-    expect(ai.generateDailyHealthSummary).toHaveBeenCalledTimes(1)
-    expect(api.putActionLogDailyActivityLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        id: 'daily_2026-04-16',
-        summary: 'Lily noted a steady day of research and implementation.',
-        questSummary: 'Quest summary based on same-day quest completions.',
-        healthSummary: 'Health summary based on same-day health data.',
-      }),
-    )
-    expect(generated.dailyLog?.summary).toBe('Lily noted a steady day of research and implementation.')
-  })
-
-  it('does not generate a DailyActivityLog for today even when it is missing', async () => {
-    const state = hydratePersistedState()
-
-    await ensurePreviousDayDailyActivityLog({
-      aiConfig: state.aiConfig,
-      settings: state.settings,
-      dateKey: '2026-04-17',
-      now: new Date('2026-04-17T09:00:00+09:00'),
-    })
-
-    expect(ai.generateDailyActivityLogSummary).not.toHaveBeenCalled()
-    expect(ai.generateDailyQuestSummary).not.toHaveBeenCalled()
-    expect(ai.generateDailyHealthSummary).not.toHaveBeenCalled()
-    expect(api.putActionLogDailyActivityLog).not.toHaveBeenCalled()
-  })
-
-  it('does not generate a DailyActivityLog for older days', async () => {
-    const state = hydratePersistedState()
-
-    await ensurePreviousDayDailyActivityLog({
-      aiConfig: state.aiConfig,
-      settings: state.settings,
-      dateKey: '2026-04-15',
-      now: new Date('2026-04-17T09:00:00+09:00'),
-    })
-
-    expect(ai.generateDailyActivityLogSummary).not.toHaveBeenCalled()
-    expect(ai.generateDailyQuestSummary).not.toHaveBeenCalled()
-    expect(ai.generateDailyHealthSummary).not.toHaveBeenCalled()
-    expect(api.putActionLogDailyActivityLog).not.toHaveBeenCalled()
   })
 
   it('generates a missing WeeklyActivityReview only on Monday for the previous week from the week screen', async () => {

@@ -99,6 +99,12 @@ export interface ActivitySession {
   hidden: boolean
 }
 
+export interface DailyActivityLogSectionLastFailedAt {
+  summary?: string
+  questSummary?: string
+  healthSummary?: string
+}
+
 export interface DailyActivityLog {
   id: string
   dateKey: string
@@ -109,6 +115,7 @@ export interface DailyActivityLog {
   noteIds: string[]
   reviewQuestions: string[]
   generatedAt: string
+  sectionLastFailedAt?: DailyActivityLogSectionLastFailedAt
 }
 
 export interface WeeklyActivityReview {
