@@ -28,6 +28,8 @@
 - 自然言語フィールドは日本語を正本とする。
 - 韓国語（Hangul）を含む `title` / `summary` / `activityKinds` / `open loop text` は採用しない。
 - `heartbeat`, `browser_page_changed`, `active_window_changed`, `raw event` などの内部 telemetry 名は user-facing 文言に出さない。
+- `title` / `summary` は session 自体の説明ではなく、ユーザーの行動や目的を主語にして短く表現する。
+- `ウィンドウの切替`, `実行ファイルを起動`, `〜のセッション` のような機械的説明は、それ自体が主行動でない限り user-facing 文言の中心にしない。
 - 既存 enrichment の再利用時も同じ判定を適用し、違反があれば fallback へ切り替える。
 
 ## ログと fallback

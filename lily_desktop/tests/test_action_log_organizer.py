@@ -345,6 +345,48 @@ def test_candidate_sessions_split_on_gap_idle_app_and_domain_but_not_project_or_
     ]
 
 
+def test_candidate_payload_keeps_window_titles_and_file_names_as_action_hints(tmp_path):
+    organizer = _make_organizer(tmp_path)
+    candidate = organizer.build_candidate_sessions(
+        [
+            _event(
+                "raw_1",
+                datetime(2026, 4, 17, 9, 0, tzinfo=JST),
+                app_name="Code.exe",
+                window_title="prompt.txt - VS Code",
+                project_name="self-growth-app",
+                file_name="prompt.txt",
+            ),
+            _event(
+                "raw_2",
+                datetime(2026, 4, 17, 9, 2, tzinfo=JST),
+                event_type="heartbeat",
+                app_name="Code.exe",
+                window_title="activity-log.md - VS Code",
+                project_name="self-growth-app",
+                file_name="activity-log.md",
+            ),
+            _event(
+                "raw_3",
+                datetime(2026, 4, 17, 9, 4, tzinfo=JST),
+                event_type="heartbeat",
+                app_name="Code.exe",
+                window_title="prompt.txt - VS Code",
+                project_name="self-growth-app",
+                file_name="prompt.txt",
+            ),
+        ]
+    )[0]
+
+    payload = organizer._candidate_payload(candidate)
+
+    assert payload["windowTitles"] == [
+        "prompt.txt - VS Code",
+        "activity-log.md - VS Code",
+    ]
+    assert payload["fileNames"] == ["prompt.txt", "activity-log.md"]
+
+
 @pytest.mark.asyncio
 async def test_organize_and_sync_reads_only_today_and_yesterday_and_preserves_hidden(tmp_path):
     log_dir = tmp_path / "raw_events"
@@ -613,6 +655,8 @@ async def test_organizer_uses_ollama_batch_and_saves_sessions(tmp_path, monkeypa
     assert "natural Japanese" in build_calls[0]["system_prompt"]
     assert "Never use Korean or Hangul" in build_calls[0]["system_prompt"]
     assert "Never mention internal telemetry" in build_calls[0]["system_prompt"]
+    assert "Focus on what the user did" in build_calls[0]["system_prompt"]
+    assert "Do not frame the output as a session description" in build_calls[0]["system_prompt"]
     assert api_client.put_sessions_calls[0]["sessions"][0]["title"] == "Chrome拡張の調査"
     assert api_client.put_sessions_calls[0]["sessions"][0]["searchKeywords"] == [
         "Chrome拡張",

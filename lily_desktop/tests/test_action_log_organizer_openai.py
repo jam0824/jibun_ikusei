@@ -183,6 +183,8 @@ async def test_organizer_uses_openai_structured_outputs_and_logs_usage(
     assert "natural Japanese" in request_calls[0]["system_prompt"]
     assert "Never use Korean or Hangul" in request_calls[0]["system_prompt"]
     assert "Never mention internal telemetry" in request_calls[0]["system_prompt"]
+    assert "Focus on what the user did" in request_calls[0]["system_prompt"]
+    assert "Do not frame the output as a session description" in request_calls[0]["system_prompt"]
     assert api_client.put_sessions_calls[0]["sessions"][0]["title"] == "OpenAI generated title"
     assert "Action-log organizer OpenAI usage" in caplog.text
     assert "input_tokens=120" in caplog.text
