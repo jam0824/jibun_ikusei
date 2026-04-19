@@ -88,6 +88,7 @@ async def test_camera_analysis_uses_ollama_chat_api_with_images():
     request = fake_client.calls[0]
     assert request["url"] == "http://127.0.0.1:11434/api/chat"
     assert request["json"]["stream"] is False
+    assert request["json"]["think"] is False
     assert request["json"]["options"]["num_predict"] == 900
     assert request["json"]["messages"][1]["images"]
 
@@ -142,6 +143,32 @@ async def test_camera_analysis_raises_for_ollama_http_errors():
 
     with patch("ai.camera_analyzer.httpx.AsyncClient", return_value=fake_client):
         with pytest.raises(Exception, match="Camera analysis failed"):
+            await analyze_camera_frame(
+                api_key="",
+                provider="ollama",
+                base_url="http://127.0.0.1:11434",
+                model="gemma4:e4b",
+                frame_png=_make_test_png(),
+            )
+
+
+@pytest.mark.asyncio
+async def test_camera_analysis_raises_for_truncated_ollama_content():
+    fake_client = _FakeAsyncClient(
+        [
+            _FakeResponse(
+                {
+                    "message": {
+                        "content": '```json\n{"summary":"Desk scene","tags":["desk"]',
+                    },
+                    "done_reason": "length",
+                }
+            )
+        ]
+    )
+
+    with patch("ai.camera_analyzer.httpx.AsyncClient", return_value=fake_client):
+        with pytest.raises(Exception, match="Camera analysis response was truncated"):
             await analyze_camera_frame(
                 api_key="",
                 provider="ollama",

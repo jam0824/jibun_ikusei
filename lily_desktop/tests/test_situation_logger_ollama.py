@@ -81,4 +81,42 @@ async def test_generate_summary_uses_ollama_chat_api(tmp_path, monkeypatch):
     request = fake_client.calls[0]
     assert request["url"] == "http://127.0.0.1:11434/api/chat"
     assert request["json"]["stream"] is False
+    assert request["json"]["think"] is False
     assert request["json"]["options"]["num_predict"] == 500
+
+
+@pytest.mark.asyncio
+async def test_generate_summary_returns_none_for_truncated_ollama_content(tmp_path, monkeypatch):
+    import core.situation_logger as mod
+
+    fake_client = _FakeAsyncClient(
+        [
+            _FakeResponse(
+                {
+                    "message": {"content": "途中までの要約"},
+                    "done_reason": "length",
+                }
+            )
+        ]
+    )
+    monkeypatch.setattr(mod, "_LOG_DIR", tmp_path)
+    monkeypatch.setattr(mod.httpx, "AsyncClient", lambda timeout=30.0: fake_client)
+
+    logger_instance = SituationLogger(
+        openai_api_key="",
+        summary_provider="ollama",
+        summary_base_url="http://127.0.0.1:11434",
+        summary_model="gemma4:e4b",
+    )
+    logger_instance.record(
+        SituationRecord(
+            timestamp="2026-03-29 12:00:00",
+            camera_summary="外は晴れ",
+            desktop_summary="コーディング中",
+            active_app="VSCode",
+        )
+    )
+
+    result = await logger_instance.generate_summary()
+
+    assert result is None

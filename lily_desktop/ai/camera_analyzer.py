@@ -109,11 +109,11 @@ async def analyze_camera_frame(
         content[:200],
     )
 
-    if content:
-        return _parse_analysis(content)
-
     if finish_reason == "length":
         raise Exception("Camera analysis response was truncated before text was returned.")
+
+    if content:
+        return _parse_analysis(content)
 
     raise Exception("Camera analysis response was empty.")
 
@@ -137,6 +137,8 @@ async def _post_camera_analysis(
         image_pngs=image_pngs,
         max_completion_tokens=max_completion_tokens,
     )
+    if provider == "ollama":
+        request.body["think"] = False
 
     async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
         resp = await client.post(
