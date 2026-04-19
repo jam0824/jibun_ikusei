@@ -37,6 +37,37 @@ describe('skillHandler', () => {
       expect(body.createdAt).toBeDefined()
       expect(body.updatedAt).toBeDefined()
     })
+
+    it('returns an existing active duplicate skill instead of creating a second one', async () => {
+      mockSend.mockResolvedValueOnce({
+        Items: [
+          {
+            PK: 'user#test',
+            SK: 'SKILL#s_existing',
+            id: 's_existing',
+            name: '読書',
+            normalizedName: '読書',
+            category: '学習',
+            totalXp: 12,
+            level: 1,
+            source: 'seed',
+            status: 'active',
+            createdAt: '2026-04-19T09:30:00.000+09:00',
+            updatedAt: '2026-04-19T09:30:00.000+09:00',
+          },
+        ],
+      })
+
+      const skill = { id: 's_new', name: ' 読 書 ', totalXp: 0, category: '学習', status: 'active' }
+      const { statusCode, body } = parseResponse(
+        await handler(makeEvent('POST /skills', { body: skill }))
+      )
+
+      expect(statusCode).toBe(200)
+      expect(body.id).toBe('s_existing')
+      expect(body.name).toBe('読書')
+      expect(mockSend).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('PUT /skills/{id}', () => {

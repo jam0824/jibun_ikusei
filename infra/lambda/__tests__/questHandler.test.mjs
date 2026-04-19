@@ -35,7 +35,9 @@ describe('questHandler', () => {
 
   describe('POST /quests', () => {
     it('creates a quest and returns 201', async () => {
-      mockSend.mockResolvedValueOnce({})
+      mockSend
+        .mockResolvedValueOnce({ Items: [] })
+        .mockResolvedValueOnce({})
 
       const quest = { id: 'q1', title: 'New Quest', xp: 10 }
       const result = await handler(makeEvent('POST /quests', { body: quest }))
@@ -46,6 +48,101 @@ describe('questHandler', () => {
       expect(body.title).toBe('New Quest')
       expect(body.createdAt).toBeDefined()
       expect(body.updatedAt).toBeDefined()
+    })
+
+    it('returns an existing system quest instead of creating a duplicate', async () => {
+      mockSend.mockResolvedValueOnce({
+        Items: [
+          {
+            PK: 'user#test',
+            SK: 'QUEST#q_existing',
+            id: 'q_existing',
+            title: '食事登録',
+            source: 'system',
+            systemKey: 'meal_register',
+            questType: 'repeatable',
+            status: 'active',
+            createdAt: '2026-04-19T09:30:00.000+09:00',
+            updatedAt: '2026-04-19T09:30:00.000+09:00',
+          },
+        ],
+      })
+
+      const quest = {
+        id: 'q_new',
+        title: '食事登録',
+        source: 'system',
+        systemKey: 'meal_register',
+        questType: 'repeatable',
+        status: 'active',
+      }
+      const { statusCode, body } = parseResponse(await handler(makeEvent('POST /quests', { body: quest })))
+
+      expect(statusCode).toBe(200)
+      expect(body.id).toBe('q_existing')
+      expect(mockSend).toHaveBeenCalledTimes(1)
+    })
+
+    it('returns an existing legacy sample quest instead of creating a duplicate seed quest', async () => {
+      mockSend.mockResolvedValueOnce({
+        Items: [
+          {
+            PK: 'user#test',
+            SK: 'QUEST#q_existing',
+            id: 'q_existing',
+            title: '読書する',
+            questType: 'repeatable',
+            status: 'active',
+            createdAt: '2026-04-19T09:30:00.000+09:00',
+            updatedAt: '2026-04-19T09:30:00.000+09:00',
+          },
+        ],
+      })
+
+      const quest = {
+        id: 'q_new',
+        title: '読書する',
+        source: 'seed',
+        questType: 'repeatable',
+        status: 'active',
+      }
+      const { statusCode, body } = parseResponse(await handler(makeEvent('POST /quests', { body: quest })))
+
+      expect(statusCode).toBe(200)
+      expect(body.id).toBe('q_existing')
+      expect(mockSend).toHaveBeenCalledTimes(1)
+    })
+
+    it('still creates a manual quest even when its title matches a sample quest', async () => {
+      mockSend
+        .mockResolvedValueOnce({
+          Items: [
+            {
+              PK: 'user#test',
+              SK: 'QUEST#q_existing',
+              id: 'q_existing',
+              title: '読書する',
+              questType: 'repeatable',
+              status: 'active',
+              createdAt: '2026-04-19T09:30:00.000+09:00',
+              updatedAt: '2026-04-19T09:30:00.000+09:00',
+            },
+          ],
+        })
+        .mockResolvedValueOnce({})
+
+      const quest = {
+        id: 'q_manual',
+        title: '読書する',
+        source: 'manual',
+        questType: 'repeatable',
+        status: 'active',
+      }
+      const { statusCode, body } = parseResponse(await handler(makeEvent('POST /quests', { body: quest })))
+
+      expect(statusCode).toBe(201)
+      expect(body.id).toBe('q_manual')
+      expect(mockSend).toHaveBeenCalledTimes(1)
     })
   })
 

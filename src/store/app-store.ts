@@ -5,6 +5,8 @@ import {
   createAssistantMessage,
   createSkillRecord,
   ensureSystemQuests,
+  findActiveSkillByName,
+  getAutoQuestDuplicateKey,
   getProviderConfig,
   getPreviousWeekReflectionSummary,
   getQuestAvailability,
@@ -192,6 +194,83 @@ function cleanupLocalOnlyOrphanCompletions(
   })
 }
 
+function alignGeneratedLocalStateWithCloud(
+  local: PersistedAppState,
+  rawLocal: Partial<PersistedAppState>,
+  cloud: Partial<PersistedAppState>,
+): PersistedAppState {
+  const rawSkillIds = new Set((rawLocal.skills ?? []).map((skill) => skill.id))
+  const rawQuestIds = new Set((rawLocal.quests ?? []).map((quest) => quest.id))
+  const cloudSkills = cloud.skills ?? []
+  const cloudQuests = cloud.quests ?? []
+  const skillIdReplacements = new Map<string, string>()
+
+  for (const skill of local.skills) {
+    if (skill.source !== 'seed' || rawSkillIds.has(skill.id) || skill.status !== 'active') {
+      continue
+    }
+
+    const existing = findActiveSkillByName(cloudSkills, skill.name)
+    if (existing && existing.id !== skill.id) {
+      skillIdReplacements.set(skill.id, existing.id)
+    }
+  }
+
+  const replaceSkillId = (skillId: string | undefined) => skillIdReplacements.get(skillId ?? '') ?? skillId
+  const cloudQuestKeys = new Set(
+    cloudQuests
+      .map((quest) => getAutoQuestDuplicateKey(quest))
+      .filter((key): key is string => Boolean(key)),
+  )
+
+  const nextState = reconcileState({
+    ...local,
+    quests: local.quests
+      .map((quest) => ({
+        ...quest,
+        fixedSkillId: replaceSkillId(quest.fixedSkillId),
+        defaultSkillId: replaceSkillId(quest.defaultSkillId),
+      }))
+      .filter((quest) => {
+        if (rawQuestIds.has(quest.id)) {
+          return true
+        }
+
+        const duplicateKey = getAutoQuestDuplicateKey(quest)
+        return !(duplicateKey && cloudQuestKeys.has(duplicateKey))
+      }),
+    completions: local.completions.map((completion) => ({
+      ...completion,
+      resolvedSkillId: replaceSkillId(completion.resolvedSkillId),
+      candidateSkillIds: completion.candidateSkillIds
+        ? Array.from(new Set(completion.candidateSkillIds.map((candidateId) => replaceSkillId(candidateId) ?? candidateId)))
+        : undefined,
+    })),
+    skills: local.skills.filter((skill) => !skillIdReplacements.has(skill.id)),
+    personalSkillDictionary: local.personalSkillDictionary.map((entry) => ({
+      ...entry,
+      mappedSkillId: replaceSkillId(entry.mappedSkillId) ?? entry.mappedSkillId,
+    })),
+  })
+
+  return nextState
+}
+
+function shouldPostSkill(state: PersistedAppState, skill: PersistedAppState['skills'][number]) {
+  return state.skills.find(
+    (entry) => entry.status === 'active' && normalizeSkillName(entry.name) === normalizeSkillName(skill.name),
+  )?.id === skill.id
+}
+
+function shouldPostQuest(state: PersistedAppState, quest: Quest) {
+  const duplicateKey = getAutoQuestDuplicateKey(quest)
+  if (!duplicateKey) {
+    return true
+  }
+
+  return state.quests.find((entry) => getAutoQuestDuplicateKey(entry) === duplicateKey)?.id === quest.id
+}
+
 function buildRolledBackCompletionState(params: {
   current: PersistedAppState
   completionId: string
@@ -363,6 +442,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         return
       }
 
+      const preparedLocal = alignGeneratedLocalStateWithCloud(local, rawLocal, cloud)
+
       // 各エンティティを個別にマージ（updatedAt が新しい方を採用）
       const pickNewer = <T extends { updatedAt?: string }>(localVal: T, cloudVal: T | undefined): T => {
         if (!cloudVal) return localVal
@@ -371,16 +452,16 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       const merged = cleanupLocalOnlyOrphanCompletions(
         ensureSystemQuests(reconcileState({
-          ...local,
-          user: pickNewer(local.user, cloud.user as typeof local.user | undefined),
-          settings: pickNewer(local.settings, cloud.settings as typeof local.settings | undefined),
-          aiConfig: local.aiConfig, // APIキーはローカル優先
-          meta: local.meta,
-          quests: mergeArrayById(local.quests, cloud.quests ?? []),
-          completions: mergeArrayById(local.completions, cloud.completions ?? []),
-          skills: mergeArrayById(local.skills, cloud.skills ?? []),
-          personalSkillDictionary: mergeArrayById(local.personalSkillDictionary, cloud.personalSkillDictionary ?? []),
-          assistantMessages: mergeArrayById(local.assistantMessages, cloud.assistantMessages ?? []),
+          ...preparedLocal,
+          user: pickNewer(preparedLocal.user, cloud.user as typeof preparedLocal.user | undefined),
+          settings: pickNewer(preparedLocal.settings, cloud.settings as typeof preparedLocal.settings | undefined),
+          aiConfig: preparedLocal.aiConfig, // APIキーはローカル優先
+          meta: preparedLocal.meta,
+          quests: mergeArrayById(preparedLocal.quests, cloud.quests ?? []),
+          completions: mergeArrayById(preparedLocal.completions, cloud.completions ?? []),
+          skills: mergeArrayById(preparedLocal.skills, cloud.skills ?? []),
+          personalSkillDictionary: mergeArrayById(preparedLocal.personalSkillDictionary, cloud.personalSkillDictionary ?? []),
+          assistantMessages: mergeArrayById(preparedLocal.assistantMessages, cloud.assistantMessages ?? []),
         })),
         cloud,
       )
@@ -403,7 +484,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     const existing = state.quests.some((entry) => entry.id === quest.id)
     const updatedQuest = existing
       ? { ...quest, updatedAt: nowIso() }
-      : { ...quest, createdAt: nowIso(), updatedAt: nowIso() }
+      : { ...quest, source: quest.source ?? 'manual', createdAt: nowIso(), updatedAt: nowIso() }
     const nextState = reconcileState({
       ...state,
       quests: existing
@@ -701,7 +782,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
       try {
         const questForSync = nextState.quests.find((entry) => entry.id === questId) ?? quest
         if (questForSync.systemKey) {
-          await api.postQuest(questForSync)
+          const syncState = toPersistedState(get())
+          if (shouldPostQuest(syncState, questForSync)) {
+            await api.postQuest(questForSync)
+          }
         }
         const comp = nextState.completions.find((e) => e.id === completionId)
         if (comp) {
@@ -755,8 +839,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
           await api.putQuest(quest.id, { status: 'completed', updatedAt: nowIso() }).catch(() => undefined)
         }
         // 新しいスキルがあればPOST
+        const syncState = toPersistedState(get())
         for (const skill of nextState.skills) {
-          if (!state.skills.some((s) => s.id === skill.id)) {
+          if (!state.skills.some((s) => s.id === skill.id) && shouldPostSkill(syncState, skill)) {
             await api.postSkill(skill).catch(() => undefined)
           }
         }
@@ -1390,9 +1475,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
         await api.putSettings(merged.settings).catch(() => undefined)
         await api.putAiConfig(merged.aiConfig).catch(() => undefined)
         await api.putMeta(merged.meta).catch(() => undefined)
-        for (const q of merged.quests) await api.postQuest(q).catch(() => undefined)
+        for (const q of merged.quests) {
+          if (shouldPostQuest(merged, q)) {
+            await api.postQuest(q).catch(() => undefined)
+          }
+        }
         for (const c of merged.completions) await api.postCompletion(c).catch(() => undefined)
-        for (const s of merged.skills) await api.postSkill(s).catch(() => undefined)
+        for (const s of merged.skills) {
+          if (shouldPostSkill(merged, s)) {
+            await api.postSkill(s).catch(() => undefined)
+          }
+        }
         for (const m of merged.assistantMessages) await api.postMessage(m).catch(() => undefined)
         for (const d of merged.personalSkillDictionary) await api.postDictEntry(d).catch(() => undefined)
       })()

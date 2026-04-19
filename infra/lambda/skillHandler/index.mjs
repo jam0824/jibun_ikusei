@@ -1,6 +1,10 @@
 import { QueryCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
 import { db, TABLE_NAME, getUserId, response, parseBody } from "/opt/nodejs/utils.mjs";
 
+function normalizeSkillName(name) {
+  return String(name ?? "").trim().toLowerCase().replace(/\s+/g, "");
+}
+
 export const handler = async (event) => {
   const userId = getUserId(event);
   const pk = `user#${userId}`;
@@ -18,6 +22,21 @@ export const handler = async (event) => {
 
     case "POST /skills": {
       const skill = parseBody(event);
+      const duplicateResult = await db.send(new QueryCommand({
+        TableName: TABLE_NAME,
+        KeyConditionExpression: "PK = :pk AND begins_with(SK, :sk)",
+        ExpressionAttributeValues: { ":pk": pk, ":sk": "SKILL#" },
+      }));
+      const duplicate = (duplicateResult.Items ?? [])
+        .map(({ PK, SK, ...rest }) => rest)
+        .find((item) =>
+          item.status === "active"
+          && normalizeSkillName(item.name) === normalizeSkillName(skill.name),
+        );
+      if (duplicate) {
+        return response(200, duplicate);
+      }
+
       const now = new Date().toISOString();
       const item = { ...skill, createdAt: skill.createdAt ?? now, updatedAt: now };
       await db.send(new PutCommand({
