@@ -671,7 +671,9 @@ async def test_organizer_prioritizes_newest_uncached_candidates_for_openai_reque
 
 
 @pytest.mark.asyncio
-async def test_organizer_batches_uncached_candidates_eight_then_one(tmp_path, monkeypatch):
+async def test_organizer_limits_openai_to_one_batch_and_falls_back_remaining_candidates(
+    tmp_path, monkeypatch
+):
     log_dir = tmp_path / "raw_events"
     events = []
     base_time = datetime(2026, 4, 17, 9, 0, tzinfo=JST)
@@ -723,13 +725,17 @@ async def test_organizer_batches_uncached_candidates_eight_then_one(tmp_path, mo
 
     await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
 
-    assert batch_sizes == [8, 1]
-    assert requested_batches == [newest_first_ids[:8], newest_first_ids[8:]]
-    assert len(api_client.put_sessions_calls[0]["sessions"]) == 9
+    assert batch_sizes == [8]
+    assert requested_batches == [newest_first_ids[:8]]
+    saved_sessions = {
+        session["id"]: session for session in api_client.put_sessions_calls[0]["sessions"]
+    }
+    assert len(saved_sessions) == 9
+    assert saved_sessions[newest_first_ids[-1]]["title"] == "App0.exe / Window 0"
 
 
 @pytest.mark.asyncio
-async def test_organizer_budget_exhaustion_falls_back_and_still_syncs(
+async def test_organizer_does_not_retry_fallback_sessions_on_next_run(
     tmp_path, monkeypatch
 ):
     log_dir = tmp_path / "raw_events"
@@ -757,7 +763,6 @@ async def test_organizer_budget_exhaustion_falls_back_and_still_syncs(
     candidates = probe_organizer.build_candidate_sessions(
         probe_organizer.load_recent_raw_events(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
     )
-    oldest_candidate = candidates[0]
     newest_first_ids = [candidate["id"] for candidate in reversed(candidates)]
 
     api_client = _FakeApiClient()
@@ -769,12 +774,6 @@ async def test_organizer_budget_exhaustion_falls_back_and_still_syncs(
         openai_api_key="test-key",
     )
     requested_batches: list[list[str]] = []
-    monotonic_values = [0.0, 0.0, 61.0]
-
-    def _fake_monotonic():
-        if monotonic_values:
-            return monotonic_values.pop(0)
-        return 61.0
 
     async def _fake_request_openai_json_with_usage(**kwargs):
         session_ids = _extract_session_ids(kwargs["input_payload"])
@@ -785,14 +784,21 @@ async def test_organizer_budget_exhaustion_falls_back_and_still_syncs(
         "core.action_log_organizer.request_openai_json_with_usage",
         _fake_request_openai_json_with_usage,
     )
-    monkeypatch.setattr("core.action_log_organizer.time.monotonic", _fake_monotonic)
 
     await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
 
     assert requested_batches == [newest_first_ids[:8]]
+    first_run_sessions = api_client.put_sessions_calls[0]["sessions"]
+    api_client.existing_sessions = list(first_run_sessions)
+    api_client.put_sessions_calls.clear()
+    requested_batches.clear()
+
+    await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
+
+    assert requested_batches == []
     saved_sessions = {
         session["id"]: session for session in api_client.put_sessions_calls[0]["sessions"]
     }
     assert len(saved_sessions) == 9
-    assert saved_sessions[oldest_candidate["id"]]["title"] == "App0.exe / Window 0"
+    assert saved_sessions[newest_first_ids[-1]]["title"] == "App0.exe / Window 0"
     assert saved_sessions[newest_first_ids[0]]["title"] == "AI title 1"

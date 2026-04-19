@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -10,6 +11,17 @@ from core.constants import API_BASE_URL
 
 logger = logging.getLogger(__name__)
 _ACTION_LOG_BULK_WRITE_TIMEOUT_SECONDS = 90.0
+_ACTION_LOG_BULK_WRITE_RETRY_DELAY_SECONDS = 1.0
+_ACTION_LOG_BULK_WRITE_RETRYABLE_STATUS_CODES = frozenset({502, 503, 504})
+
+
+def _is_retryable_action_log_sessions_error(error: Exception) -> bool:
+    if isinstance(error, httpx.TimeoutException):
+        return True
+    if isinstance(error, httpx.HTTPStatusError):
+        status_code = error.response.status_code if error.response is not None else None
+        return status_code in _ACTION_LOG_BULK_WRITE_RETRYABLE_STATUS_CODES
+    return False
 
 
 class ApiClient:
@@ -146,12 +158,27 @@ class ApiClient:
         )
 
     async def put_action_log_sessions(self, payload: dict) -> dict:
-        return await self._request(
-            "PUT",
-            "/action-log/sessions",
-            json=payload,
-            timeout=_ACTION_LOG_BULK_WRITE_TIMEOUT_SECONDS,
-        )
+        try:
+            return await self._request(
+                "PUT",
+                "/action-log/sessions",
+                json=payload,
+                timeout=_ACTION_LOG_BULK_WRITE_TIMEOUT_SECONDS,
+            )
+        except Exception as error:
+            if not _is_retryable_action_log_sessions_error(error):
+                raise
+            logger.warning(
+                "Action log session bulk write failed with retryable error; retrying once",
+                exc_info=True,
+            )
+            await asyncio.sleep(_ACTION_LOG_BULK_WRITE_RETRY_DELAY_SECONDS)
+            return await self._request(
+                "PUT",
+                "/action-log/sessions",
+                json=payload,
+                timeout=_ACTION_LOG_BULK_WRITE_TIMEOUT_SECONDS,
+            )
 
     async def put_action_log_session_hidden(
         self, session_id: str, payload: dict

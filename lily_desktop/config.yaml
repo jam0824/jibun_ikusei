@@ -97,7 +97,7 @@ activity_capture:
   enabled: true
   initial_state: active
   poll_interval_seconds: 2
-  sync_interval_seconds: 30
+  sync_interval_seconds: 600
 activity_processing:
   enabled: true
   provider: openai

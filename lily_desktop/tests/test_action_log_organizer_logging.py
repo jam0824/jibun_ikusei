@@ -148,7 +148,7 @@ async def test_organizer_logs_raw_response_when_json_parse_fails(tmp_path, monke
 
 
 @pytest.mark.asyncio
-async def test_organizer_logs_budget_exhaustion_and_fallback_count(
+async def test_organizer_logs_batch_cap_and_fallback_count(
     tmp_path, monkeypatch, caplog
 ):
     log_dir = tmp_path / "raw_events"
@@ -172,13 +172,6 @@ async def test_organizer_logs_budget_exhaustion_and_fallback_count(
         processing_config=_processing_openai(),
         openai_api_key="test-key",
     )
-    monotonic_values = [0.0, 0.0, 61.0]
-
-    def _fake_monotonic():
-        if monotonic_values:
-            return monotonic_values.pop(0)
-        return 61.0
-
     async def _fake_request_openai_json_with_usage(**kwargs):
         session_ids = []
         for date_entry in kwargs["input_payload"].get("dateSessions", []):
@@ -207,11 +200,11 @@ async def test_organizer_logs_budget_exhaustion_and_fallback_count(
         "core.action_log_organizer.request_openai_json_with_usage",
         _fake_request_openai_json_with_usage,
     )
-    monkeypatch.setattr("core.action_log_organizer.time.monotonic", _fake_monotonic)
 
     with caplog.at_level("INFO"):
         await organizer.organize_and_sync(now=datetime(2026, 4, 17, 12, 0, tzinfo=JST))
 
-    assert "Action-log organizer OpenAI budget exhausted" in caplog.text
+    assert "Action-log organizer OpenAI batch cap reached" in caplog.text
     assert "fallback_count=1" in caplog.text
-    assert "budget_exhausted=True" in caplog.text
+    assert "batch_count=1" in caplog.text
+    assert "budget_exhausted=False" in caplog.text

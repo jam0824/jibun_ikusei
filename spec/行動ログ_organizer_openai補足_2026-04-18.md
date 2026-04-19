@@ -20,7 +20,8 @@
 - OpenAI organizer は Responses API に `reasoning.effort=minimal` を明示して送る。
 - organizer は既存 session / open loop を `deviceId + dateKey + startedAt + appNames + domains + projectNames` の match key で再利用し、一致した candidate は再度 AI に送らない。
 - uncached candidate は `startedAt` の新しい順に優先し、1 request あたり最大 8 session ごとに batch 化して OpenAI に送る。
-- 1 run あたりの OpenAI enrichment はおおむね 60 秒で打ち切り、残りの uncached candidate はその run 内で rule-based fallback に切り替えて session / open-loop 同期を継続する。
+- 定期 organizer の OpenAI enrichment は 1 run あたり最大 1 batch とし、残りの uncached candidate はその run 内で rule-based fallback に切り替えて session 同期を継続する。
+- fallback で保存された session は許容結果とし、次回 organizer run で自動的に再 AI し直すことを必須にしない。
 
 ## 出力制約
 

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from hashlib import sha1
@@ -23,10 +22,9 @@ from core.browser_processes import is_browser_process
 
 
 JST = timezone(timedelta(hours=9))
-SESSION_GAP_SECONDS = 5 * 60
+SESSION_GAP_SECONDS = 10 * 60
 HTTP_TIMEOUT_SECONDS = 30.0
 OPENAI_BATCH_SIZE = 8
-OPENAI_ENRICHMENT_BUDGET_SECONDS = 60.0
 DEFAULT_ACTIVITY_PROCESSING_CONFIG = {
     "enabled": True,
     "provider": "openai",
@@ -328,16 +326,6 @@ class ActionLogOrganizer:
         previous_domain = _last_non_empty(current_events, "domain").lower()
         next_domain = str(next_event.get("domain") or "").strip().lower()
         if previous_domain and next_domain and previous_domain != next_domain:
-            return True
-
-        previous_project = _last_non_empty(current_events, "projectName")
-        next_project = str(next_event.get("projectName") or "").strip()
-        if previous_project and next_project and previous_project != next_project:
-            return True
-
-        previous_file = _last_non_empty(current_events, "fileName")
-        next_file = str(next_event.get("fileName") or "").strip()
-        if previous_file and next_file and previous_file != next_file:
             return True
 
         return False
@@ -716,56 +704,50 @@ class ActionLogOrganizer:
             "Use only the provided metadata."
         )
         results: dict[str, dict[str, Any]] = {}
-        batch_count = 0
         budget_exhausted = False
         prioritized_candidates = sorted(
             candidates,
             key=lambda candidate: str(candidate.get("startedAt") or ""),
             reverse=True,
         )
-        started_at = time.monotonic()
+        if not prioritized_candidates:
+            return results, 0, budget_exhausted
 
-        for start in range(0, len(prioritized_candidates), OPENAI_BATCH_SIZE):
-            elapsed_seconds = time.monotonic() - started_at
-            if elapsed_seconds >= OPENAI_ENRICHMENT_BUDGET_SECONDS:
-                budget_exhausted = True
-                remaining_candidates = len(prioritized_candidates) - start
-                self._logger.warning(
-                    "Action-log organizer OpenAI budget exhausted: processed_batches=%d remaining_candidates=%d elapsed_seconds=%.2f",
-                    batch_count,
-                    remaining_candidates,
-                    elapsed_seconds,
-                )
-                break
-            batch = prioritized_candidates[start : start + OPENAI_BATCH_SIZE]
-            batch_count += 1
-            try:
-                response = await request_openai_json_with_usage(
-                    api_key=self.openai_api_key,
-                    model=self.processing_config["model"],
-                    schema_name="action_log_organizer",
-                    schema=_ORGANIZER_OPENAI_SCHEMA,
-                    input_payload=self._build_llm_input_payload(batch),
-                    system_prompt=system_prompt,
-                    max_output_tokens=self.processing_config["max_completion_tokens"],
-                    reasoning_effort="minimal",
-                )
-            except Exception:
-                self._logger.exception("Action-log organizer OpenAI enrichment failed")
-                continue
-
-            usage = response.usage or {}
+        batch = prioritized_candidates[:OPENAI_BATCH_SIZE]
+        remaining_candidates = len(prioritized_candidates) - len(batch)
+        if remaining_candidates > 0:
             self._logger.info(
-                "Action-log organizer OpenAI usage: model=%s batch_size=%d input_tokens=%s output_tokens=%s total_tokens=%s",
-                self.processing_config["model"],
-                len(batch),
-                usage.get("input_tokens", "unknown"),
-                usage.get("output_tokens", "unknown"),
-                usage.get("total_tokens", "unknown"),
+                "Action-log organizer OpenAI batch cap reached: processed_batches=1 remaining_candidates=%d",
+                remaining_candidates,
             )
-            results.update(self._parse_enrichment_payload(response.output))
 
-        return results, batch_count, budget_exhausted
+        try:
+            response = await request_openai_json_with_usage(
+                api_key=self.openai_api_key,
+                model=self.processing_config["model"],
+                schema_name="action_log_organizer",
+                schema=_ORGANIZER_OPENAI_SCHEMA,
+                input_payload=self._build_llm_input_payload(batch),
+                system_prompt=system_prompt,
+                max_output_tokens=self.processing_config["max_completion_tokens"],
+                reasoning_effort="minimal",
+            )
+        except Exception:
+            self._logger.exception("Action-log organizer OpenAI enrichment failed")
+            return results, 1, budget_exhausted
+
+        usage = response.usage or {}
+        self._logger.info(
+            "Action-log organizer OpenAI usage: model=%s batch_size=%d input_tokens=%s output_tokens=%s total_tokens=%s",
+            self.processing_config["model"],
+            len(batch),
+            usage.get("input_tokens", "unknown"),
+            usage.get("output_tokens", "unknown"),
+            usage.get("total_tokens", "unknown"),
+        )
+        results.update(self._parse_enrichment_payload(response.output))
+
+        return results, 1, budget_exhausted
 
     async def _organize_with_ollama(
         self,

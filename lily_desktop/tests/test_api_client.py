@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import AsyncMock
 
+import httpx
 import pytest
 
 from api.api_client import ApiClient
@@ -218,13 +220,62 @@ async def test_action_log_methods_use_expected_paths_and_payloads():
         "/action-log/sessions/session_1/hidden",
         json={"dateKey": "2026-04-17", "hidden": True},
     )
-    client._request.assert_any_await(
-        "DELETE",
-        "/action-log/range",
-        params={"from": "2026-04-01", "to": "2026-04-17"},
+
+
+@pytest.mark.asyncio
+async def test_put_action_log_sessions_retries_once_on_503(monkeypatch):
+    client = object.__new__(ApiClient)
+    request = httpx.Request("PUT", "https://example.com/action-log/sessions")
+    response = httpx.Response(503, request=request)
+    client._request = AsyncMock(
+        side_effect=[
+            httpx.HTTPStatusError(
+                "Server error '503 Service Unavailable'",
+                request=request,
+                response=response,
+            ),
+            {"updated": 1},
+        ]
     )
-    client._request.assert_any_await("GET", "/action-log/deletion-requests")
-    client._request.assert_any_await(
-        "POST",
-        "/action-log/deletion-requests/delete_1/ack",
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", _fake_sleep)
+
+    result = await client.put_action_log_sessions(
+        {"deviceId": "device_1", "dateKeys": ["2026-04-17"], "sessions": []}
     )
+
+    assert result == {"updated": 1}
+    assert client._request.await_count == 2
+    assert sleep_calls == [1.0]
+
+
+@pytest.mark.asyncio
+async def test_put_action_log_sessions_does_not_retry_on_non_transient_error(monkeypatch):
+    client = object.__new__(ApiClient)
+    request = httpx.Request("PUT", "https://example.com/action-log/sessions")
+    response = httpx.Response(400, request=request)
+    client._request = AsyncMock(
+        side_effect=httpx.HTTPStatusError(
+            "Client error '400 Bad Request'",
+            request=request,
+            response=response,
+        )
+    )
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", _fake_sleep)
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.put_action_log_sessions(
+            {"deviceId": "device_1", "dateKeys": ["2026-04-17"], "sessions": []}
+        )
+
+    assert client._request.await_count == 1
+    assert sleep_calls == []

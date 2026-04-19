@@ -1,6 +1,6 @@
 # 行動ログ実装 TODO v0.1
 
-更新日: 2026-04-18
+更新日: 2026-04-19
 
 関連仕様:
 - [行動ログ_INDEX.md](./行動ログ_INDEX.md)
@@ -24,7 +24,7 @@
 - [ ] 各フェーズ完了時に必ず自己レビューを実施する
 - [ ] Chrome のページ滞在時間の正本は Chrome Extension とし、desktop 側で別実装の再計測をしない
 - [ ] 行動ログの閲覧 UI は PWA を正本とし、`lily_desktop` は収集と URL 起動のハブに徹する
-- [x] 通常の整理系 AI は local `gemma4`、日次・週次まとめは `gpt-5.4` を使う
+- [x] 通常の整理系 AI は `gpt-5-nano`、日次・週次まとめは `gpt-5.4` を使う
 - [ ] `RawEvent` はサーバー TTL 前提、`ActivitySession` 以上は長期保持前提で進める
 - [ ] `Phase 0: Mock` 完了後は必ず停止し、ユーザー確認が終わるまで次フェーズに進まない
 
@@ -286,12 +286,12 @@
 
 ---
 
-## Phase 5: セッション化と local gemma4
+## Phase 5: セッション化と `gpt-5-nano`
 
 ### 目的
 
 - [x] 生イベントから人が読める作業単位を作る
-- [x] local `gemma4` を使った通常整理処理を組み込む
+- [x] `gpt-5-nano` を使った通常整理処理を組み込む
 
 ### 実装対象
 
@@ -305,12 +305,12 @@
 
 - [x] 近接イベントが同一 session に束ねられるテスト
 - [x] idle やアプリ切り替えで session が分かれるテスト
-- [x] local `gemma4` 結果の保存テスト
+- [x] `gpt-5-nano` 結果の保存テスト
 - [x] local AI 不可時にルールベース fallback へ落ちるテスト
 
 ### 実装メモ
 
-- [x] local `gemma4` は整理用であり、日次・週次まとめには使わない
+- [x] `gpt-5-nano` は整理用であり、日次・週次まとめには使わない
 - [x] LLM 入力は必要最小限の構造化データに絞る
 - [x] fallback 時も UI が壊れない形にする
 - [x] v0.1 ではセッション手動分割を持たず、自動セッション化の安定性を優先する
@@ -318,7 +318,7 @@
 ### 完了条件
 
 - [x] session タイトルとカテゴリが生成される
-- [x] local `gemma4` が通常整理処理に使われる
+- [x] `gpt-5-nano` が通常整理処理に使われる
 - [x] fallback 時も最低限の session 生成が成立する
 
 ### 自己レビュー項目
@@ -551,7 +551,7 @@
 - [x] 除外アプリ / 除外ドメインを `PrivacyRule` として保存できるようにする
 - [x] URL 保存粒度を `default_url_storage` rule に正規化して保存する
 - [x] AI 利用範囲を `default_ai_handling` rule に正規化して保存する
-- [x] desktop が起動時と 30 秒 sync tick ごとに server の device / privacy 設定を取り込む
+- [x] desktop が起動時と 10 分 sync tick ごとに server の device / privacy 設定を取り込む
 - [x] desktop が purge request を処理し、local spool と `sync_state.json` を更新して ack する
 - [x] `today / day / search` で session を非表示にできる
 - [x] `day / search` で hidden session を再表示できる

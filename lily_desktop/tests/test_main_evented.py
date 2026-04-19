@@ -240,7 +240,7 @@ def test_start_action_log_sync_timer_uses_config_interval_when_enabled():
         config=SimpleNamespace(
             activity_capture=SimpleNamespace(
                 enabled=True,
-                sync_interval_seconds=30,
+                sync_interval_seconds=600,
             )
         ),
         _action_log_sync_timer=timer,
@@ -248,7 +248,7 @@ def test_start_action_log_sync_timer_uses_config_interval_when_enabled():
 
     main_mod.App.start_action_log_sync_timer(app)
 
-    assert timer.started_with == [30000]
+    assert timer.started_with == [600000]
 
 
 def test_start_action_log_sync_timer_is_noop_when_activity_capture_disabled():
