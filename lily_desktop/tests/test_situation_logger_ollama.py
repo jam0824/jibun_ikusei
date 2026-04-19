@@ -86,11 +86,19 @@ async def test_generate_summary_uses_ollama_chat_api(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_generate_summary_returns_none_for_truncated_ollama_content(tmp_path, monkeypatch):
+async def test_generate_summary_retries_ollama_and_uses_partial_text_if_still_truncated(
+    tmp_path, monkeypatch
+):
     import core.situation_logger as mod
 
     fake_client = _FakeAsyncClient(
         [
+            _FakeResponse(
+                {
+                    "message": {"content": ""},
+                    "done_reason": "length",
+                }
+            ),
             _FakeResponse(
                 {
                     "message": {"content": "途中までの要約"},
@@ -119,4 +127,8 @@ async def test_generate_summary_returns_none_for_truncated_ollama_content(tmp_pa
 
     result = await logger_instance.generate_summary()
 
-    assert result is None
+    assert result is not None
+    assert result["summary"] == "途中までの要約"
+    assert len(fake_client.calls) == 2
+    assert fake_client.calls[0]["json"]["options"]["num_predict"] == 1600
+    assert fake_client.calls[1]["json"]["options"]["num_predict"] == 3200

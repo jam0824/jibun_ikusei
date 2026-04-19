@@ -25,6 +25,7 @@ JST = timezone(timedelta(hours=9))
 _BASE_DIR = Path(__file__).resolve().parent.parent
 _LOG_DIR = _BASE_DIR / "logs" / "situations"
 _DEFAULT_SUMMARY_MAX_COMPLETION_TOKENS = 1600
+_SUMMARY_TRUNCATION_MAX_RETRIES = 1
 _SUMMARY_SYSTEM_PROMPT = (
     "あなたは状況ログを要約するアシスタントです。"
     "渡された30分ぶんの記録から、ユーザーの行動や状況を日本語で3文以内に簡潔に要約してください。"
@@ -85,16 +86,17 @@ class SituationLogger:
         )
 
     async def generate_summary(self) -> dict | None:
-        if not self._pending_records:
+        records = list(self._pending_records)
+        if not records:
             logger.info("No pending situation records for summary")
             return None
 
-        records_text = self._format_records_for_summary()
-        details = self._extract_details()
-        self._pending_records.clear()
+        records_text = self._format_records_for_summary(records)
+        details = self._extract_details(records)
 
         try:
             summary_text = await self._call_summary_ai(records_text)
+            del self._pending_records[: len(records)]
             logger.info("Generated 30-minute summary: %s", summary_text[:100])
             now = datetime.now(JST).strftime("%Y-%m-%dT%H:%M:%S+09:00")
             return {
@@ -106,12 +108,12 @@ class SituationLogger:
             logger.exception("Failed to generate 30-minute summary")
             return None
 
-    def _extract_details(self) -> dict:
+    def _extract_details(self, records: list[SituationRecord]) -> dict:
         camera_summaries: list[str] = []
         desktop_summaries: list[str] = []
         active_apps: list[str] = []
 
-        for record in self._pending_records:
+        for record in records:
             if record.camera_summary:
                 camera_summaries.append(record.camera_summary)
             if record.desktop_summary:
@@ -125,9 +127,9 @@ class SituationLogger:
             "active_apps": active_apps,
         }
 
-    def _format_records_for_summary(self) -> str:
+    def _format_records_for_summary(self, records: list[SituationRecord]) -> str:
         lines: list[str] = []
-        for record in self._pending_records:
+        for record in records:
             parts = [f"[{record.timestamp}]"]
             if record.camera_summary:
                 parts.append(f"カメラ: {record.camera_summary}")
@@ -139,6 +141,58 @@ class SituationLogger:
         return "\n".join(lines)
 
     async def _call_summary_ai(self, records_text: str) -> str:
+        max_completion_tokens = self._summary_max_completion_tokens
+        partial_content = ""
+
+        for attempt in range(_SUMMARY_TRUNCATION_MAX_RETRIES + 1):
+            payload = await self._request_summary_payload(
+                records_text,
+                max_completion_tokens=max_completion_tokens,
+            )
+            finish_reason = extract_chat_finish_reason(self._summary_provider, payload)
+            content = extract_chat_response_text(self._summary_provider, payload).strip()
+
+            if finish_reason != "length":
+                if content:
+                    return content
+                raise Exception("Summary response was empty.")
+
+            if content:
+                partial_content = content
+
+            if attempt < _SUMMARY_TRUNCATION_MAX_RETRIES:
+                next_max_completion_tokens = max_completion_tokens * 2
+                logger.warning(
+                    "Summary response was truncated; retrying with a larger token budget: "
+                    "attempt=%d max_completion_tokens=%d next_max_completion_tokens=%d "
+                    "content_length=%d",
+                    attempt + 1,
+                    max_completion_tokens,
+                    next_max_completion_tokens,
+                    len(content),
+                )
+                max_completion_tokens = next_max_completion_tokens
+                continue
+
+            if partial_content:
+                logger.warning(
+                    "Summary response remained truncated after retry; using partial text: "
+                    "max_completion_tokens=%d content_length=%d",
+                    max_completion_tokens,
+                    len(partial_content),
+                )
+                return partial_content
+
+            raise Exception("Summary response was truncated before text was returned.")
+
+        raise Exception("Summary response retry loop exited unexpectedly.")
+
+    async def _request_summary_payload(
+        self,
+        records_text: str,
+        *,
+        max_completion_tokens: int,
+    ) -> dict:
         request = build_text_chat_request(
             provider=self._summary_provider,
             api_key=self._openai_api_key,
@@ -146,7 +200,7 @@ class SituationLogger:
             base_url=self._summary_base_url,
             system_prompt=_SUMMARY_SYSTEM_PROMPT,
             user_text=records_text,
-            max_completion_tokens=self._summary_max_completion_tokens,
+            max_completion_tokens=max_completion_tokens,
         )
         if self._summary_provider == "ollama":
             request.body["think"] = False
@@ -161,11 +215,4 @@ class SituationLogger:
         if not resp.is_success:
             raise Exception(f"Summary API failed: {resp.status_code} - {resp.text[:200]}")
 
-        payload = resp.json()
-        finish_reason = extract_chat_finish_reason(self._summary_provider, payload)
-        if finish_reason == "length":
-            raise Exception("Summary response was truncated before text was returned.")
-        content = extract_chat_response_text(self._summary_provider, payload)
-        if content:
-            return content
-        raise Exception("Summary response was empty.")
+        return resp.json()

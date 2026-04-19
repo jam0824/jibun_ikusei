@@ -144,3 +144,219 @@ async def test_generate_summary_uses_openai_default_max_completion_tokens(tmp_pa
     request = fake_client.calls[0]
     assert request["url"] == "https://api.openai.com/v1/chat/completions"
     assert request["json"]["max_completion_tokens"] == 1600
+
+
+@pytest.mark.asyncio
+async def test_generate_summary_retries_openai_with_larger_token_budget_when_truncated(
+    tmp_path, monkeypatch
+):
+    import core.situation_logger as mod
+
+    fake_client = _FakeAsyncClient(
+        [
+            _FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {"content": None},
+                            "finish_reason": "length",
+                        }
+                    ]
+                }
+            ),
+            _FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {"content": "再試行後の30分要約です"},
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr(mod, "_LOG_DIR", tmp_path)
+    monkeypatch.setattr(mod.httpx, "AsyncClient", lambda timeout=30.0: fake_client)
+
+    logger_instance = SituationLogger(
+        openai_api_key="test-key",
+        summary_provider="openai",
+        summary_model="gpt-5-nano",
+    )
+    logger_instance.record(
+        SituationRecord(
+            timestamp="2026-03-29 12:00:00",
+            camera_summary="外は晴れ",
+            desktop_summary="コーディング中",
+            active_app="VSCode",
+        )
+    )
+
+    result = await logger_instance.generate_summary()
+
+    assert result is not None
+    assert result["summary"] == "再試行後の30分要約です"
+    assert len(fake_client.calls) == 2
+    assert fake_client.calls[0]["json"]["max_completion_tokens"] == 1600
+    assert fake_client.calls[1]["json"]["max_completion_tokens"] == 3200
+
+
+@pytest.mark.asyncio
+async def test_generate_summary_uses_partial_openai_text_after_retry_if_still_truncated(
+    tmp_path, monkeypatch
+):
+    import core.situation_logger as mod
+
+    fake_client = _FakeAsyncClient(
+        [
+            _FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {"content": None},
+                            "finish_reason": "length",
+                        }
+                    ]
+                }
+            ),
+            _FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {"content": "途中までの30分要約"},
+                            "finish_reason": "length",
+                        }
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr(mod, "_LOG_DIR", tmp_path)
+    monkeypatch.setattr(mod.httpx, "AsyncClient", lambda timeout=30.0: fake_client)
+
+    logger_instance = SituationLogger(
+        openai_api_key="test-key",
+        summary_provider="openai",
+        summary_model="gpt-5-nano",
+    )
+    logger_instance.record(
+        SituationRecord(
+            timestamp="2026-03-29 12:00:00",
+            camera_summary="外は晴れ",
+            desktop_summary="コーディング中",
+            active_app="VSCode",
+        )
+    )
+
+    result = await logger_instance.generate_summary()
+
+    assert result is not None
+    assert result["summary"] == "途中までの30分要約"
+    assert len(fake_client.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_generate_summary_keeps_pending_records_after_failure_and_retries_next_time(
+    tmp_path, monkeypatch
+):
+    import core.situation_logger as mod
+
+    fake_client = _FakeAsyncClient(
+        [
+            _FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {"content": None},
+                            "finish_reason": "length",
+                        }
+                    ]
+                }
+            ),
+            _FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {"content": None},
+                            "finish_reason": "length",
+                        }
+                    ]
+                }
+            ),
+            _FakeResponse(
+                {
+                    "choices": [
+                        {
+                            "message": {"content": "次回リトライで成功した要約"},
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+            ),
+        ]
+    )
+    monkeypatch.setattr(mod, "_LOG_DIR", tmp_path)
+    monkeypatch.setattr(mod.httpx, "AsyncClient", lambda timeout=30.0: fake_client)
+
+    logger_instance = SituationLogger(
+        openai_api_key="test-key",
+        summary_provider="openai",
+        summary_model="gpt-5-nano",
+    )
+    logger_instance.record(
+        SituationRecord(
+            timestamp="2026-03-29 12:00:00",
+            camera_summary="外は晴れ",
+            desktop_summary="コーディング中",
+            active_app="VSCode",
+        )
+    )
+
+    first_result = await logger_instance.generate_summary()
+
+    assert first_result is None
+    assert len(logger_instance._pending_records) == 1
+
+    second_result = await logger_instance.generate_summary()
+
+    assert second_result is not None
+    assert second_result["summary"] == "次回リトライで成功した要約"
+    assert len(logger_instance._pending_records) == 0
+
+
+@pytest.mark.asyncio
+async def test_generate_summary_removes_only_records_in_the_current_snapshot_on_success(
+    tmp_path, monkeypatch
+):
+    import core.situation_logger as mod
+
+    monkeypatch.setattr(mod, "_LOG_DIR", tmp_path)
+    logger_instance = SituationLogger(
+        openai_api_key="test-key",
+        summary_provider="openai",
+        summary_model="gpt-5-nano",
+    )
+    logger_instance.record(
+        SituationRecord(
+            timestamp="2026-03-29 12:00:00",
+            camera_summary="最初の記録",
+        )
+    )
+
+    async def _fake_call_summary_ai(records_text: str) -> str:
+        logger_instance.record(
+            SituationRecord(
+                timestamp="2026-03-29 12:05:00",
+                camera_summary="生成中に追加された記録",
+            )
+        )
+        return "30分要約です"
+
+    monkeypatch.setattr(logger_instance, "_call_summary_ai", _fake_call_summary_ai)
+
+    result = await logger_instance.generate_summary()
+
+    assert result is not None
+    assert len(logger_instance._pending_records) == 1
+    assert logger_instance._pending_records[0].camera_summary == "生成中に追加された記録"
