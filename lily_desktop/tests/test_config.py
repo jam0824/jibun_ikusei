@@ -398,6 +398,8 @@ def test_camera_provider_defaults_to_openai_with_local_ollama_base_urls(tmp_path
     assert config.camera.analysis_base_url == "http://127.0.0.1:11434"
     assert config.camera.summary_provider == "openai"
     assert config.camera.summary_base_url == "http://127.0.0.1:11434"
+    assert config.camera.summary_model == "gpt-5-nano"
+    assert config.camera.summary_max_completion_tokens == 1600
 
 
 def test_camera_provider_settings_are_loaded_from_config(tmp_path):
@@ -409,7 +411,8 @@ def test_camera_provider_settings_are_loaded_from_config(tmp_path):
         "  analysis_model: gemma4:e4b\n"
         "  summary_provider: ollama\n"
         "  summary_base_url: http://127.0.0.1:11434\n"
-        "  summary_model: gemma4:e4b\n",
+        "  summary_model: gemma4:e4b\n"
+        "  summary_max_completion_tokens: 2048\n",
         encoding="utf-8",
     )
 
@@ -421,6 +424,7 @@ def test_camera_provider_settings_are_loaded_from_config(tmp_path):
     assert config.camera.summary_provider == "ollama"
     assert config.camera.summary_base_url == "http://127.0.0.1:11434"
     assert config.camera.summary_model == "gemma4:e4b"
+    assert config.camera.summary_max_completion_tokens == 2048
 
 
 def test_desktop_provider_settings_are_loaded_from_config(tmp_path):

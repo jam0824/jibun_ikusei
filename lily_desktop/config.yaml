@@ -21,8 +21,8 @@ display:
   lily_scale: 0.3
   haruka_scale: 0.65
   user_balloon_display_seconds: 15.0
-  window_x: -1927
-  window_y: 2515
+  window_x: -1913
+  window_y: 2512
 voice:
   enabled: true
   pause_during_tts: false
@@ -52,7 +52,7 @@ voice:
     - rx
   speaker_verification_enabled: true
   speaker_profile_path: speaker_profile.pt
-  speaker_verification_threshold: 0.36
+  speaker_verification_threshold: 0.31
   speaker_verification_recording_enabled: true
   speaker_verification_recording_threshold: 0.25
 camera:
@@ -62,9 +62,10 @@ camera:
   analysis_provider: ollama
   analysis_base_url: http://127.0.0.1:11434
   analysis_model: gemma4:e4b
-  summary_provider: ollama
+  summary_provider: openai
   summary_base_url: http://127.0.0.1:11434
-  summary_model: gemma4:e4b
+  summary_model: gpt-5-nano
+  summary_max_completion_tokens: 1600
   summary_interval_seconds: 1800
 talk_seeds:
   interest_topics:

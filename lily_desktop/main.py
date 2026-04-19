@@ -155,6 +155,7 @@ class App:
             summary_provider=self.config.camera.summary_provider,
             summary_base_url=self.config.camera.summary_base_url,
             summary_model=self.config.camera.summary_model,
+            summary_max_completion_tokens=self.config.camera.summary_max_completion_tokens,
         )
         self.http_bridge: LocalHttpBridge | None = None
         register_background_event_handlers(
