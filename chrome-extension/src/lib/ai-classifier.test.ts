@@ -60,7 +60,7 @@ describe('ai-classifier', () => {
     expect(options.method).toBe('POST')
 
     const body = JSON.parse(options.body as string)
-    expect(body.model).toBe('gpt-5.4')
+    expect(body.model).toBe('gpt-5.4-nano')
     expect(body.text?.format?.type).toBe('json_schema')
   })
 

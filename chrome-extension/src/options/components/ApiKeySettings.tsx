@@ -46,7 +46,7 @@ export function ApiKeySettings({ settings, onSave }: Props) {
       const body =
         provider === 'openai'
           ? JSON.stringify({
-              model: 'gpt-5.4',
+              model: 'gpt-5.4-nano',
               input: [
                 {
                   role: 'system',
@@ -110,7 +110,7 @@ export function ApiKeySettings({ settings, onSave }: Props) {
             checked={provider === 'openai'}
             onChange={() => setProvider('openai')}
           />
-          OpenAI (gpt-5.4)
+          OpenAI (gpt-5.4-nano)
         </label>
         <label style={{ marginLeft: 16 }}>
           <input
