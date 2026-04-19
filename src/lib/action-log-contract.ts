@@ -88,6 +88,14 @@ export const activitySessionSchema = z
   })
   .strict() satisfies z.ZodType<ActivitySession>
 
+const dailyActivityLogSectionLastFailedAtSchema = z
+  .object({
+    summary: jstRfc3339Schema.optional(),
+    questSummary: jstRfc3339Schema.optional(),
+    healthSummary: jstRfc3339Schema.optional(),
+  })
+  .partial()
+
 export const dailyActivityLogSchema = z
   .object({
     id: z.string().min(1),
@@ -99,6 +107,7 @@ export const dailyActivityLogSchema = z
     noteIds: z.array(z.string().min(1)),
     reviewQuestions: z.array(z.string().min(1)),
     generatedAt: jstRfc3339Schema,
+    sectionLastFailedAt: dailyActivityLogSectionLastFailedAtSchema.optional(),
   })
   .passthrough()
   .transform((log) => ({

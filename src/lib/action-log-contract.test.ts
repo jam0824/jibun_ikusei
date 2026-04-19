@@ -152,6 +152,41 @@ describe('action-log-contract', () => {
     })
   })
 
+  it('sectionLastFailedAt を保持したまま DailyActivityLog を正規化する', () => {
+    expect(
+      dailyActivityLogSchema.parse({
+        id: 'daily_2026-04-17',
+        dateKey: '2026-04-17',
+        mainThemes: [],
+        noteIds: [],
+        reviewQuestions: [],
+        generatedAt: '2026-04-17T22:00:00+09:00',
+        sectionLastFailedAt: {
+          summary: '2026-04-17T21:00:00+09:00',
+          healthSummary: '2026-04-17T21:05:00+09:00',
+        },
+      }),
+    ).toMatchObject({
+      sectionLastFailedAt: {
+        summary: '2026-04-17T21:00:00+09:00',
+        healthSummary: '2026-04-17T21:05:00+09:00',
+      },
+    })
+  })
+
+  it('sectionLastFailedAt が未定義でも DailyActivityLog を受け付ける', () => {
+    const result = dailyActivityLogSchema.parse({
+      id: 'daily_2026-04-17',
+      dateKey: '2026-04-17',
+      mainThemes: [],
+      noteIds: [],
+      reviewQuestions: [],
+      generatedAt: '2026-04-17T22:00:00+09:00',
+    })
+
+    expect(result.sectionLastFailedAt).toBeUndefined()
+  })
+
   it('resolves privacy rules by window_title > domain > app > storage_mode priority', () => {
     const outcome = resolvePrivacyRuleOutcome([
       {

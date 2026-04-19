@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from ai.openai_client import request_openai_json
@@ -13,6 +15,10 @@ JST = timezone(timedelta(hours=9))
 OPENAI_MODEL = "gpt-5.4"
 DAILY_ACTIVITY_LOG_MAX_OUTPUT_TOKENS = 1600
 WEEKLY_ACTIVITY_REVIEW_MAX_OUTPUT_TOKENS = 1600
+DAILY_FAILURE_COOLDOWN = timedelta(hours=6)
+DEFAULT_BACKFILL_STATE_PATH = (
+    Path(__file__).resolve().parent.parent / "logs" / "action_logs" / "daily_log_backfill_state.json"
+)
 
 _DAILY_ACTIVITY_LOG_SUMMARY_SCHEMA = {
     "type": "object",
@@ -414,17 +420,50 @@ def _is_daily_log_complete(existing: dict[str, Any] | None) -> bool:
 
 
 def _resolve_daily_sections(
-    existing: dict[str, Any] | None, *, force: bool
+    existing: dict[str, Any] | None,
+    *,
+    force: bool,
+    now: datetime | None = None,
 ) -> list[str]:
     if force:
         return list(_DAILY_SECTION_ORDER)
     if existing is None:
         return list(_DAILY_SECTION_ORDER)
-    return [
-        section
-        for section in _DAILY_SECTION_ORDER
-        if not _has_text(existing.get(section))
-    ]
+
+    reference = _normalize_jst(now)
+    last_failed_at = existing.get("sectionLastFailedAt") or {}
+    resolved: list[str] = []
+    for section in _DAILY_SECTION_ORDER:
+        if _has_text(existing.get(section)):
+            continue
+        raw_last_failed = last_failed_at.get(section) if isinstance(last_failed_at, dict) else None
+        if _has_text(raw_last_failed):
+            try:
+                last_failed = _normalize_jst(_parse_datetime(str(raw_last_failed)))
+            except ValueError:
+                last_failed = None
+            if last_failed is not None and reference - last_failed < DAILY_FAILURE_COOLDOWN:
+                continue
+        resolved.append(section)
+    return resolved
+
+
+def _merge_section_last_failed_at(
+    existing: dict[str, Any] | None,
+    updates: dict[str, str | None],
+) -> dict[str, str]:
+    source = (existing or {}).get("sectionLastFailedAt") or {}
+    merged: dict[str, str] = {
+        str(key): str(value)
+        for key, value in source.items()
+        if isinstance(source, dict) and _has_text(value)
+    }
+    for section, value in updates.items():
+        if value is None:
+            merged.pop(section, None)
+        else:
+            merged[section] = value
+    return merged
 
 
 def _build_daily_log_payload(
@@ -435,6 +474,7 @@ def _build_daily_log_payload(
     quest_result: dict[str, Any] | None,
     health_result: dict[str, Any] | None,
     generated_at: datetime,
+    failure_updates: dict[str, str | None] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "id": (existing or {}).get("id", f"daily_{date_key}"),
@@ -477,6 +517,10 @@ def _build_daily_log_payload(
     if _has_text(health_summary_text):
         payload["healthSummary"] = health_summary_text
 
+    merged_failures = _merge_section_last_failed_at(existing, failure_updates or {})
+    if merged_failures:
+        payload["sectionLastFailedAt"] = merged_failures
+
     return payload
 
 
@@ -491,13 +535,58 @@ class ActionLogSummaryBackfillService:
         api_client,
         openai_api_key: str,
         logger_instance: logging.Logger | None = None,
+        state_path: Path | str | None = None,
     ) -> None:
         self.api_client = api_client
         self.openai_api_key = openai_api_key
         self._logger = logger_instance or logger
+        self._state_path: Path = (
+            Path(state_path) if state_path is not None else DEFAULT_BACKFILL_STATE_PATH
+        )
+
+    def _load_last_backfill_date(self) -> str | None:
+        try:
+            raw = self._state_path.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            return None
+        except OSError:
+            self._logger.exception(
+                "Failed to read daily backfill state from %s", self._state_path
+            )
+            return None
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            self._logger.warning(
+                "Daily backfill state at %s is not valid JSON", self._state_path
+            )
+            return None
+        value = data.get("lastBackfillDate") if isinstance(data, dict) else None
+        return value if _has_text(value) else None
+
+    def _save_last_backfill_date(self, date_key: str) -> None:
+        try:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            self._state_path.write_text(
+                json.dumps({"lastBackfillDate": date_key}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+        except OSError:
+            self._logger.exception(
+                "Failed to persist daily backfill state to %s", self._state_path
+            )
 
     async def backfill_missing_summaries(self, *, now: datetime | None = None) -> None:
         reference = _normalize_jst(now)
+        today_key = _date_key(reference)
+
+        last_backfill_date = self._load_last_backfill_date()
+        if last_backfill_date == today_key:
+            self._logger.info(
+                "Skipping daily backfill: already ran on %s (JST)", today_key
+            )
+            return
+
         yesterday_key = _date_key(reference - timedelta(days=1))
         previous_week_key = _previous_week_key(reference)
 
@@ -510,6 +599,8 @@ class ActionLogSummaryBackfillService:
             week_key=previous_week_key,
             generated_at=reference,
         )
+
+        self._save_last_backfill_date(today_key)
 
     async def regenerate_previous_day_daily_log(
         self, *, now: datetime | None = None
@@ -533,7 +624,9 @@ class ActionLogSummaryBackfillService:
         if not force and _is_daily_log_complete(existing):
             return {"completed_sections": [], "failed_sections": []}
 
-        target_sections = _resolve_daily_sections(existing, force=force)
+        target_sections = _resolve_daily_sections(
+            existing, force=force, now=generated_at
+        )
         if not target_sections:
             return {"completed_sections": [], "failed_sections": []}
         if not self.openai_api_key:
@@ -688,7 +781,29 @@ class ActionLogSummaryBackfillService:
             elif section == "healthSummary":
                 health_result = result
 
-        if not completed_sections:
+        failure_updates: dict[str, str | None] = {}
+        for section in completed_sections:
+            failure_updates[section] = None
+        failure_timestamp = _to_jst_iso(generated_at)
+        for section in failed_sections:
+            failure_updates[section] = failure_timestamp
+
+        merged_failures = _merge_section_last_failed_at(existing, failure_updates)
+        existing_failures = (
+            (existing or {}).get("sectionLastFailedAt") or {} if existing else {}
+        )
+        existing_failures_clean: dict[str, str] = (
+            {
+                str(key): str(value)
+                for key, value in existing_failures.items()
+                if isinstance(existing_failures, dict) and _has_text(value)
+            }
+            if isinstance(existing_failures, dict)
+            else {}
+        )
+        failures_changed = merged_failures != existing_failures_clean
+
+        if not completed_sections and not failures_changed:
             return {
                 "completed_sections": completed_sections,
                 "failed_sections": failed_sections,
@@ -702,6 +817,7 @@ class ActionLogSummaryBackfillService:
                 quest_result=quest_result,
                 health_result=health_result,
                 generated_at=generated_at,
+                failure_updates=failure_updates,
             )
         )
 
