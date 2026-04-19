@@ -71,7 +71,9 @@
       "Bash(VITE_COGNITO_USER_POOL_ID=dummy VITE_COGNITO_CLIENT_ID=dummy npx vitest run)",
       "Bash(python -m pytest lily_desktop/tests/test_action_log_summary_backfill_service.py -v)",
       "Bash(ls venv/Scripts/python.exe)",
-      "Bash(ls .venv/Scripts/python.exe)"
+      "Bash(ls .venv/Scripts/python.exe)",
+      "Bash(gh pr create --base dev2 --title DailyActivityLog生成の重複OpenAI呼び出しを抑制 --body ' *)",
+      "Bash(gh auth *)"
     ]
   }
 }
