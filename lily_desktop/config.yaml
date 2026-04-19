@@ -62,9 +62,9 @@ camera:
   analysis_provider: ollama
   analysis_base_url: http://127.0.0.1:11434
   analysis_model: gemma4:e4b
-  summary_provider: ollama
+  summary_provider: openai
   summary_base_url: http://127.0.0.1:11434
-  summary_model: gemma4:e4b
+  summary_model: gpt-5-nano
   summary_interval_seconds: 1800
 talk_seeds:
   interest_topics:

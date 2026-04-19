@@ -318,7 +318,7 @@ class CameraConfig:
     device_name: str = ""  # 選択されたカメラデバイス名（空=デフォルト）
     interval_seconds: int = 180  # キャプチャ間隔（秒）— デフォルト3分
     analysis_model: str = "gpt-5.4"  # カメラ画像分析AIモデル
-    summary_model: str = "gpt-5.4"  # 30分要約AIモデル
+    summary_model: str = "gpt-5-nano"  # 30分要約AIモデル
     summary_interval_seconds: int = 1800  # サーバー要約間隔（秒）— デフォルト30分
 
 
@@ -332,7 +332,7 @@ class LegacyCameraConfig:
     analysis_model: str = "gpt-5.4"
     summary_provider: str = "openai"
     summary_base_url: str = DEFAULT_OLLAMA_BASE_URL
-    summary_model: str = "gpt-5.4"
+    summary_model: str = "gpt-5-nano"
     summary_interval_seconds: int = 1800
 
 
