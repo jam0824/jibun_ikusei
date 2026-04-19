@@ -311,12 +311,157 @@ export function normalizeSkillName(name: string) {
   return name.trim().toLowerCase().replace(/\s+/g, '')
 }
 
-export function normalizeQuestTitleForDuplicateKey(title: string) {
-  return title.trim()
+function isValidDateValue(value: unknown): value is string {
+  return typeof value === 'string' && !Number.isNaN(new Date(value).getTime())
+}
+
+function isQuestSource(value: unknown): value is Quest['source'] {
+  return value === 'manual' || value === 'browsing' || value === 'seed' || value === 'system'
+}
+
+function isQuestTypeValue(value: unknown): value is Quest['questType'] {
+  return value === 'repeatable' || value === 'one_time'
+}
+
+function isSkillMappingModeValue(value: unknown): value is Quest['skillMappingMode'] {
+  return value === 'fixed' || value === 'ai_auto' || value === 'ask_each_time'
+}
+
+function isQuestStatusValue(value: unknown): value is Quest['status'] {
+  return value === 'active' || value === 'completed' || value === 'archived'
+}
+
+function isPrivacyModeValue(value: unknown): value is Quest['privacyMode'] {
+  return value === 'normal' || value === 'no_ai'
+}
+
+function isBrowsingQuestTypeValue(value: unknown): value is Quest['browsingType'] {
+  return value === 'good' || value === 'bad'
+}
+
+function isSkillSourceValue(value: unknown): value is Skill['source'] {
+  return value === 'manual' || value === 'ai' || value === 'seed'
+}
+
+function isSkillStatusValue(value: unknown): value is Skill['status'] {
+  return value === 'active' || value === 'merged'
+}
+
+function sanitizeQuestRecord(quest: Partial<Quest>): Quest | null {
+  if (typeof quest.id !== 'string' || quest.id.length === 0) {
+    return null
+  }
+
+  const title = typeof quest.title === 'string' ? quest.title.trim() : ''
+  if (!title) {
+    return null
+  }
+
+  const createdAtFallback = isValidDateValue(quest.createdAt)
+    ? quest.createdAt
+    : isValidDateValue(quest.updatedAt)
+      ? quest.updatedAt
+      : nowIso()
+  const updatedAt = isValidDateValue(quest.updatedAt) ? quest.updatedAt : createdAtFallback
+  const createdAt = isValidDateValue(quest.createdAt) ? quest.createdAt : updatedAt
+  const questType = isQuestTypeValue(quest.questType) ? quest.questType : 'repeatable'
+
+  return {
+    id: quest.id,
+    title,
+    description: typeof quest.description === 'string' ? quest.description : '',
+    questType,
+    isDaily: questType === 'repeatable' && quest.isDaily === true ? true : undefined,
+    xpReward: typeof quest.xpReward === 'number' && Number.isFinite(quest.xpReward) ? quest.xpReward : 0,
+    category: typeof quest.category === 'string' ? quest.category : undefined,
+    skillMappingMode: isSkillMappingModeValue(quest.skillMappingMode)
+      ? quest.skillMappingMode
+      : typeof quest.fixedSkillId === 'string'
+        ? 'fixed'
+        : 'ai_auto',
+    fixedSkillId: typeof quest.fixedSkillId === 'string' ? quest.fixedSkillId : undefined,
+    defaultSkillId: typeof quest.defaultSkillId === 'string' ? quest.defaultSkillId : undefined,
+    cooldownMinutes:
+      typeof quest.cooldownMinutes === 'number' && Number.isFinite(quest.cooldownMinutes)
+        ? quest.cooldownMinutes
+        : undefined,
+    dailyCompletionCap:
+      typeof quest.dailyCompletionCap === 'number' && Number.isFinite(quest.dailyCompletionCap)
+        ? quest.dailyCompletionCap
+        : undefined,
+    dueAt: isValidDateValue(quest.dueAt) ? quest.dueAt : undefined,
+    reminderTime: typeof quest.reminderTime === 'string' ? quest.reminderTime : undefined,
+    status: isQuestStatusValue(quest.status) ? quest.status : 'active',
+    privacyMode: isPrivacyModeValue(quest.privacyMode) ? quest.privacyMode : 'normal',
+    pinned: quest.pinned === true,
+    source: isQuestSource(quest.source) ? quest.source : undefined,
+    systemKey: quest.systemKey === 'meal_register' ? quest.systemKey : undefined,
+    domain: typeof quest.domain === 'string' ? quest.domain : undefined,
+    browsingCategory: typeof quest.browsingCategory === 'string' ? quest.browsingCategory : undefined,
+    browsingType: isBrowsingQuestTypeValue(quest.browsingType) ? quest.browsingType : undefined,
+    createdAt,
+    updatedAt,
+  }
+}
+
+function sanitizeQuestRecords(quests: Quest[]) {
+  return quests
+    .map((quest) => sanitizeQuestRecord(quest))
+    .filter((quest): quest is Quest => Boolean(quest))
+}
+
+function sanitizeSkillRecord(skill: Partial<Skill>): Skill | null {
+  if (typeof skill.id !== 'string' || skill.id.length === 0) {
+    return null
+  }
+
+  const createdAtFallback = isValidDateValue(skill.createdAt)
+    ? skill.createdAt
+    : isValidDateValue(skill.updatedAt)
+      ? skill.updatedAt
+      : nowIso()
+  const updatedAt = isValidDateValue(skill.updatedAt) ? skill.updatedAt : createdAtFallback
+  const createdAt = isValidDateValue(skill.createdAt) ? skill.createdAt : updatedAt
+  const fallbackName =
+    typeof skill.mergedIntoSkillId === 'string' && skill.mergedIntoSkillId.length > 0
+      ? skill.mergedIntoSkillId
+      : '統合済みスキル'
+  const name = typeof skill.name === 'string' && skill.name.trim().length > 0 ? skill.name.trim() : fallbackName
+
+  return {
+    id: skill.id,
+    name,
+    normalizedName:
+      typeof skill.normalizedName === 'string' && skill.normalizedName.length > 0
+        ? skill.normalizedName
+        : normalizeSkillName(name),
+    category: typeof skill.category === 'string' && skill.category.length > 0 ? skill.category : 'その他',
+    level: typeof skill.level === 'number' && Number.isFinite(skill.level) ? skill.level : 1,
+    totalXp: typeof skill.totalXp === 'number' && Number.isFinite(skill.totalXp) ? skill.totalXp : 0,
+    source: isSkillSourceValue(skill.source) ? skill.source : 'manual',
+    status: isSkillStatusValue(skill.status) ? skill.status : 'active',
+    mergedIntoSkillId:
+      typeof skill.mergedIntoSkillId === 'string' && skill.mergedIntoSkillId.length > 0
+        ? skill.mergedIntoSkillId
+        : undefined,
+    createdAt,
+    updatedAt,
+  }
+}
+
+function sanitizeSkillRecords(skills: Skill[]) {
+  return skills
+    .map((skill) => sanitizeSkillRecord(skill))
+    .filter((skill): skill is Skill => Boolean(skill))
+}
+
+export function normalizeQuestTitleForDuplicateKey(title?: string) {
+  return typeof title === 'string' ? title.trim() : ''
 }
 
 export function isLegacySeedQuestTitle(title: string) {
-  return LEGACY_SEED_QUEST_TITLES.has(normalizeQuestTitleForDuplicateKey(title))
+  const normalizedTitle = normalizeQuestTitleForDuplicateKey(title)
+  return normalizedTitle.length > 0 && LEGACY_SEED_QUEST_TITLES.has(normalizedTitle)
 }
 
 export function isSeedQuest(quest: Pick<Quest, 'title' | 'source'>) {
@@ -632,9 +777,9 @@ export function hydratePersistedState(partial?: Partial<PersistedAppState>): Per
           },
         }
       : createDefaultAiConfig(),
-    quests: partial?.quests ?? [],
+    quests: sanitizeQuestRecords(partial?.quests ?? []),
     completions: partial?.completions ?? [],
-    skills: partial?.skills ?? [],
+    skills: sanitizeSkillRecords(partial?.skills ?? []),
     personalSkillDictionary: partial?.personalSkillDictionary ?? [],
     assistantMessages: partial?.assistantMessages?.length ? partial.assistantMessages : empty.assistantMessages,
     meta: {
