@@ -148,11 +148,19 @@ function ManualNotePlaceholder() {
 
 type DailySectionStatus = 'idle' | 'loading' | 'failed'
 type DailySectionStatusMap = Record<DailyActivityLogSectionKey, DailySectionStatus>
+type DailySectionSource = 'db' | 'generated' | null
+type DailySectionSourceMap = Record<DailyActivityLogSectionKey, DailySectionSource>
 
 const DEFAULT_DAILY_SECTION_STATUSES: DailySectionStatusMap = {
   summary: 'idle',
   questSummary: 'idle',
   healthSummary: 'idle',
+}
+
+const DEFAULT_DAILY_SECTION_SOURCES: DailySectionSourceMap = {
+  summary: null,
+  questSummary: null,
+  healthSummary: null,
 }
 
 const DAILY_SECTION_MISSING_MESSAGE = 'まだ生成されていません。次回また生成します。'
@@ -174,6 +182,37 @@ function hasDailySectionState(statuses: DailySectionStatusMap) {
   return Object.values(statuses).some((status) => status !== 'idle')
 }
 
+function buildDailySectionSourceMap(
+  dailyLog: ActivityDayViewData['dailyLog'],
+): DailySectionSourceMap {
+  return {
+    summary: dailyLog?.summary?.trim() ? 'db' : null,
+    questSummary: dailyLog?.questSummary?.trim() ? 'db' : null,
+    healthSummary: dailyLog?.healthSummary?.trim() ? 'db' : null,
+  }
+}
+
+function DailySectionSourceBadge({
+  section,
+  source,
+}: {
+  section: DailyActivityLogSectionKey
+  source: DailySectionSource
+}) {
+  if (source === null) {
+    return null
+  }
+
+  return (
+    <Badge
+      tone={source === 'generated' ? 'success' : 'outline'}
+      data-testid={`daily-section-source-${section}`}
+    >
+      {source === 'generated' ? '新規作成' : 'DB取得'}
+    </Badge>
+  )
+}
+
 function getDailySectionContent(
   value: string | undefined,
   status: DailySectionStatus,
@@ -190,9 +229,11 @@ function getDailySectionContent(
 function DailySummaryCard({
   day,
   dailySectionStatuses,
+  dailySectionSources,
 }: {
   day: ActivityDayViewData
   dailySectionStatuses: DailySectionStatusMap
+  dailySectionSources: DailySectionSourceMap
 }) {
   if (!day.dailyLog && !hasDailySectionState(dailySectionStatuses)) {
     return (
@@ -222,19 +263,34 @@ function DailySummaryCard({
         </div>
         <div className="space-y-4">
           <div className="space-y-2">
-            <div className="text-sm font-semibold text-slate-900">その日のまとめ</div>
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-semibold text-slate-900">その日のまとめ</div>
+              <DailySectionSourceBadge section="summary" source={dailySectionSources.summary} />
+            </div>
             <p className="text-sm leading-6 text-slate-600">
               {getDailySectionContent(day.dailyLog?.summary, dailySectionStatuses.summary)}
             </p>
           </div>
           <div className="space-y-2">
-            <div className="text-sm font-semibold text-slate-900">クエストクリア状況まとめ</div>
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-semibold text-slate-900">クエストクリア状況まとめ</div>
+              <DailySectionSourceBadge
+                section="questSummary"
+                source={dailySectionSources.questSummary}
+              />
+            </div>
             <p className="text-sm leading-6 text-slate-600">
               {getDailySectionContent(day.dailyLog?.questSummary, dailySectionStatuses.questSummary)}
             </p>
           </div>
           <div className="space-y-2">
-            <div className="text-sm font-semibold text-slate-900">健康状況まとめ</div>
+            <div className="flex items-center gap-2">
+              <div className="text-sm font-semibold text-slate-900">健康状況まとめ</div>
+              <DailySectionSourceBadge
+                section="healthSummary"
+                source={dailySectionSources.healthSummary}
+              />
+            </div>
             <p className="text-sm leading-6 text-slate-600">
               {getDailySectionContent(day.dailyLog?.healthSummary, dailySectionStatuses.healthSummary)}
             </p>
@@ -545,6 +601,9 @@ function TodayOrDayView({
   const [dailySectionStatuses, setDailySectionStatuses] = useState<DailySectionStatusMap>(
     DEFAULT_DAILY_SECTION_STATUSES,
   )
+  const [dailySectionSources, setDailySectionSources] = useState<DailySectionSourceMap>(
+    DEFAULT_DAILY_SECTION_SOURCES,
+  )
   const previousDayGenerationAttemptRef = useRef<string | null>(null)
 
   useEffect(() => {
@@ -553,6 +612,7 @@ function TodayOrDayView({
     setError(undefined)
     setDayShell(null)
     setDailySectionStatuses(DEFAULT_DAILY_SECTION_STATUSES)
+    setDailySectionSources(DEFAULT_DAILY_SECTION_SOURCES)
     previousDayGenerationAttemptRef.current = null
     setSessionTimeline(createEmptyTimelinePageState<ActivitySession>())
     setEventTimeline(createEmptyTimelinePageState<RawEvent>())
@@ -561,6 +621,7 @@ function TodayOrDayView({
       .then((nextDayShell) => {
         if (active) {
           setDayShell(nextDayShell)
+          setDailySectionSources(buildDailySectionSourceMap(nextDayShell.dailyLog))
         }
       })
       .catch((cause) => {
@@ -612,6 +673,10 @@ function TodayOrDayView({
         setDailySectionStatuses((current) => ({
           ...current,
           [section]: 'idle',
+        }))
+        setDailySectionSources((current) => ({
+          ...current,
+          [section]: 'generated',
         }))
       },
       onSectionFailed: (section) => {
@@ -837,7 +902,11 @@ function TodayOrDayView({
         ) : null}
         {!isLoading && !error && day ? (
           <>
-            <DailySummaryCard day={day} dailySectionStatuses={dailySectionStatuses} />
+            <DailySummaryCard
+              day={day}
+              dailySectionStatuses={dailySectionStatuses}
+              dailySectionSources={dailySectionSources}
+            />
             <ManualNotePlaceholder />
             {viewMode === 'session' ? (
               <>

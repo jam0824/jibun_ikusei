@@ -583,6 +583,14 @@ describe('activity log routes', () => {
     expect(screen.queryByText('次に確認したい仕様はどこだったか。')).not.toBeInTheDocument()
   })
 
+  it('shows DB retrieval labels for daily summary sections loaded from persisted data', async () => {
+    renderApp('/records/activity/day/2026-04-17')
+    await settleApp()
+
+    expect(screen.getAllByText('DB取得')).toHaveLength(3)
+    expect(screen.queryByText('新規作成')).not.toBeInTheDocument()
+  })
+
   it('shows section-level generation messages while previous-day daily sections are being generated', async () => {
     let resolveSummary: ((value: { summary: string; mainThemes: string[]; reviewQuestions: string[] }) => void) | null = null
     let resolveQuest: ((value: { questSummary: string }) => void) | null = null
@@ -637,6 +645,29 @@ describe('activity log routes', () => {
 
     expect(screen.queryByText('生成中…')).not.toBeInTheDocument()
     expect(screen.getByText('リリィは、前日の調査の流れを静かに見つめていた。')).toBeInTheDocument()
+    expect(screen.getAllByText('新規作成')).toHaveLength(3)
+    expect(screen.queryByText('DB取得')).not.toBeInTheDocument()
+  })
+
+  it('shows mixed source labels when only missing previous-day sections are generated', async () => {
+    vi.mocked(api.getActionLogDailyActivityLog).mockImplementation(async (dateKey) => {
+      if (dateKey === '2026-04-16') {
+        return createDailyLog('2026-04-16', {
+          questSummary: undefined,
+          healthSummary: undefined,
+        })
+      }
+      if (dateKey === '2026-04-17') {
+        return createDailyLog('2026-04-17')
+      }
+      return null
+    })
+
+    renderApp('/records/activity/day/2026-04-16')
+    await settleApp()
+
+    expect(screen.getAllByText('DB取得')).toHaveLength(1)
+    expect(screen.getAllByText('新規作成')).toHaveLength(2)
   })
 
   it('renders same-day situation logs newest first only in session view', async () => {
