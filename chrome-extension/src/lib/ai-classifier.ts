@@ -10,7 +10,7 @@ import {
 } from '@ext/types/browsing'
 import type { ExtensionSettings } from '@ext/types/settings'
 
-const OPENAI_MODEL = 'gpt-5.4'
+const OPENAI_MODEL = 'gpt-5.4-nano'
 const GEMINI_MODEL = 'gemini-2.5-flash'
 const RETRYABLE_STATUS_CODES = new Set([408, 409, 429, 500, 502, 503, 504])
 

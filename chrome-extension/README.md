@@ -57,7 +57,7 @@ npm run build
 
 | 項目 | 説明 |
 |------|------|
-| OpenAI APIキー | `sk-...` で始まるキー。GPT-5.4 を使用 |
+| OpenAI APIキー | `sk-...` で始まるキー。GPT-5.4 nano を使用 |
 | Gemini APIキー | Google AI Studio で取得したキー。gemini-2.5-flash を使用 |
 
 どちらか一方を設定し、「保存」→「接続テスト」で動作確認できます。

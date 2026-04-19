@@ -41,6 +41,18 @@
       {
         "filename": "lily_sad_02.png",
         "description": "悲しそうな表情、目がうるうるしている、肩を落としている（バリエーション2）"
+      },
+      {
+        "filename": "lily_sad_03.png",
+        "description": "悲しそうな表情、目がうるうるしている、肩を落としている（バリエーション3）"
+      },
+      {
+        "filename": "lily_sad_04.png",
+        "description": "悲しそうな表情、目がうるうるしている、肩を落としている（バリエーション4）"
+      },
+      {
+        "filename": "lily_sad_05.png",
+        "description": "悲しそうな表情、目がうるうるしている、肩を落としている（バリエーション5）"
       }
     ],
     "fun": [
