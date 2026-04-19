@@ -18,6 +18,7 @@ DEFAULT_HTTP_BRIDGE_PORT = 18765
 DEFAULT_ACTIVITY_CAPTURE_POLL_INTERVAL_SECONDS = 2
 DEFAULT_ACTIVITY_CAPTURE_SYNC_INTERVAL_SECONDS = 30
 DEFAULT_ACTIVITY_PROCESSING_MAX_COMPLETION_TOKENS = 1200
+DEFAULT_CAMERA_SUMMARY_MAX_COMPLETION_TOKENS = 1600
 DEFAULT_OLLAMA_BASE_URL = "http://127.0.0.1:11434"
 DEFAULT_WEB_BASE_URL = "http://127.0.0.1:5173/#"
 DEFAULT_MEMORY_DIRECTORY = r"D:\codes\mixi2-api\generated_text"
@@ -126,6 +127,16 @@ def normalize_activity_processing_max_completion_tokens(value: object) -> int:
         return DEFAULT_ACTIVITY_PROCESSING_MAX_COMPLETION_TOKENS
     if tokens <= 0:
         return DEFAULT_ACTIVITY_PROCESSING_MAX_COMPLETION_TOKENS
+    return tokens
+
+
+def normalize_camera_summary_max_completion_tokens(value: object) -> int:
+    try:
+        tokens = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_CAMERA_SUMMARY_MAX_COMPLETION_TOKENS
+    if tokens <= 0:
+        return DEFAULT_CAMERA_SUMMARY_MAX_COMPLETION_TOKENS
     return tokens
 
 
@@ -333,6 +344,7 @@ class LegacyCameraConfig:
     summary_provider: str = "openai"
     summary_base_url: str = DEFAULT_OLLAMA_BASE_URL
     summary_model: str = "gpt-5-nano"
+    summary_max_completion_tokens: int = DEFAULT_CAMERA_SUMMARY_MAX_COMPLETION_TOKENS
     summary_interval_seconds: int = 1800
 
 
@@ -525,6 +537,14 @@ def load_config(path: Path = _CONFIG_PATH) -> AppConfig:
     )
     camera_raw["summary_base_url"] = normalize_ai_base_url(
         camera_raw.get("summary_base_url", DEFAULT_OLLAMA_BASE_URL)
+    )
+    camera_raw["summary_max_completion_tokens"] = (
+        normalize_camera_summary_max_completion_tokens(
+            camera_raw.get(
+                "summary_max_completion_tokens",
+                DEFAULT_CAMERA_SUMMARY_MAX_COMPLETION_TOKENS,
+            )
+        )
     )
     desktop_raw = raw.get("desktop", {}) or {}
     if not isinstance(desktop_raw, dict):

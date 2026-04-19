@@ -21,8 +21,8 @@ display:
   lily_scale: 0.3
   haruka_scale: 0.65
   user_balloon_display_seconds: 15.0
-  window_x: -1927
-  window_y: 2515
+  window_x: 1994
+  window_y: 1391
 voice:
   enabled: true
   pause_during_tts: false
@@ -65,6 +65,7 @@ camera:
   summary_provider: openai
   summary_base_url: http://127.0.0.1:11434
   summary_model: gpt-5-nano
+  summary_max_completion_tokens: 1600
   summary_interval_seconds: 1800
 talk_seeds:
   interest_topics:

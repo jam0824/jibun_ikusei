@@ -24,7 +24,7 @@ JST = timezone(timedelta(hours=9))
 
 _BASE_DIR = Path(__file__).resolve().parent.parent
 _LOG_DIR = _BASE_DIR / "logs" / "situations"
-_SUMMARY_MAX_COMPLETION_TOKENS = 500
+_DEFAULT_SUMMARY_MAX_COMPLETION_TOKENS = 1600
 _SUMMARY_SYSTEM_PROMPT = (
     "あなたは状況ログを要約するアシスタントです。"
     "渡された30分ぶんの記録から、ユーザーの行動や状況を日本語で3文以内に簡潔に要約してください。"
@@ -57,11 +57,13 @@ class SituationLogger:
         summary_model: str,
         summary_provider: str = "openai",
         summary_base_url: str = DEFAULT_OLLAMA_BASE_URL,
+        summary_max_completion_tokens: int = _DEFAULT_SUMMARY_MAX_COMPLETION_TOKENS,
     ):
         self._openai_api_key = openai_api_key
         self._summary_model = summary_model
         self._summary_provider = normalize_provider(summary_provider)
         self._summary_base_url = summary_base_url
+        self._summary_max_completion_tokens = summary_max_completion_tokens
         self._pending_records: list[SituationRecord] = []
         _LOG_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -144,7 +146,7 @@ class SituationLogger:
             base_url=self._summary_base_url,
             system_prompt=_SUMMARY_SYSTEM_PROMPT,
             user_text=records_text,
-            max_completion_tokens=_SUMMARY_MAX_COMPLETION_TOKENS,
+            max_completion_tokens=self._summary_max_completion_tokens,
         )
         if self._summary_provider == "ollama":
             request.body["think"] = False

@@ -82,7 +82,7 @@ async def test_generate_summary_uses_ollama_chat_api(tmp_path, monkeypatch):
     assert request["url"] == "http://127.0.0.1:11434/api/chat"
     assert request["json"]["stream"] is False
     assert request["json"]["think"] is False
-    assert request["json"]["options"]["num_predict"] == 500
+    assert request["json"]["options"]["num_predict"] == 1600
 
 
 @pytest.mark.asyncio
