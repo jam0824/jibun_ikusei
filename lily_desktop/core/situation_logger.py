@@ -146,6 +146,8 @@ class SituationLogger:
             user_text=records_text,
             max_completion_tokens=_SUMMARY_MAX_COMPLETION_TOKENS,
         )
+        if self._summary_provider == "ollama":
+            request.body["think"] = False
 
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
@@ -158,11 +160,10 @@ class SituationLogger:
             raise Exception(f"Summary API failed: {resp.status_code} - {resp.text[:200]}")
 
         payload = resp.json()
-        content = extract_chat_response_text(self._summary_provider, payload)
-        if content:
-            return content
-
         finish_reason = extract_chat_finish_reason(self._summary_provider, payload)
         if finish_reason == "length":
             raise Exception("Summary response was truncated before text was returned.")
+        content = extract_chat_response_text(self._summary_provider, payload)
+        if content:
+            return content
         raise Exception("Summary response was empty.")
