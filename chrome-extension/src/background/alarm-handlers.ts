@@ -21,16 +21,27 @@ import { evaluateProgress } from './quest-evaluator'
 import { apiClient, classificationCache, syncQueue, timeAccumulator } from './shared-instances'
 import { generateWeeklyReport } from './weekly-report-generator'
 
+const PERIODIC_SYNC_INTERVAL_MINUTES = 1
+const DAILY_RESET_CHECK_INTERVAL_MINUTES = 1
+const WEEKLY_REPORT_INTERVAL_MINUTES = 60
+
+async function ensureRecurringAlarm(name: string, periodInMinutes: number): Promise<void> {
+  const existing = await chrome.alarms.get(name)
+  if (existing?.periodInMinutes === periodInMinutes) {
+    return
+  }
+
+  // Replace stale schedules on startup so existing users pick up new cadences.
+  if (existing) {
+    await chrome.alarms.clear(name)
+  }
+  chrome.alarms.create(name, { periodInMinutes })
+}
+
 export async function setupAlarms(): Promise<void> {
-  if (!await chrome.alarms.get('periodic-sync')) {
-    chrome.alarms.create('periodic-sync', { periodInMinutes: 5 })
-  }
-  if (!await chrome.alarms.get('daily-reset-check')) {
-    chrome.alarms.create('daily-reset-check', { periodInMinutes: 1 })
-  }
-  if (!await chrome.alarms.get('weekly-report-gen')) {
-    chrome.alarms.create('weekly-report-gen', { periodInMinutes: 60 })
-  }
+  await ensureRecurringAlarm('periodic-sync', PERIODIC_SYNC_INTERVAL_MINUTES)
+  await ensureRecurringAlarm('daily-reset-check', DAILY_RESET_CHECK_INTERVAL_MINUTES)
+  await ensureRecurringAlarm('weekly-report-gen', WEEKLY_REPORT_INTERVAL_MINUTES)
 }
 
 export async function handleAlarm(alarm: chrome.alarms.Alarm): Promise<void> {

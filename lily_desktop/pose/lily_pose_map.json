@@ -125,6 +125,10 @@
       {
         "filename": "lily_surprised_01.png",
         "description": "目を大きく見開いて驚いている、口を開けている、びっくりした表情（バリエーション1）"
+      },
+      {
+        "filename": "lily_surprised_02.png",
+        "description": "目を大きく見開いて驚いている、口を開けている、びっくりした表情（バリエーション2）"
       }
     ],
     "proud": [

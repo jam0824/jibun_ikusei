@@ -17,6 +17,7 @@
 
 ## 送信タイミング
 
+- `good_quest` / `bad_quest` / `warning` の評価は background の `periodic-sync` alarm で 1 分おきに行う
 - Chrome拡張の `evaluateAndEnqueue()` 内で、既存の `syncQueue.enqueue()` 完了後に送信する
 - Quest / Completion の同期が主経路、Bridge 送信は副次経路とする
 - `warning` は `notificationsEnabled` が有効なときだけ、トースト送信と同じタイミングで送信する
