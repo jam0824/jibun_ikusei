@@ -558,18 +558,45 @@ describe('alarm-handlers', () => {
       const { setupAlarms } = await import('./alarm-handlers')
       await setupAlarms()
 
-      expect(chrome.alarms.create).toHaveBeenCalledWith('periodic-sync', { periodInMinutes: 5 })
+      expect(chrome.alarms.create).toHaveBeenCalledWith('periodic-sync', { periodInMinutes: 1 })
       expect(chrome.alarms.create).toHaveBeenCalledWith('daily-reset-check', { periodInMinutes: 1 })
       expect(chrome.alarms.create).toHaveBeenCalledWith('weekly-report-gen', { periodInMinutes: 60 })
     })
 
     it('アラームが既に存在する場合は再作成しない', async () => {
-      const existingAlarm = { name: 'periodic-sync', periodInMinutes: 5, scheduledTime: Date.now() }
-      vi.mocked(chrome.alarms.get).mockResolvedValue(existingAlarm as chrome.alarms.Alarm)
+      vi.mocked(chrome.alarms.get).mockImplementation(async (name?: string) => {
+        switch (name) {
+          case 'periodic-sync':
+            return { name, periodInMinutes: 1, scheduledTime: Date.now() } as chrome.alarms.Alarm
+          case 'daily-reset-check':
+            return { name, periodInMinutes: 1, scheduledTime: Date.now() } as chrome.alarms.Alarm
+          case 'weekly-report-gen':
+            return { name, periodInMinutes: 60, scheduledTime: Date.now() } as chrome.alarms.Alarm
+          default:
+            return undefined as unknown as chrome.alarms.Alarm
+        }
+      })
       const { setupAlarms } = await import('./alarm-handlers')
       await setupAlarms()
 
       expect(chrome.alarms.create).not.toHaveBeenCalled()
+    })
+
+    it('既存のperiodic-syncが旧5分設定なら1分設定へ更新する', async () => {
+      vi.mocked(chrome.alarms.get).mockImplementation(async (name?: string) => {
+        if (name === 'periodic-sync') {
+          return { name, periodInMinutes: 5, scheduledTime: Date.now() } as chrome.alarms.Alarm
+        }
+        return undefined as unknown as chrome.alarms.Alarm
+      })
+
+      const { setupAlarms } = await import('./alarm-handlers')
+      await setupAlarms()
+
+      expect(chrome.alarms.clear).toHaveBeenCalledWith('periodic-sync')
+      expect(chrome.alarms.create).toHaveBeenCalledWith('periodic-sync', { periodInMinutes: 1 })
+      expect(chrome.alarms.create).toHaveBeenCalledWith('daily-reset-check', { periodInMinutes: 1 })
+      expect(chrome.alarms.create).toHaveBeenCalledWith('weekly-report-gen', { periodInMinutes: 60 })
     })
   })
 

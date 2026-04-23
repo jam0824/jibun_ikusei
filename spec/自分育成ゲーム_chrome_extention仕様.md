@@ -74,6 +74,7 @@
 
 - タブ単位・ページ単位のブラウザ滞在時間は Chrome 拡張が正本として計測する。
 - `DailyProgress` と `domainTimes` は `閲覧クエスト`, `警告`, `ペナルティ`, `今日の進捗` の判定に使う一次データとする。
+- `閲覧クエスト`, `50分警告`, `バッドクエスト` の閾値評価は background の `periodic-sync` alarm で 1 分おきに行う。
 - 行動ログ基盤は、Chrome 拡張から受け取る `browser_page_changed`, `heartbeat`, `elapsedSeconds` などのブラウザ行動イベントを、PC 全体の `RawEvent` / `ActivitySession` に統合する役割を持つ。
 - Chrome 拡張は `browser_page_changed` を `tabs.onActivated`, アクティブタブの `url_changed`, `window_focus` 復帰時に送ってよい。
 - Chrome 拡張は `heartbeat` を `flush-tracker` alarm と `FLUSH_AND_GET_PROGRESS` の flush 経路で送ってよい。
