@@ -265,6 +265,57 @@ describe('browser action-log events', () => {
     expect(body.payload.title).toBe('React Learn')
   })
 
+  it('handles SPA history state URL changes from webNavigation', async () => {
+    vi.mocked(chrome.tabs.query).mockResolvedValue([])
+    vi.mocked(chrome.tabs.get).mockImplementation(async (tabId: number) => {
+      if (tabId === 15) {
+        return {
+          id: 15,
+          url: 'https://www.youtube.com/watch?v=next',
+          title: 'Next Video',
+          active: true,
+          incognito: false,
+        } as chrome.tabs.Tab
+      }
+      return {} as chrome.tabs.Tab
+    })
+
+    const { handleHistoryStateUpdated } = await import('./service-worker')
+    await Promise.resolve()
+
+    const activatedListener = vi.mocked(chrome.tabs.onActivated.addListener).mock.calls[0]?.[0]
+    vi.mocked(chrome.tabs.get).mockResolvedValueOnce({
+      id: 15,
+      url: 'https://www.youtube.com/watch?v=prev',
+      title: 'Previous Video',
+      active: true,
+      incognito: false,
+    } as chrome.tabs.Tab)
+    await activatedListener?.({ tabId: 15, windowId: 1 })
+
+    vi.mocked(globalThis.fetch).mockClear()
+    vi.mocked(chrome.tabs.sendMessage).mockClear()
+
+    expect(chrome.webNavigation.onHistoryStateUpdated.addListener).toHaveBeenCalled()
+    await handleHistoryStateUpdated({
+      tabId: 15,
+      frameId: 0,
+      url: 'https://www.youtube.com/watch?v=next',
+    } as chrome.webNavigation.WebNavigationTransitionCallbackDetails)
+
+    expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(15, { type: 'REQUEST_PAGE_INFO' })
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
+    const body = JSON.parse(String(vi.mocked(globalThis.fetch).mock.calls[0]?.[1]?.body)) as {
+      eventType: string
+      metadata: { trigger: string }
+      payload: { url: string; title: string | null }
+    }
+    expect(body.eventType).toBe('browser_page_changed')
+    expect(body.metadata.trigger).toBe('url_changed')
+    expect(body.payload.url).toBe('https://www.youtube.com/watch?v=next')
+    expect(body.payload.title).toBe('Next Video')
+  })
+
   it('sends browser_page_changed on window focus restore', async () => {
     vi.mocked(chrome.tabs.query).mockImplementation((queryInfo?: chrome.tabs.QueryInfo) => {
       if (queryInfo?.windowId === 2) {

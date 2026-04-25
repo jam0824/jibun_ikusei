@@ -8,6 +8,7 @@ import {
 import { isLoggedIn } from '@ext/lib/auth'
 import { sendBrowsingSystemMessageToLilyDesktop } from '@ext/lib/lily-desktop-bridge'
 import { getLocal, removeLocal, setLocal } from '@ext/lib/storage'
+import { toJstIsoString } from '@ext/lib/jst-time'
 import { sendToastToActiveTab } from '@ext/lib/notifications'
 import type {
   BrowsingTimeSyncBacklog,
@@ -155,7 +156,7 @@ async function evaluateAndEnqueue(): Promise<void> {
 
     const questId = crypto.randomUUID()
     const completionId = crypto.randomUUID()
-    const completedAt = new Date().toISOString()
+    const completedAt = toJstIsoString()
 
     await syncQueue.enqueue({
       path: '/browsing-event',

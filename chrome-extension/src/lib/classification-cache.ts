@@ -1,4 +1,5 @@
 import { getLocal, setLocal } from '@ext/lib/storage'
+import { toJstIsoString } from '@ext/lib/jst-time'
 import type { ClassificationCacheEntry, ClassificationResult } from '@ext/types/browsing'
 
 const STORAGE_KEY = 'classificationCache'
@@ -34,8 +35,8 @@ export class ClassificationCache {
     store[cacheKey] = {
       result,
       source,
-      createdAt: now.toISOString(),
-      expiresAt: new Date(now.getTime() + TTL_MS).toISOString(),
+      createdAt: toJstIsoString(now),
+      expiresAt: toJstIsoString(new Date(now.getTime() + TTL_MS)),
     }
     await this.saveStore(store)
   }

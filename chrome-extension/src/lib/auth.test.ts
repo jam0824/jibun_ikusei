@@ -47,10 +47,14 @@ describe('auth', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     // keep module mocks intact
   })
 
   it('stores tokens in chrome.storage.local on successful login', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-21T03:04:05.006Z'))
+
     mockAuthenticateUser.mockImplementation((_details: unknown, callbacks: { onSuccess: (session: unknown) => void }) => {
       callbacks.onSuccess({
         getIdToken: () => ({
@@ -75,6 +79,7 @@ describe('auth', () => {
     expect(stored.authState.accessToken).toBe('test-access-token')
     expect(stored.authState.refreshToken).toBe('test-refresh-token')
     expect(stored.authState.email).toBe('test@example.com')
+    expect(stored.authState.loggedInAt).toBe('2026-03-21T12:04:05.006+09:00')
   })
 
   it('returns error on invalid credentials', async () => {

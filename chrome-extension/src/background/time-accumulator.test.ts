@@ -25,6 +25,18 @@ describe('TimeAccumulator', () => {
     expect(progress.domainTimes['example.com:/'].domain).toBe('example.com')
   })
 
+  it('lastUpdated は JST の RFC3339 文字列で保存する', async () => {
+    vi.setSystemTime(new Date('2026-03-21T03:04:05.006Z'))
+
+    await accumulator.addTime('example.com', 'example.com:/', 60, true, false)
+    const progress = await accumulator.getDailyProgress()
+
+    expect(progress.domainTimes['example.com:/'].lastUpdated).toBe('2026-03-21T12:04:05.006+09:00')
+    expect(new Date(progress.domainTimes['example.com:/'].lastUpdated).getTime()).toBe(
+      new Date('2026-03-21T03:04:05.006Z').getTime(),
+    )
+  })
+
   it('accumulates time on the same domain cacheKey', async () => {
     await accumulator.addTime('example.com', 'example.com:/', 30, true, false)
     await accumulator.addTime('example.com', 'example.com:/', 45, true, false)

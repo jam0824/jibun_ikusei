@@ -4,6 +4,7 @@ import type {
   DomainTimeEntry,
   PageInfo,
 } from '@ext/types/browsing'
+import { toJstIsoString } from '@ext/lib/jst-time'
 
 export function createMockPageInfo(overrides: Partial<PageInfo> = {}): PageInfo {
   return {
@@ -38,7 +39,7 @@ export function createMockDomainTimeEntry(
     isGrowth: true,
     isBlocklisted: false,
     totalSeconds: 0,
-    lastUpdated: new Date().toISOString(),
+    lastUpdated: toJstIsoString(),
     ...overrides,
   }
 }
@@ -65,7 +66,7 @@ export function createMockAuthState(expiresInSeconds = 3600) {
   const exp = Math.floor(Date.now() / 1000) + expiresInSeconds
   const payload = btoa(JSON.stringify({ exp }))
   const idToken = `header.${payload}.signature`
-  return { idToken, email: 'test@example.com', loggedInAt: new Date().toISOString() }
+  return { idToken, email: 'test@example.com', loggedInAt: toJstIsoString() }
 }
 
 export function todayString(): string {

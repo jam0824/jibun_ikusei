@@ -4,6 +4,7 @@ import {
   AuthenticationDetails,
   CognitoRefreshToken,
 } from 'amazon-cognito-identity-js'
+import { toJstIsoString } from '@ext/lib/jst-time'
 
 const USER_POOL_ID = 'ap-northeast-1_sdcbFbWBY'
 const CLIENT_ID = '4vcj0n0b0b55354k29frt2q6ku'
@@ -45,7 +46,7 @@ export function login(email: string, password: string): Promise<LoginResult> {
           accessToken: session.getAccessToken().getJwtToken(),
           refreshToken: session.getRefreshToken().getToken(),
           email,
-          loggedInAt: new Date().toISOString(),
+          loggedInAt: toJstIsoString(),
         }
         await chrome.storage.local.set({ authState })
         resolve({ ok: true })
@@ -133,7 +134,7 @@ async function refreshWithStoredRefreshToken(authState: AuthState): Promise<stri
         idToken: session.getIdToken().getJwtToken(),
         accessToken: session.getAccessToken?.().getJwtToken() ?? authState.accessToken,
         refreshToken: session.getRefreshToken?.().getToken() ?? authState.refreshToken,
-        loggedInAt: new Date().toISOString(),
+        loggedInAt: toJstIsoString(),
       }
       await chrome.storage.local.set({ authState: nextState })
       resolve(nextState.idToken)
@@ -166,7 +167,7 @@ async function refreshFromCurrentUser(authState?: AuthState): Promise<string | n
         accessToken: session.getAccessToken?.().getJwtToken() ?? authState?.accessToken,
         refreshToken: session.getRefreshToken?.().getToken() ?? authState?.refreshToken,
         email: authState?.email ?? '',
-        loggedInAt: new Date().toISOString(),
+        loggedInAt: toJstIsoString(),
       }
       await chrome.storage.local.set({ authState: nextState })
       resolve(nextState.idToken)
