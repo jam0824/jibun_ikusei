@@ -1458,7 +1458,7 @@ function fuzzyMatchScore(query: string, title: string): number {
   if (t.includes(q) || q.includes(t)) return 0.8
 
   // 単語分割（日本語はそのまま文字単位、英語はスペース区切り）
-  const qTokens = q.split(/[\s　、,・]+/).filter(Boolean)
+  const qTokens = q.split(/[\s\u3000、,・]+/).filter(Boolean)
   if (qTokens.length === 0) return 0
 
   const matchCount = qTokens.filter((token) => t.includes(token)).length

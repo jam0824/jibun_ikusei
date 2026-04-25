@@ -61,6 +61,14 @@ export default defineConfig({
     environment: 'jsdom',
     globals: true,
     setupFiles: ['./src/test/setup.ts'],
-    exclude: ['infra/**', 'chrome-extension/**', 'node_modules/**'],
+    exclude: [
+      '**/.claude/**',
+      '**/.venv/**',
+      '**/node_modules/**',
+      'chrome-extension/**',
+      'dist/**',
+      'infra/**',
+      'lily_desktop/**',
+    ],
   },
 })
