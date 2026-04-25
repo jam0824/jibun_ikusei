@@ -1,4 +1,5 @@
 import type { createApiClient } from '@ext/lib/api-client'
+import { toJstIsoString } from '@ext/lib/jst-time'
 import { getLocal, mutateLocal } from '@ext/lib/storage'
 
 export interface ActivityLogEntry {
@@ -11,18 +12,6 @@ export interface ActivityLogEntry {
 
 const STORAGE_KEY = 'activityLogBuffer'
 
-function buildJstTimestamp(): string {
-  const now = new Date()
-  const y = now.getFullYear()
-  const mo = String(now.getMonth() + 1).padStart(2, '0')
-  const d = String(now.getDate()).padStart(2, '0')
-  const h = String(now.getHours()).padStart(2, '0')
-  const mi = String(now.getMinutes()).padStart(2, '0')
-  const s = String(now.getSeconds()).padStart(2, '0')
-  const ms = String(now.getMilliseconds()).padStart(3, '0')
-  return `${y}-${mo}-${d}T${h}:${mi}:${s}.${ms}+09:00`
-}
-
 function getActivityIdentity(entry: ActivityLogEntry): string {
   return JSON.stringify([entry.timestamp, entry.action, entry.category, entry.details])
 }
@@ -34,7 +23,7 @@ export async function logActivity(
 ): Promise<void> {
   await mutateLocal<ActivityLogEntry[]>(STORAGE_KEY, [], (buffer) => {
     buffer.push({
-      timestamp: buildJstTimestamp(),
+      timestamp: toJstIsoString(),
       source: 'chrome-extension',
       action,
       category,

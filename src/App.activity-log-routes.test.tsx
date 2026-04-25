@@ -583,19 +583,22 @@ describe('activity log routes', () => {
     expect(screen.queryByText('次に確認したい仕様はどこだったか。')).not.toBeInTheDocument()
   })
 
-  it('shows DB retrieval labels for daily summary sections loaded from persisted data', async () => {
+  it('renders persisted daily summary sections without web-generation source labels', async () => {
     renderApp('/records/activity/day/2026-04-17')
     await settleApp()
 
-    expect(screen.getAllByText('DB取得')).toHaveLength(3)
+    expect(screen.getByText('リリィは、この日の調査に静かな集中が集まっていたと見ている。')).toBeInTheDocument()
+    expect(screen.getByText(
+      'リリィは、この日のクエスト達成が小さな区切りをいくつか残していたと見ている。',
+    )).toBeInTheDocument()
+    expect(screen.getByText(
+      'リリィは、この日の健康記録が静かに朝の輪郭を残していたと見ている。',
+    )).toBeInTheDocument()
+    expect(screen.queryByText('DB取得')).not.toBeInTheDocument()
     expect(screen.queryByText('新規作成')).not.toBeInTheDocument()
   })
 
-  it('shows section-level generation messages while previous-day daily sections are being generated', async () => {
-    let resolveSummary: ((value: { summary: string; mainThemes: string[]; reviewQuestions: string[] }) => void) | null = null
-    let resolveQuest: ((value: { questSummary: string }) => void) | null = null
-    let resolveHealth: ((value: { healthSummary: string }) => void) | null = null
-
+  it('shows the missing daily-log message on previous-day views without generating in the web app', async () => {
     vi.mocked(api.getActionLogDailyActivityLog).mockImplementation(async (dateKey) => {
       if (dateKey === '2026-04-16') {
         return null
@@ -605,51 +608,21 @@ describe('activity log routes', () => {
       }
       return null
     })
-    vi.mocked(ai.generateDailyActivityLogSummary).mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveSummary = resolve
-        }),
-    )
-    vi.mocked(ai.generateDailyQuestSummary).mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveQuest = resolve
-        }),
-    )
-    vi.mocked(ai.generateDailyHealthSummary).mockImplementation(
-      () =>
-        new Promise((resolve) => {
-          resolveHealth = resolve
-        }),
-    )
 
     renderApp('/records/activity/day/2026-04-16')
     await settleApp()
 
-    expect(screen.getAllByText('生成中…').length).toBeGreaterThanOrEqual(3)
-
-    resolveSummary?.({
-      summary: 'リリィは、前日の調査の流れを静かに見つめていた。',
-      mainThemes: ['Chrome拡張', '調査'],
-      reviewQuestions: ['次に確認したい仕様はどこだったか。'],
-    })
-    resolveQuest?.({
-      questSummary: 'リリィは、前日のクエスト達成が小さな区切りを作っていたと見ている。',
-    })
-    resolveHealth?.({
-      healthSummary: 'リリィは、前日の健康記録が朝の輪郭を静かに残していたと見ている。',
-    })
-
-    await settleApp()
-
+    expect(screen.getByText('この日のまとめはまだ生成されていません。')).toBeInTheDocument()
     expect(screen.queryByText('生成中…')).not.toBeInTheDocument()
-    expect(screen.getByText('リリィは、前日の調査の流れを静かに見つめていた。')).toBeInTheDocument()
-    expect(screen.getAllByText('新規作成')).toHaveLength(3)
+    expect(ai.generateDailyActivityLogSummary).not.toHaveBeenCalled()
+    expect(ai.generateDailyQuestSummary).not.toHaveBeenCalled()
+    expect(ai.generateDailyHealthSummary).not.toHaveBeenCalled()
+    expect(api.putActionLogDailyActivityLog).not.toHaveBeenCalled()
     expect(screen.queryByText('DB取得')).not.toBeInTheDocument()
+    expect(screen.queryByText('新規作成')).not.toBeInTheDocument()
   })
 
-  it('shows mixed source labels when only missing previous-day sections are generated', async () => {
+  it('renders stored and missing daily-log sections without generating missing sections', async () => {
     vi.mocked(api.getActionLogDailyActivityLog).mockImplementation(async (dateKey) => {
       if (dateKey === '2026-04-16') {
         return createDailyLog('2026-04-16', {
@@ -666,8 +639,14 @@ describe('activity log routes', () => {
     renderApp('/records/activity/day/2026-04-16')
     await settleApp()
 
-    expect(screen.getAllByText('DB取得')).toHaveLength(1)
-    expect(screen.getAllByText('新規作成')).toHaveLength(2)
+    expect(screen.getByText('リリィは、この日の調査に静かな集中が集まっていたと見ている。')).toBeInTheDocument()
+    expect(screen.getAllByText('まだ生成されていません。次回また生成します。')).toHaveLength(2)
+    expect(ai.generateDailyActivityLogSummary).not.toHaveBeenCalled()
+    expect(ai.generateDailyQuestSummary).not.toHaveBeenCalled()
+    expect(ai.generateDailyHealthSummary).not.toHaveBeenCalled()
+    expect(api.putActionLogDailyActivityLog).not.toHaveBeenCalled()
+    expect(screen.queryByText('DB取得')).not.toBeInTheDocument()
+    expect(screen.queryByText('新規作成')).not.toBeInTheDocument()
   })
 
   it('renders same-day situation logs newest first only in session view', async () => {
@@ -958,14 +937,14 @@ describe('activity log routes', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('generates a missing previous-day daily log only on the previous-day route', async () => {
+  it('does not generate a missing previous-day daily log from the web route', async () => {
     renderApp('/records/activity/day/2026-04-16')
     await settleApp()
 
-    expect(ai.generateDailyActivityLogSummary).toHaveBeenCalledTimes(1)
-    expect(ai.generateDailyQuestSummary).toHaveBeenCalledTimes(1)
-    expect(ai.generateDailyHealthSummary).toHaveBeenCalledTimes(1)
-    expect(api.putActionLogDailyActivityLog).toHaveBeenCalledTimes(3)
+    expect(ai.generateDailyActivityLogSummary).not.toHaveBeenCalled()
+    expect(ai.generateDailyQuestSummary).not.toHaveBeenCalled()
+    expect(ai.generateDailyHealthSummary).not.toHaveBeenCalled()
+    expect(api.putActionLogDailyActivityLog).not.toHaveBeenCalled()
   })
 
   it('does not generate a missing older-day daily log', async () => {

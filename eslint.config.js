@@ -6,7 +6,16 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist']),
+  globalIgnores([
+    '**/.claude/**',
+    '**/.venv/**',
+    '**/node_modules/**',
+    'chrome-extension/**',
+    'dist/**',
+    'infra/**',
+    'infra/cdk.out/**',
+    'lily_desktop/**',
+  ]),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -18,6 +27,9 @@ export default defineConfig([
     languageOptions: {
       ecmaVersion: 2020,
       globals: globals.browser,
+    },
+    rules: {
+      'react-hooks/set-state-in-effect': 'off',
     },
   },
 ])

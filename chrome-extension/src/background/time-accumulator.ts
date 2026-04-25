@@ -4,6 +4,7 @@ import {
   progressToSyncEntry,
 } from '@ext/lib/browsing-sync'
 import { transactLocal } from '@ext/lib/storage'
+import { toJstIsoString } from '@ext/lib/jst-time'
 import {
   OTHER_BROWSING_CATEGORY,
   type BrowsingCategory,
@@ -121,7 +122,7 @@ export class TimeAccumulator {
         }
 
         existing.totalSeconds += seconds
-        existing.lastUpdated = new Date().toISOString()
+        existing.lastUpdated = toJstIsoString()
       } else {
         const entry: DomainTimeEntry = {
           domain,
@@ -130,7 +131,7 @@ export class TimeAccumulator {
           isGrowth,
           isBlocklisted,
           totalSeconds: seconds,
-          lastUpdated: new Date().toISOString(),
+          lastUpdated: toJstIsoString(),
         }
         progress.domainTimes[cacheKey] = entry
       }

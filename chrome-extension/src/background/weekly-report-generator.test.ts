@@ -1,8 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { generateWeeklyReport } from '@ext/background/weekly-report-generator'
 import { createMockDailyProgress } from '@ext/test/helpers'
 
 describe('weekly-report-generator', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('空の履歴から週次レポートを生成する', () => {
     const report = generateWeeklyReport([], '2026-W12')
     expect(report.weekKey).toBe('2026-W12')
@@ -137,8 +141,11 @@ describe('weekly-report-generator', () => {
   })
 
   it('generatedAtが設定される', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-21T03:04:05.006Z'))
+
     const report = generateWeeklyReport([], '2026-W12')
-    expect(report.generatedAt).toBeTruthy()
-    expect(() => new Date(report.generatedAt)).not.toThrow()
+    expect(report.generatedAt).toBe('2026-03-21T12:04:05.006+09:00')
+    expect(new Date(report.generatedAt).getTime()).toBe(new Date('2026-03-21T03:04:05.006Z').getTime())
   })
 })

@@ -54,6 +54,8 @@ import { clamp, createId, deepCopy, slugify } from '@/lib/utils'
 
 type MergeableRecord = { id: string; updatedAt?: string; createdAt?: string }
 
+const PERIODIC_WEEKLY_REFLECTION_MESSAGES_ENABLED = false
+
 const KEYWORD_RULES = [
   {
     keywords: ['読書', '本', '書籍', '勉強', '学習'],
@@ -1712,7 +1714,11 @@ export function maybeCreatePeriodicMessages(state: PersistedAppState) {
     nextMeta.lastDailySummaryDate = todayKey
   }
 
-  if (false && state.completions.length > 0 && state.meta.lastWeeklyReflectionWeek !== weekKey) {
+  if (
+    PERIODIC_WEEKLY_REFLECTION_MESSAGES_ENABLED &&
+    state.completions.length > 0 &&
+    state.meta.lastWeeklyReflectionWeek !== weekKey
+  ) {
     messages.unshift(
       createAssistantMessage(
         'weekly_reflection',

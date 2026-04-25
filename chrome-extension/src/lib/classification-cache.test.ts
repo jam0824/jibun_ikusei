@@ -26,6 +26,16 @@ describe('ClassificationCache', () => {
     expect(cached!.source).toBe('ai')
   })
 
+  it('stores createdAt and expiresAt as JST RFC3339 while preserving TTL instant', async () => {
+    const result = createMockClassificationResult({ cacheKey: 'time.example:/' })
+    await cache.set('time.example:/', result, 'ai')
+
+    const cached = await cache.get('time.example:/')
+    expect(cached!.createdAt).toBe('2026-03-21T21:00:00.000+09:00')
+    expect(cached!.expiresAt).toMatch(/\+09:00$/)
+    expect(new Date(cached!.expiresAt).getTime()).toBe(NOW.getTime() + 30 * 24 * 60 * 60 * 1000)
+  })
+
   it('returns null for non-existent cache key', async () => {
     const cached = await cache.get('nonexistent')
     expect(cached).toBeNull()

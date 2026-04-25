@@ -79,6 +79,12 @@ function buildBrowserMetadata(tabId: number, trigger: BrowserActionLogTrigger, e
   }
 }
 
+function requestPageInfoFromTab(tabId: number): void {
+  chrome.tabs.sendMessage(tabId, { type: 'REQUEST_PAGE_INFO' }).catch(() => {
+    // Content script may not be injected or ready yet.
+  })
+}
+
 async function sendBrowserPageChangedForTab(
   tab: chrome.tabs.Tab,
   trigger: Exclude<BrowserActionLogTrigger, 'flush'>,
@@ -186,6 +192,8 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     if (changeInfo.url) {
       const result = tabTracker.onUrlChanged(tabId, changeInfo.url)
       await handleElapsed(result)
+      clearTabClassification(tabId)
+      clearTabPageInfo(tabId)
       if (tab.active) {
         await sendBrowserPageChangedForTab(tab, 'url_changed')
       }
@@ -197,6 +205,47 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
     // Ignore
   }
 })
+
+export async function handleHistoryStateUpdated(
+  details: chrome.webNavigation.WebNavigationTransitionCallbackDetails,
+): Promise<void> {
+  if (details.frameId !== 0 || !isTrackableHttpUrl(details.url)) {
+    return
+  }
+
+  try {
+    const tab = await chrome.tabs.get(details.tabId)
+    if (tab.incognito) {
+      return
+    }
+
+    const result = tabTracker.onUrlChanged(details.tabId, details.url)
+    await handleElapsed(result)
+    clearTabClassification(details.tabId)
+    clearTabPageInfo(details.tabId)
+    requestPageInfoFromTab(details.tabId)
+
+    if (tab.active) {
+      await sendBrowserPageChangedForTab(
+        {
+          ...tab,
+          id: details.tabId,
+          url: details.url,
+        },
+        'url_changed',
+      )
+    }
+  } catch {
+    // Tab may have been closed or webNavigation may race with tab updates.
+  }
+}
+
+chrome.webNavigation.onHistoryStateUpdated.addListener(
+  (details) => {
+    handleHistoryStateUpdated(details).catch(() => {})
+  },
+  { url: [{ schemes: ['http', 'https'] }] },
+)
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
   clearTabClassification(tabId)
@@ -229,9 +278,7 @@ export async function recoverClassifications(): Promise<void> {
     const tabs = await chrome.tabs.query({ active: true, currentWindow: true })
     for (const tab of tabs) {
       if (tab.id && tab.url?.startsWith('http')) {
-        chrome.tabs.sendMessage(tab.id, { type: 'REQUEST_PAGE_INFO' }).catch(() => {
-          // Content script may not be injected (e.g. on restricted pages)
-        })
+        requestPageInfoFromTab(tab.id)
       }
     }
   } catch {

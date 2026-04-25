@@ -3,6 +3,7 @@ import { NonRetryableError, SyncQueue } from '@ext/lib/sync-queue'
 
 describe('SyncQueue', () => {
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
@@ -15,6 +16,18 @@ describe('SyncQueue', () => {
     expect(pending).toHaveLength(2)
     expect(pending[0].path).toBe('/user')
     expect(pending[1].path).toBe('/completions')
+  })
+
+  it('enqueuedAt は JST の RFC3339 文字列で保存する', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-21T03:04:05.006Z'))
+
+    const queue = new SyncQueue()
+    await queue.enqueue({ path: '/user', method: 'PUT', body: { totalXp: 10 } })
+
+    const [pending] = await queue.getPending()
+    expect(pending.enqueuedAt).toBe('2026-03-21T12:04:05.006+09:00')
+    expect(new Date(pending.enqueuedAt).getTime()).toBe(new Date('2026-03-21T03:04:05.006Z').getTime())
   })
 
   it('replays queued requests in order', async () => {

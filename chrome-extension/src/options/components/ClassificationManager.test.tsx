@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach } from 'vitest'
+import { afterEach, describe, expect, it, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, act } from '@testing-library/react'
 import { ClassificationManager } from './ClassificationManager'
 import type { ClassificationCacheEntry } from '@ext/types/browsing'
@@ -34,6 +34,10 @@ describe('ClassificationManager', () => {
     await chrome.storage.local.set({ classificationCache: mockCache })
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   it('キャッシュされた分類結果の一覧を表示する', async () => {
     await act(async () => {
       render(<ClassificationManager />)
@@ -60,6 +64,9 @@ describe('ClassificationManager', () => {
   })
 
   it('カテゴリを変更して保存できる', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-21T03:04:05.006Z'))
+
     await act(async () => {
       render(<ClassificationManager />)
     })
@@ -85,6 +92,8 @@ describe('ClassificationManager', () => {
     expect(cache['game.com:/play'].result.category).toBe('学習')
     expect(cache['game.com:/play'].result.isGrowth).toBe(true)
     expect(cache['game.com:/play'].source).toBe('manual')
+    expect(cache['game.com:/play'].createdAt).toBe('2026-03-21T12:04:05.006+09:00')
+    expect(cache['game.com:/play'].expiresAt).toMatch(/\+09:00$/)
   })
 
   it('キャッシュが空の場合はメッセージを表示する', async () => {

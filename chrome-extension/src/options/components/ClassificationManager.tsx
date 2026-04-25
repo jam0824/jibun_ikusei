@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { BrowsingCategory, ClassificationCacheEntry } from '@ext/types/browsing'
 import { isGrowthCategory } from '@ext/types/browsing'
+import { toJstIsoString } from '@ext/lib/jst-time'
 
 const ALL_CATEGORIES: BrowsingCategory[] = ['学習', '仕事', '健康', '生活', '創作', '対人', '娯楽', 'その他']
 const PAGE_SIZE = 20
@@ -57,8 +58,8 @@ export function ClassificationManager() {
         isGrowth: isGrowthCategory(newCategory),
       },
       source: 'manual',
-      createdAt: new Date().toISOString(),
-      expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+      createdAt: toJstIsoString(),
+      expiresAt: toJstIsoString(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
     }
 
     const newCache = { ...cache, [cacheKey]: updatedEntry }

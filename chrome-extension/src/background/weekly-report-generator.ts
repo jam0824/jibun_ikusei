@@ -1,4 +1,5 @@
 import { BROWSING_CATEGORIES, type BrowsingCategory, type DailyProgress, type WeeklyReport } from '@ext/types/browsing'
+import { toJstIsoString } from '@ext/lib/jst-time'
 
 const ALL_CATEGORIES: BrowsingCategory[] = [...BROWSING_CATEGORIES]
 
@@ -51,7 +52,7 @@ export function generateWeeklyReport(history: DailyProgress[], weekKey: string):
     goodQuestsCleared,
     badQuestsTriggered,
     lilyComment: generateLilyComment(goodSeconds, badSeconds),
-    generatedAt: new Date().toISOString(),
+    generatedAt: toJstIsoString(),
   }
 }
 

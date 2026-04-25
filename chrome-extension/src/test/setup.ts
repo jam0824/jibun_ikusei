@@ -35,6 +35,7 @@ const tabsOnRemoved = createEventMock<typeof chrome.tabs.onRemoved.addListener e
 const windowsOnFocusChanged = createEventMock<typeof chrome.windows.onFocusChanged.addListener extends (callback: infer T) => any ? T : never>()
 const alarmsOnAlarm = createEventMock<typeof chrome.alarms.onAlarm.addListener extends (callback: infer T) => any ? T : never>()
 const notificationsOnClicked = createEventMock<typeof chrome.notifications.onClicked.addListener extends (callback: infer T) => any ? T : never>()
+const webNavigationOnHistoryStateUpdated = createEventMock<typeof chrome.webNavigation.onHistoryStateUpdated.addListener extends (callback: infer T) => any ? T : never>()
 
 function emitStorageChange(
   changes: Record<string, chrome.storage.StorageChange>,
@@ -260,6 +261,9 @@ const chromeMock = {
     clear: vi.fn(),
     onClicked: notificationsOnClicked.event,
   },
+  webNavigation: {
+    onHistoryStateUpdated: webNavigationOnHistoryStateUpdated.event,
+  },
 }
 
 // @ts-expect-error test environment mock
@@ -279,6 +283,7 @@ beforeEach(() => {
   windowsOnFocusChanged.reset()
   alarmsOnAlarm.reset()
   notificationsOnClicked.reset()
+  webNavigationOnHistoryStateUpdated.reset()
 
   vi.clearAllMocks()
 })

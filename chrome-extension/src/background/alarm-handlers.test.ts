@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest'
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest'
 import { setLocal } from '@ext/lib/storage'
 import { createMockDailyProgress, createMockAuthState } from '@ext/test/helpers'
 import { BROWSING_XP } from '@ext/types/browsing'
@@ -15,8 +15,15 @@ describe('alarm-handlers', () => {
     fetchMock.mockClear()
   })
 
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
   describe('handlePeriodicSync', () => {
     it('good_questイベントでQuest+CompletionをPOSTする', async () => {
+      vi.useFakeTimers()
+      vi.setSystemTime(new Date('2026-03-21T03:04:05.006Z'))
+
       const progress = createMockDailyProgress({
         goodBrowsingSeconds: 30 * 60,
         lastGoodRewardAtSeconds: 0,
@@ -101,6 +108,7 @@ describe('alarm-handlers', () => {
       const compBody = JSON.parse(completionCalls[0][1]!.body as string)
       expect(compBody.userXpAwarded).toBe(BROWSING_XP.GOOD_REWARD)
       expect(compBody.questId).toBe(questBody.id)
+      expect(compBody.completedAt).toBe('2026-03-21T12:04:05.006+09:00')
     })
 
     it('bad_questイベントでQuest+CompletionをPOSTする', async () => {

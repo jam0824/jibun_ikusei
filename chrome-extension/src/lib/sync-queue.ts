@@ -1,4 +1,5 @@
 import { getLocal, mutateLocal } from '@ext/lib/storage'
+import { toJstIsoString } from '@ext/lib/jst-time'
 
 const STORAGE_KEY = 'syncQueue'
 const MAX_RETRIES = 10
@@ -27,7 +28,7 @@ export class SyncQueue {
     await mutateLocal<QueuedRequest[]>(STORAGE_KEY, [], (queue) => {
       queue.push({
         ...req,
-        enqueuedAt: new Date().toISOString(),
+        enqueuedAt: toJstIsoString(),
       })
     })
   }
