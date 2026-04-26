@@ -110,6 +110,7 @@ class App:
         )
         self.voice_pipeline: VoicePipeline | None = None
         self.tts_engine: TTSEngine | None = None
+        self._pending_tts_enqueue_tasks: set[asyncio.Task[None]] = set()
         self.active_user_conversation = False
         self.pending_periodic_auto_talk: ChatAutoTalkDue | None = None
         self.pending_periodic_expires_at: datetime | None = None
@@ -211,9 +212,13 @@ class App:
         # 掛け合い中ならユーザー割り込みで中断
         if self.auto_conversation.is_talking:
             self.auto_conversation.interrupt()
-        # TTS再生中ならキューをクリア
+        # TTS再生中なら現在の1発話は読み切り、古い未再生キューだけ破棄
         if self.tts_engine is not None:
-            self.tts_engine.clear_queue()
+            clear_pending = getattr(self.tts_engine, "clear_pending_queue", None)
+            if callable(clear_pending):
+                clear_pending()
+            else:
+                self.tts_engine.clear_queue()
         handler = (
             self._handle_system_message_with_follow_up
             if is_system
@@ -1036,13 +1041,45 @@ class App:
 
     def _on_ai_response(self, speaker: str, text: str, pose_category: str) -> None:
         self._update_ui_for_response(speaker, text, pose_category)
-        # TTS読み上げ
-        if self.tts_engine is not None and self.tts_engine._running:
-            self.tts_engine.enqueue(speaker, text)
+        self._enqueue_ai_response_tts(speaker, text)
 
     def _on_ai_response_no_tts(self, speaker: str, text: str, pose_category: str) -> None:
         """UI更新のみ（TTS enqueue は呼び出し元が管理する）"""
         self._update_ui_for_response(speaker, text, pose_category)
+
+    def _enqueue_ai_response_tts(self, speaker: str, text: str) -> None:
+        tts_engine = self.tts_engine
+        if tts_engine is None or not tts_engine._running:
+            return
+        if getattr(tts_engine, "has_current_job", False):
+            task = asyncio.ensure_future(
+                self._enqueue_ai_response_tts_after_current(
+                    tts_engine,
+                    speaker,
+                    text,
+                )
+            )
+            pending_tasks = getattr(self, "_pending_tts_enqueue_tasks", None)
+            if pending_tasks is None:
+                pending_tasks = set()
+                self._pending_tts_enqueue_tasks = pending_tasks
+            pending_tasks.add(task)
+            task.add_done_callback(pending_tasks.discard)
+            return
+        tts_engine.enqueue(speaker, text)
+
+    async def _enqueue_ai_response_tts_after_current(
+        self,
+        tts_engine: TTSEngine,
+        speaker: str,
+        text: str,
+    ) -> None:
+        wait_current = getattr(tts_engine, "wait_current_job_done", None)
+        if callable(wait_current):
+            await wait_current()
+        if self.tts_engine is not tts_engine or not tts_engine._running:
+            return
+        tts_engine.enqueue(speaker, text)
 
     def _update_ui_for_response(self, speaker: str, text: str, pose_category: str) -> None:
         """吹き出し表示 + ポーズ変更の共通処理"""
