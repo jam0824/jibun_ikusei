@@ -48,6 +48,9 @@ class TTSEngine:
         self._http: httpx.AsyncClient | None = None        # VOICEVOX用
         self._gemini_http: httpx.AsyncClient | None = None  # Gemini TTS用
         self._worker_task: asyncio.Task | None = None
+        self._current_job: _TTSJob | _TTSAudioJob | None = None
+        self._current_job_done = asyncio.Event()
+        self._current_job_done.set()
 
     async def start(self) -> None:
         """バックグラウンドワーカーを起動する。"""
@@ -120,6 +123,15 @@ class TTSEngine:
         """全キューの再生が完了するまで待つ（auto_conversation 用）。"""
         await self._idle_event.wait()
 
+    @property
+    def has_current_job(self) -> bool:
+        """合成または再生中のTTSジョブがあるかを返す。"""
+        return self._current_job is not None
+
+    async def wait_current_job_done(self) -> None:
+        """現在処理中の1ジョブが終わるまで待つ。"""
+        await self._current_job_done.wait()
+
     async def synthesize(self, speaker: str, text: str) -> tuple[bytes, str] | None:
         """音声合成のみ実行する（再生・キュー投入なし）。プリフェッチ用。
 
@@ -151,14 +163,25 @@ class TTSEngine:
         )
 
     def clear_queue(self) -> None:
-        """キューをクリアし、再生中の音声も停止する（ユーザー割り込み用）。"""
+        """キューをクリアし、再生中の音声も停止する（TTS停止・終了用）。"""
+        self._drain_pending_queue()
+        sd.stop()
+        self._idle_event.set()
+
+    def clear_pending_queue(self) -> None:
+        """現在の再生は止めず、未再生のTTSジョブだけ破棄する。"""
+        self._drain_pending_queue()
+        if self._current_job is None:
+            self._idle_event.set()
+        else:
+            self._idle_event.clear()
+
+    def _drain_pending_queue(self) -> None:
         while not self._queue.empty():
             try:
                 self._queue.get_nowait()
             except asyncio.QueueEmpty:
                 break
-        sd.stop()
-        self._idle_event.set()
 
     def _resolve_speaker_config(self, speaker: str) -> tuple[str, int, str]:
         """話者名から (engine, voicevox_speaker_id, gemini_voice) を返す。"""
@@ -185,6 +208,8 @@ class TTSEngine:
                 break
 
             try:
+                self._current_job = job
+                self._current_job_done.clear()
                 if isinstance(job, _TTSAudioJob):
                     # 事前合成済み音声 → 合成スキップ、再生のみ
                     bus.tts_playback_started.emit()
@@ -212,6 +237,8 @@ class TTSEngine:
             except Exception:
                 logger.exception("TTS 再生エラー: %s", getattr(job, 'text', '(prefetched)')[:30])
             finally:
+                self._current_job = None
+                self._current_job_done.set()
                 if self._queue.empty():
                     self._idle_event.set()
 

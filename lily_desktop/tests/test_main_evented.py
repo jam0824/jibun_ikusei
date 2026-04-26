@@ -562,6 +562,74 @@ class _FakeVoicePipeline:
         self.resume_calls += 1
 
 
+def test_incoming_message_soft_interrupts_tts_and_starts_handler_immediately(monkeypatch):
+    scheduled: list[object] = []
+    tts_engine = SimpleNamespace(
+        clear_pending_queue=Mock(),
+        clear_queue=Mock(),
+    )
+    app = SimpleNamespace(
+        auto_conversation=SimpleNamespace(is_talking=True, interrupt=Mock()),
+        tts_engine=tts_engine,
+        _handle_user_message_with_follow_up=Mock(return_value="user-task"),
+        _handle_system_message_with_follow_up=Mock(return_value="system-task"),
+    )
+
+    monkeypatch.setattr(
+        main_mod.asyncio,
+        "ensure_future",
+        lambda task: scheduled.append(task),
+    )
+
+    main_mod.App._on_incoming_message(app, "hello", is_system=False)
+
+    app.auto_conversation.interrupt.assert_called_once()
+    tts_engine.clear_pending_queue.assert_called_once()
+    tts_engine.clear_queue.assert_not_called()
+    app._handle_user_message_with_follow_up.assert_called_once_with("hello")
+    assert scheduled == ["user-task"]
+
+
+@pytest.mark.asyncio
+async def test_ai_response_delays_tts_enqueue_until_current_audio_finishes():
+    class _FakeTTS:
+        _running = True
+
+        def __init__(self) -> None:
+            self.current_done = asyncio.Event()
+            self.enqueue_calls: list[tuple[str, str]] = []
+
+        @property
+        def has_current_job(self) -> bool:
+            return not self.current_done.is_set()
+
+        async def wait_current_job_done(self) -> None:
+            await self.current_done.wait()
+
+        def enqueue(self, speaker: str, text: str) -> None:
+            self.enqueue_calls.append((speaker, text))
+
+    tts_engine = _FakeTTS()
+    app = object.__new__(main_mod.App)
+    app.tts_engine = tts_engine
+    app._pending_tts_enqueue_tasks = set()
+    app._update_ui_for_response = Mock()
+
+    main_mod.App._on_ai_response(app, "リリィ", "返答だよ", "joy")
+    await asyncio.sleep(0)
+
+    app._update_ui_for_response.assert_called_once_with("リリィ", "返答だよ", "joy")
+    assert tts_engine.enqueue_calls == []
+
+    tts_engine.current_done.set()
+    for _ in range(10):
+        await asyncio.sleep(0)
+        if tts_engine.enqueue_calls:
+            break
+
+    assert tts_engine.enqueue_calls == [("リリィ", "返答だよ")]
+
+
 def test_tts_started_pauses_voice_pipeline_when_enabled():
     voice_pipeline = _FakeVoicePipeline()
     app = SimpleNamespace(
