@@ -17,9 +17,12 @@ export default defineConfig({
         short_name: '自分育成',
         description: 'クエストを積み重ねて成長を記録する、ローカルファーストな自己育成アプリです。',
         lang: 'ja',
-        start_url: './',
+        start_url: './#/',
         scope: './',
         display: 'standalone',
+        launch_handler: {
+          client_mode: 'navigate-existing',
+        },
         background_color: '#f8fafc',
         theme_color: '#7c3aed',
         share_target: {
