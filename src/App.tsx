@@ -65,6 +65,26 @@ function isStandalonePwaLaunch(): boolean {
   return window.matchMedia?.('(display-mode: standalone)').matches === true || navigatorWithStandalone.standalone === true
 }
 
+function isScrapLandingRoute() {
+  const rawHash = window.location.hash || '#/'
+  const hashPath = rawHash.startsWith('#') ? rawHash.slice(1) : rawHash
+  return hashPath === '/records/scraps' || hashPath.startsWith('/records/scraps?')
+}
+
+function resetStaleScrapLandingRoute() {
+  const params = new URLSearchParams(window.location.search)
+  if (params.get('shareTarget') === 'article') {
+    return
+  }
+
+  const shouldResetShareLanding = isScrapLandingRoute() && !readPendingScrapShare()
+  const hasShareLandingResetFlag = consumeShareLandingResetFlag()
+  if (shouldResetShareLanding && (hasShareLandingResetFlag || isStandalonePwaLaunch())) {
+    window.history.replaceState(null, '', `${window.location.pathname}#/`)
+    window.location.hash = '#/'
+  }
+}
+
 function LegacyGrowthRecordsRedirect() {
   const location = useLocation()
   const target = useMemo(() => {
@@ -153,18 +173,22 @@ function AppRoutes() {
   const [loggedIn, setLoggedIn] = useState(false)
 
   useLayoutEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('shareTarget') === 'article') {
-      return
+    resetStaleScrapLandingRoute()
+
+    const handleResume = () => {
+      if (document.visibilityState === 'hidden') {
+        return
+      }
+      resetStaleScrapLandingRoute()
     }
 
-    const shouldResetShareLanding = window.location.hash === '#/records/scraps' && !readPendingScrapShare()
-    const hasShareLandingResetFlag = consumeShareLandingResetFlag()
-    if (shouldResetShareLanding && (hasShareLandingResetFlag || isStandalonePwaLaunch())) {
-      window.history.replaceState(null, '', `${window.location.pathname}#/`)
-      window.location.hash = '#/'
-    } else if (window.location.hash !== '#/records/scraps') {
-      consumeShareLandingResetFlag()
+    window.addEventListener('pageshow', handleResume)
+    window.addEventListener('focus', handleResume)
+    document.addEventListener('visibilitychange', handleResume)
+    return () => {
+      window.removeEventListener('pageshow', handleResume)
+      window.removeEventListener('focus', handleResume)
+      document.removeEventListener('visibilitychange', handleResume)
     }
   }, [])
 
