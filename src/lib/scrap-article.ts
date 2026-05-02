@@ -3,6 +3,7 @@ import { toJstIso } from '@/lib/date'
 import { createId } from '@/lib/utils'
 
 export const SCRAP_PENDING_SHARE_KEY = 'scrap.pendingShare'
+export const SCRAP_SHARE_LANDING_RESET_KEY = 'scrap.shareLandingResetNextLaunch'
 
 export type ScrapSharePayload = {
   title?: string | null
@@ -201,4 +202,24 @@ export function clearPendingScrapShare() {
   }
 
   window.sessionStorage.removeItem(SCRAP_PENDING_SHARE_KEY)
+}
+
+export function markShareLandingForNextLaunchReset() {
+  if (typeof window === 'undefined') {
+    return
+  }
+
+  window.localStorage.setItem(SCRAP_SHARE_LANDING_RESET_KEY, '1')
+}
+
+export function consumeShareLandingResetFlag() {
+  if (typeof window === 'undefined') {
+    return false
+  }
+
+  const shouldReset = window.localStorage.getItem(SCRAP_SHARE_LANDING_RESET_KEY) === '1'
+  if (shouldReset) {
+    window.localStorage.removeItem(SCRAP_SHARE_LANDING_RESET_KEY)
+  }
+  return shouldReset
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { HashRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { ClearEffectScreen } from '@/screens/clear-effect-screen'
 import { GrowthScreen } from '@/screens/growth-screen'
@@ -20,7 +20,12 @@ import { ScrollToTopOnRouteChange } from '@/components/scroll-to-top-on-route-ch
 import { ActivityLogScreen } from '@/screens/activity-log-screen'
 import { useAppStore } from '@/store/app-store'
 import { isLoggedIn } from '@/lib/auth'
-import { writePendingScrapShare } from '@/lib/scrap-article'
+import {
+  consumeShareLandingResetFlag,
+  markShareLandingForNextLaunchReset,
+  readPendingScrapShare,
+  writePendingScrapShare,
+} from '@/lib/scrap-article'
 
 function normalizeLoginReturnTarget(target: string | null | undefined): string {
   if (!target) {
@@ -142,6 +147,21 @@ function AppRoutes() {
   const [authChecked, setAuthChecked] = useState(false)
   const [loggedIn, setLoggedIn] = useState(false)
 
+  useLayoutEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('shareTarget') === 'article') {
+      return
+    }
+
+    const shouldResetShareLanding = window.location.hash === '#/records/scraps' && !readPendingScrapShare()
+    if (shouldResetShareLanding && consumeShareLandingResetFlag()) {
+      window.history.replaceState(null, '', `${window.location.pathname}#/`)
+      window.location.hash = '#/'
+    } else if (window.location.hash !== '#/records/scraps') {
+      consumeShareLandingResetFlag()
+    }
+  }, [])
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     if (params.get('shareTarget') !== 'article') {
@@ -153,6 +173,7 @@ function AppRoutes() {
       text: params.get('text'),
       url: params.get('url'),
     })
+    markShareLandingForNextLaunchReset()
     window.history.replaceState(null, '', `${window.location.pathname}#/records/scraps`)
     window.location.hash = '#/records/scraps'
   }, [])
