@@ -60,6 +60,11 @@ function resolveLoginReturnTarget(hashValue: string): string {
   return normalizeLoginReturnTarget(returnTo)
 }
 
+function isStandalonePwaLaunch(): boolean {
+  const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean }
+  return window.matchMedia?.('(display-mode: standalone)').matches === true || navigatorWithStandalone.standalone === true
+}
+
 function LegacyGrowthRecordsRedirect() {
   const location = useLocation()
   const target = useMemo(() => {
@@ -154,7 +159,8 @@ function AppRoutes() {
     }
 
     const shouldResetShareLanding = window.location.hash === '#/records/scraps' && !readPendingScrapShare()
-    if (shouldResetShareLanding && consumeShareLandingResetFlag()) {
+    const hasShareLandingResetFlag = consumeShareLandingResetFlag()
+    if (shouldResetShareLanding && (hasShareLandingResetFlag || isStandalonePwaLaunch())) {
       window.history.replaceState(null, '', `${window.location.pathname}#/`)
       window.location.hash = '#/'
     } else if (window.location.hash !== '#/records/scraps') {
