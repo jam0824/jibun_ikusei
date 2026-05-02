@@ -132,9 +132,9 @@ describe('App auth redirect', () => {
     expect(window.localStorage.getItem(SCRAP_SHARE_LANDING_RESET_KEY)).toBeNull()
   })
 
-  it('resets a stale scraps route on standalone PWA launch even without the share flag', async () => {
+  it('resets a stale scraps route on fresh app launch even without standalone detection', async () => {
     isLoggedInMock.mockResolvedValue(true)
-    mockStandalonePwa(true)
+    mockStandalonePwa(false)
     window.location.hash = '#/records/scraps'
 
     render(<App />)

@@ -60,11 +60,6 @@ function resolveLoginReturnTarget(hashValue: string): string {
   return normalizeLoginReturnTarget(returnTo)
 }
 
-function isStandalonePwaLaunch(): boolean {
-  const navigatorWithStandalone = navigator as Navigator & { standalone?: boolean }
-  return window.matchMedia?.('(display-mode: standalone)').matches === true || navigatorWithStandalone.standalone === true
-}
-
 function isScrapLandingRoute() {
   const rawHash = window.location.hash || '#/'
   const hashPath = rawHash.startsWith('#') ? rawHash.slice(1) : rawHash
@@ -78,8 +73,8 @@ function resetStaleScrapLandingRoute() {
   }
 
   const shouldResetShareLanding = isScrapLandingRoute() && !readPendingScrapShare()
-  const hasShareLandingResetFlag = consumeShareLandingResetFlag()
-  if (shouldResetShareLanding && (hasShareLandingResetFlag || isStandalonePwaLaunch())) {
+  consumeShareLandingResetFlag()
+  if (shouldResetShareLanding) {
     window.history.replaceState(null, '', `${window.location.pathname}#/`)
     window.location.hash = '#/'
   }
@@ -174,22 +169,6 @@ function AppRoutes() {
 
   useLayoutEffect(() => {
     resetStaleScrapLandingRoute()
-
-    const handleResume = () => {
-      if (document.visibilityState === 'hidden') {
-        return
-      }
-      resetStaleScrapLandingRoute()
-    }
-
-    window.addEventListener('pageshow', handleResume)
-    window.addEventListener('focus', handleResume)
-    document.addEventListener('visibilitychange', handleResume)
-    return () => {
-      window.removeEventListener('pageshow', handleResume)
-      window.removeEventListener('focus', handleResume)
-      document.removeEventListener('visibilitychange', handleResume)
-    }
   }, [])
 
   useEffect(() => {
@@ -204,8 +183,8 @@ function AppRoutes() {
       url: params.get('url'),
     })
     markShareLandingForNextLaunchReset()
-    window.history.replaceState(null, '', `${window.location.pathname}#/records/scraps`)
-    window.location.hash = '#/records/scraps'
+    window.history.replaceState(null, '', `${window.location.pathname}#/`)
+    window.location.hash = '#/'
   }, [])
 
   useEffect(() => {
@@ -234,7 +213,7 @@ function AppRoutes() {
 
     void consumePendingScrapShare().then((result) => {
       if (result.scrap || result.reason) {
-        window.location.hash = '#/records/scraps'
+        window.location.hash = '#/'
       }
     })
   }, [authChecked, consumePendingScrapShare, loggedIn])
