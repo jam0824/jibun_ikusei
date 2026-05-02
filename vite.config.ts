@@ -22,6 +22,15 @@ export default defineConfig({
         display: 'standalone',
         background_color: '#f8fafc',
         theme_color: '#7c3aed',
+        share_target: {
+          action: './?shareTarget=article',
+          method: 'GET',
+          params: {
+            title: 'title',
+            text: 'text',
+            url: 'url',
+          },
+        },
         icons: [
           {
             src: 'pwa-192.png',

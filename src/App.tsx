@@ -14,11 +14,13 @@ import { QuestListScreen } from '@/screens/quest-list-screen'
 import { RecordsHubScreen } from '@/screens/records-hub-screen'
 import { RecordsScreen } from '@/screens/records-screen'
 import { SettingsScreen } from '@/screens/settings-screen'
+import { ScrapArticleFormScreen, ScrapArticlesScreen } from '@/screens/scrap-articles-screen'
 import { WeeklyReflectionScreen } from '@/screens/weekly-reflection-screen'
 import { ScrollToTopOnRouteChange } from '@/components/scroll-to-top-on-route-change'
 import { ActivityLogScreen } from '@/screens/activity-log-screen'
 import { useAppStore } from '@/store/app-store'
 import { isLoggedIn } from '@/lib/auth'
+import { writePendingScrapShare } from '@/lib/scrap-article'
 
 function normalizeLoginReturnTarget(target: string | null | undefined): string {
   if (!target) {
@@ -116,6 +118,8 @@ export function AppShellRoutes() {
         <Route path="life/health" element={<HealthLogScreen />} />
         <Route path="life/browsing" element={<BrowsingLogScreen />} />
         <Route path="review/weekly" element={<WeeklyReflectionScreen />} />
+        <Route path="scraps" element={<ScrapArticlesScreen />} />
+        <Route path="scraps/new" element={<ScrapArticleFormScreen />} />
       </Route>
       <Route path="/status" element={<Navigate to="/growth" replace />} />
       <Route path="/skills" element={<Navigate to="/growth" replace />} />
@@ -134,8 +138,24 @@ export function AppShellRoutes() {
 
 function AppRoutes() {
   const initialize = useAppStore((state) => state.initialize)
+  const consumePendingScrapShare = useAppStore((state) => state.consumePendingScrapShare)
   const [authChecked, setAuthChecked] = useState(false)
   const [loggedIn, setLoggedIn] = useState(false)
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('shareTarget') !== 'article') {
+      return
+    }
+
+    writePendingScrapShare({
+      title: params.get('title'),
+      text: params.get('text'),
+      url: params.get('url'),
+    })
+    window.history.replaceState(null, '', `${window.location.pathname}#/records/scraps`)
+    window.location.hash = '#/records/scraps'
+  }, [])
 
   useEffect(() => {
     isLoggedIn().then((result) => {
@@ -155,6 +175,18 @@ function AppRoutes() {
       window.location.hash = loginHash
     }
   }, [authChecked, loggedIn])
+
+  useEffect(() => {
+    if (!authChecked || !loggedIn || typeof consumePendingScrapShare !== 'function') {
+      return
+    }
+
+    void consumePendingScrapShare().then((result) => {
+      if (result.scrap || result.reason) {
+        window.location.hash = '#/records/scraps'
+      }
+    })
+  }, [authChecked, consumePendingScrapShare, loggedIn])
 
   if (!authChecked) {
     return (
