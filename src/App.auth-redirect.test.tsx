@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import App from '@/App'
+import { SCRAP_SHARE_LANDING_RESET_KEY } from '@/lib/scrap-article'
 
 const loginMock = vi.fn()
 const isLoggedInMock = vi.fn()
@@ -13,9 +14,15 @@ vi.mock('@/lib/auth', () => ({
 }))
 
 vi.mock('@/store/app-store', () => ({
-  useAppStore: (selector: (state: { initialize: () => void }) => unknown) =>
+  useAppStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({
       initialize: initializeMock,
+      consumePendingScrapShare: vi.fn().mockResolvedValue({ ok: false }),
+      scrapArticles: [],
+      scrapShareMessage: undefined,
+      clearScrapShareMessage: vi.fn(),
+      setScrapArticleStatus: vi.fn(),
+      deleteScrapArticle: vi.fn(),
     }),
 }))
 
@@ -37,6 +44,7 @@ describe('App auth redirect', () => {
 
   afterEach(() => {
     window.location.hash = ''
+    window.localStorage.removeItem(SCRAP_SHARE_LANDING_RESET_KEY)
   })
 
   it('returns to the original deep link after login succeeds', async () => {
@@ -90,5 +98,21 @@ describe('App auth redirect', () => {
     })
 
     expect(window.location.hash).toBe('#/')
+  })
+
+  it('resets the previous Android share landing route on the next normal PWA launch', async () => {
+    isLoggedInMock.mockResolvedValue(true)
+    window.location.hash = '#/records/scraps'
+    window.localStorage.setItem(SCRAP_SHARE_LANDING_RESET_KEY, '1')
+
+    render(<App />)
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(window.location.hash).toBe('#/')
+    expect(window.localStorage.getItem(SCRAP_SHARE_LANDING_RESET_KEY)).toBeNull()
   })
 })
