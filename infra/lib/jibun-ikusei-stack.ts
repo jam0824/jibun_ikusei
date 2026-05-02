@@ -156,6 +156,12 @@ export class JibunIkuseiStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/chatHandler')),
     })
 
+    const scrapFn = new lambda.Function(this, 'ScrapHandler', {
+      ...lambdaDefaults,
+      functionName: 'jibun-ikusei-scrapHandler',
+      code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/scrapHandler')),
+    })
+
     const migrateStateFn = new lambda.Function(this, 'MigrateState', {
       ...lambdaDefaults,
       functionName: 'jibun-ikusei-migrateState',
@@ -175,7 +181,7 @@ export class JibunIkuseiStack extends cdk.Stack {
       code: lambda.Code.fromAsset(path.join(__dirname, '../lambda/fitbitDataHandler')),
     })
 
-    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, healthDataFn, activityLogFn, actionLogFn, situationLogFn, chatFn, migrateStateFn, nutritionFn, fitbitDataFn]) {
+    for (const fn of [questFn, completionFn, skillFn, userConfigFn, messageFn, browsingTimeFn, healthDataFn, activityLogFn, actionLogFn, situationLogFn, chatFn, scrapFn, migrateStateFn, nutritionFn, fitbitDataFn]) {
       table.grantReadWriteData(fn)
     }
 
@@ -300,6 +306,13 @@ export class JibunIkuseiStack extends cdk.Stack {
     api.addRoutes({ path: '/chat-sessions/{id}/messages', methods: [apigwv2.HttpMethod.GET], integration: chatIntegration })
     api.addRoutes({ path: '/chat-sessions/{id}/messages', methods: [apigwv2.HttpMethod.POST], integration: chatIntegration })
     api.addRoutes({ path: '/chat-messages', methods: [apigwv2.HttpMethod.GET], integration: chatIntegration })
+
+    // Scraps
+    const scrapIntegration = new integrations.HttpLambdaIntegration('ScrapIntegration', scrapFn)
+    api.addRoutes({ path: '/scraps', methods: [apigwv2.HttpMethod.GET], integration: scrapIntegration })
+    api.addRoutes({ path: '/scraps', methods: [apigwv2.HttpMethod.POST], integration: scrapIntegration })
+    api.addRoutes({ path: '/scraps/{id}', methods: [apigwv2.HttpMethod.PUT], integration: scrapIntegration })
+    api.addRoutes({ path: '/scraps/{id}', methods: [apigwv2.HttpMethod.DELETE], integration: scrapIntegration })
 
     // Messages / Dictionary
     api.addRoutes({ path: '/messages', methods: [apigwv2.HttpMethod.GET], integration: messageIntegration })

@@ -30,6 +30,7 @@ import type {
   Quest,
   QuestAvailability,
   QuestCompletion,
+  ScrapArticle,
   Skill,
   SkillResolutionResult,
   StatusCategorySummary,
@@ -349,6 +350,14 @@ function isSkillStatusValue(value: unknown): value is Skill['status'] {
   return value === 'active' || value === 'merged'
 }
 
+function isScrapArticleStatusValue(value: unknown): value is ScrapArticle['status'] {
+  return value === 'unread' || value === 'read' || value === 'archived'
+}
+
+function isScrapArticleAddedFromValue(value: unknown): value is ScrapArticle['addedFrom'] {
+  return value === 'android-share' || value === 'manual'
+}
+
 function sanitizeQuestRecord(quest: Partial<Quest>): Quest | null {
   if (typeof quest.id !== 'string' || quest.id.length === 0) {
     return null
@@ -455,6 +464,50 @@ function sanitizeSkillRecords(skills: Skill[]) {
   return skills
     .map((skill) => sanitizeSkillRecord(skill))
     .filter((skill): skill is Skill => Boolean(skill))
+}
+
+function sanitizeScrapArticleRecord(scrap: Partial<ScrapArticle>): ScrapArticle | null {
+  if (typeof scrap.id !== 'string' || scrap.id.length === 0) {
+    return null
+  }
+
+  const url = typeof scrap.url === 'string' ? scrap.url.trim() : ''
+  const canonicalUrl = typeof scrap.canonicalUrl === 'string' ? scrap.canonicalUrl.trim() : ''
+  const title = typeof scrap.title === 'string' ? scrap.title.trim() : ''
+  const domain = typeof scrap.domain === 'string' ? scrap.domain.trim() : ''
+  if (!url || !canonicalUrl || !title || !domain) {
+    return null
+  }
+
+  const createdAtFallback = isValidDateValue(scrap.createdAt)
+    ? scrap.createdAt
+    : isValidDateValue(scrap.updatedAt)
+      ? scrap.updatedAt
+      : nowIso()
+  const updatedAt = isValidDateValue(scrap.updatedAt) ? scrap.updatedAt : createdAtFallback
+  const createdAt = isValidDateValue(scrap.createdAt) ? scrap.createdAt : updatedAt
+
+  return {
+    id: scrap.id,
+    url,
+    canonicalUrl,
+    title,
+    domain,
+    sourceText: typeof scrap.sourceText === 'string' ? scrap.sourceText : undefined,
+    memo: typeof scrap.memo === 'string' ? scrap.memo : undefined,
+    status: isScrapArticleStatusValue(scrap.status) ? scrap.status : 'unread',
+    addedFrom: isScrapArticleAddedFromValue(scrap.addedFrom) ? scrap.addedFrom : 'manual',
+    createdAt,
+    updatedAt,
+    readAt: isValidDateValue(scrap.readAt) ? scrap.readAt : undefined,
+    archivedAt: isValidDateValue(scrap.archivedAt) ? scrap.archivedAt : undefined,
+  }
+}
+
+function sanitizeScrapArticleRecords(scraps: ScrapArticle[]) {
+  return scraps
+    .map((scrap) => sanitizeScrapArticleRecord(scrap))
+    .filter((scrap): scrap is ScrapArticle => Boolean(scrap))
 }
 
 export function normalizeQuestTitleForDuplicateKey(title?: string) {
@@ -784,6 +837,7 @@ export function hydratePersistedState(partial?: Partial<PersistedAppState>): Per
     skills: sanitizeSkillRecords(partial?.skills ?? []),
     personalSkillDictionary: partial?.personalSkillDictionary ?? [],
     assistantMessages: partial?.assistantMessages?.length ? partial.assistantMessages : empty.assistantMessages,
+    scrapArticles: sanitizeScrapArticleRecords(partial?.scrapArticles ?? []),
     meta: {
       ...createDefaultMeta(),
       ...partial?.meta,
@@ -1674,6 +1728,7 @@ export function mergeImportedState(
       skills: imported.skills ?? [],
       personalSkillDictionary: imported.personalSkillDictionary ?? [],
       assistantMessages: imported.assistantMessages ?? [],
+      scrapArticles: imported.scrapArticles ?? [],
       meta: {
         ...createDefaultMeta(),
         ...imported.meta,
@@ -1690,6 +1745,7 @@ export function mergeImportedState(
     skills: mergeRecordArrays(current.skills, imported.skills ?? []),
     personalSkillDictionary: mergeRecordArrays(current.personalSkillDictionary, imported.personalSkillDictionary ?? []),
     assistantMessages: mergeRecordArrays(current.assistantMessages, imported.assistantMessages ?? []),
+    scrapArticles: mergeRecordArrays(current.scrapArticles, imported.scrapArticles ?? []),
     meta: {
       ...current.meta,
       ...imported.meta,

@@ -6,8 +6,8 @@ import {
 } from 'amazon-cognito-identity-js'
 
 const userPool = new CognitoUserPool({
-  UserPoolId: import.meta.env.VITE_COGNITO_USER_POOL_ID as string,
-  ClientId: import.meta.env.VITE_COGNITO_CLIENT_ID as string,
+  UserPoolId: (import.meta.env.VITE_COGNITO_USER_POOL_ID as string | undefined) ?? 'ap-northeast-1_dummy',
+  ClientId: (import.meta.env.VITE_COGNITO_CLIENT_ID as string | undefined) ?? 'dummy-client-id',
 })
 
 export type AuthError =

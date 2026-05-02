@@ -22,6 +22,8 @@ export type TriggerType =
   | 'weekly_reflection'
   | 'nudge'
 export type MessageMood = 'bright' | 'calm' | 'playful' | 'epic'
+export type ScrapArticleStatus = 'unread' | 'read' | 'archived'
+export type ScrapArticleAddedFrom = 'android-share' | 'manual'
 
 export interface LocalUser {
   id: 'local_user'
@@ -145,6 +147,22 @@ export interface WeeklyReflectionCache {
   provider: 'openai' | 'template'
 }
 
+export interface ScrapArticle {
+  id: string
+  url: string
+  canonicalUrl: string
+  title: string
+  domain: string
+  sourceText?: string
+  memo?: string
+  status: ScrapArticleStatus
+  addedFrom: ScrapArticleAddedFrom
+  createdAt: string
+  updatedAt: string
+  readAt?: string
+  archivedAt?: string
+}
+
 export interface AppMeta {
   schemaVersion: number
   seededSampleData: boolean
@@ -164,6 +182,7 @@ export interface PersistedAppState {
   skills: Skill[]
   personalSkillDictionary: PersonalSkillDictionary[]
   assistantMessages: AssistantMessage[]
+  scrapArticles: ScrapArticle[]
   meta: AppMeta
 }
 

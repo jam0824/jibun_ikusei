@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
   assistantMessages: 'app.assistantMessages',
   personalSkillDictionary: 'app.personalSkillDictionary',
   aiConfig: 'app.aiConfig',
+  scrapArticles: 'app.scrapArticles',
   meta: 'app.meta',
 } as const
 
