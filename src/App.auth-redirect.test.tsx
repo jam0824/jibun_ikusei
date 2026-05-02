@@ -47,6 +47,22 @@ describe('App auth redirect', () => {
     window.localStorage.removeItem(SCRAP_SHARE_LANDING_RESET_KEY)
   })
 
+  function mockStandalonePwa(matches: boolean) {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === '(display-mode: standalone)' ? matches : false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+  }
+
   it('returns to the original deep link after login succeeds', async () => {
     window.location.hash = '#/growth'
 
@@ -114,5 +130,20 @@ describe('App auth redirect', () => {
 
     expect(window.location.hash).toBe('#/')
     expect(window.localStorage.getItem(SCRAP_SHARE_LANDING_RESET_KEY)).toBeNull()
+  })
+
+  it('resets a stale scraps route on standalone PWA launch even without the share flag', async () => {
+    isLoggedInMock.mockResolvedValue(true)
+    mockStandalonePwa(true)
+    window.location.hash = '#/records/scraps'
+
+    render(<App />)
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(window.location.hash).toBe('#/')
   })
 })
