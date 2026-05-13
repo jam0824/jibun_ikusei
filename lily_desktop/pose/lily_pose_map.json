@@ -8,6 +8,10 @@
       {
         "filename": "lily_default02.png",
         "description": "通常・リラックスした立ちポーズ"
+      },
+      {
+        "filename": "lily_default_03.png",
+        "description": "穏やかで自然な笑顔、リラックスした立ちポーズ（バリエーション3）"
       }
     ],
     "joy": [
@@ -201,7 +205,16 @@
         "description": "真剣な目つき、集中した表情、決意を込めた顔（バリエーション5）"
       }
     ],
-    "sleepy": [],
+    "sleepy": [
+      {
+        "filename": "lily_sleepy_01.png",
+        "description": "眠そうにしている、目が半分閉じている、あくびをしている（バリエーション1）"
+      },
+      {
+        "filename": "lily_sleepy_02.png",
+        "description": "眠そうにしている、目が半分閉じている、あくびをしている（バリエーション2）"
+      }
+    ],
     "playful": [
       {
         "filename": "lily_playful_01.png",
