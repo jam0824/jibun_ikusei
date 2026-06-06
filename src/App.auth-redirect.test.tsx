@@ -44,6 +44,8 @@ describe('App auth redirect', () => {
 
   afterEach(() => {
     window.location.hash = ''
+    window.history.replaceState(null, '', '/')
+    window.sessionStorage.clear()
     window.localStorage.removeItem(SCRAP_SHARE_LANDING_RESET_KEY)
   })
 
@@ -118,7 +120,7 @@ describe('App auth redirect', () => {
 
   it('resets the previous Android share landing route on the next normal PWA launch', async () => {
     isLoggedInMock.mockResolvedValue(true)
-    window.location.hash = '#/records/scraps'
+    window.location.hash = '#/records/scraps/new'
     window.localStorage.setItem(SCRAP_SHARE_LANDING_RESET_KEY, '1')
 
     render(<App />)
@@ -135,7 +137,7 @@ describe('App auth redirect', () => {
   it('resets a stale scraps route on fresh app launch even without standalone detection', async () => {
     isLoggedInMock.mockResolvedValue(true)
     mockStandalonePwa(false)
-    window.location.hash = '#/records/scraps'
+    window.location.hash = '#/records/scraps/new'
 
     render(<App />)
 
@@ -145,5 +147,23 @@ describe('App auth redirect', () => {
     })
 
     expect(window.location.hash).toBe('#/')
+  })
+
+  it('opens the prefilled scrap form after an Android share', async () => {
+    isLoggedInMock.mockResolvedValue(true)
+    window.history.replaceState(
+      null,
+      '',
+      '/?shareTarget=article&url=https%3A%2F%2Fexample.com%2Fshared&title=Shared',
+    )
+
+    render(<App />)
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(window.location.hash).toBe('#/records/scraps/new')
   })
 })

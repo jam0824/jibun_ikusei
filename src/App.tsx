@@ -60,10 +60,12 @@ function resolveLoginReturnTarget(hashValue: string): string {
   return normalizeLoginReturnTarget(returnTo)
 }
 
+const SCRAP_SHARE_FORM_HASH = '#/records/scraps/new'
+
 function isScrapLandingRoute() {
   const rawHash = window.location.hash || '#/'
   const hashPath = rawHash.startsWith('#') ? rawHash.slice(1) : rawHash
-  return hashPath === '/records/scraps' || hashPath.startsWith('/records/scraps?')
+  return hashPath === '/records/scraps/new' || hashPath.startsWith('/records/scraps/new?')
 }
 
 function resetStaleScrapLandingRoute() {
@@ -163,7 +165,6 @@ export function AppShellRoutes() {
 
 function AppRoutes() {
   const initialize = useAppStore((state) => state.initialize)
-  const consumePendingScrapShare = useAppStore((state) => state.consumePendingScrapShare)
   const [authChecked, setAuthChecked] = useState(false)
   const [loggedIn, setLoggedIn] = useState(false)
 
@@ -207,16 +208,18 @@ function AppRoutes() {
   }, [authChecked, loggedIn])
 
   useEffect(() => {
-    if (!authChecked || !loggedIn || typeof consumePendingScrapShare !== 'function') {
+    if (!authChecked || !loggedIn) {
       return
     }
 
-    void consumePendingScrapShare().then((result) => {
-      if (result.scrap || result.reason) {
-        window.location.hash = '#/'
-      }
-    })
-  }, [authChecked, consumePendingScrapShare, loggedIn])
+    if (!readPendingScrapShare()) {
+      return
+    }
+
+    if (window.location.hash !== SCRAP_SHARE_FORM_HASH) {
+      window.location.hash = SCRAP_SHARE_FORM_HASH
+    }
+  }, [authChecked, loggedIn])
 
   if (!authChecked) {
     return (
