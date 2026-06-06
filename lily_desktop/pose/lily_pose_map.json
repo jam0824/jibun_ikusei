@@ -133,6 +133,10 @@
       {
         "filename": "lily_surprised_03.png",
         "description": "目を大きく見開いて驚いている、口を開けている、びっくりした表情（バリエーション3）"
+      },
+      {
+        "filename": "lily_surprised_04.png",
+        "description": "目を大きく見開いて驚いている、口を開けている、びっくりした表情（バリエーション4）"
       }
     ],
     "proud": [
@@ -201,7 +205,16 @@
         "description": "真剣な目つき、集中した表情、決意を込めた顔（バリエーション5）"
       }
     ],
-    "sleepy": [],
+    "sleepy": [
+      {
+        "filename": "lily_sleepy_01.png",
+        "description": "眠そうにしている、目が半分閉じている、あくびをしている（バリエーション1）"
+      },
+      {
+        "filename": "lily_sleepy_02.png",
+        "description": "眠そうにしている、目が半分閉じている、あくびをしている（バリエーション2）"
+      }
+    ],
     "playful": [
       {
         "filename": "lily_playful_01.png",
