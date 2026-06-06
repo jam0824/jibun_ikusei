@@ -6,6 +6,7 @@ import { SCRAP_SHARE_LANDING_RESET_KEY } from '@/lib/scrap-article'
 const loginMock = vi.fn()
 const isLoggedInMock = vi.fn()
 const initializeMock = vi.fn()
+const consumePendingScrapShareMock = vi.fn().mockResolvedValue({ ok: true, scrap: { id: 'scrap_1' } })
 
 vi.mock('@/lib/auth', () => ({
   isLoggedIn: () => isLoggedInMock(),
@@ -17,7 +18,7 @@ vi.mock('@/store/app-store', () => ({
   useAppStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({
       initialize: initializeMock,
-      consumePendingScrapShare: vi.fn().mockResolvedValue({ ok: false }),
+      consumePendingScrapShare: consumePendingScrapShareMock,
       scrapArticles: [],
       scrapShareMessage: undefined,
       clearScrapShareMessage: vi.fn(),
@@ -120,7 +121,7 @@ describe('App auth redirect', () => {
 
   it('resets the previous Android share landing route on the next normal PWA launch', async () => {
     isLoggedInMock.mockResolvedValue(true)
-    window.location.hash = '#/records/scraps/new'
+    window.location.hash = '#/records/scraps'
     window.localStorage.setItem(SCRAP_SHARE_LANDING_RESET_KEY, '1')
 
     render(<App />)
@@ -137,7 +138,7 @@ describe('App auth redirect', () => {
   it('resets a stale scraps route on fresh app launch even without standalone detection', async () => {
     isLoggedInMock.mockResolvedValue(true)
     mockStandalonePwa(false)
-    window.location.hash = '#/records/scraps/new'
+    window.location.hash = '#/records/scraps'
 
     render(<App />)
 
@@ -149,8 +150,12 @@ describe('App auth redirect', () => {
     expect(window.location.hash).toBe('#/')
   })
 
-  it('opens the prefilled scrap form after an Android share', async () => {
+  it('auto-saves an Android share and stays on home', async () => {
     isLoggedInMock.mockResolvedValue(true)
+    window.sessionStorage.setItem(
+      'scrap.pendingShare',
+      JSON.stringify({ title: 'Shared', text: null, url: 'https://example.com/shared' }),
+    )
     window.history.replaceState(
       null,
       '',
@@ -164,6 +169,7 @@ describe('App auth redirect', () => {
       await Promise.resolve()
     })
 
-    expect(window.location.hash).toBe('#/records/scraps/new')
+    expect(consumePendingScrapShareMock).toHaveBeenCalled()
+    expect(window.location.hash).toBe('#/')
   })
 })
