@@ -1,10 +1,15 @@
 import { Archive, CheckCircle2, ExternalLink, Plus, RotateCcw, Settings2, Trash2 } from 'lucide-react'
-import { type FormEvent, useMemo, useState } from 'react'
+import { type FormEvent, useEffect, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { EmptyState, Screen, SectionHeader } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Textarea } from '@/components/ui'
-import type { ScrapArticle, ScrapArticleStatus } from '@/domain/types'
+import type { ScrapArticle, ScrapArticleAddedFrom, ScrapArticleStatus } from '@/domain/types'
 import { formatDateTime } from '@/lib/date'
+import {
+  clearPendingScrapShare,
+  readPendingScrapShare,
+  resolveScrapSharePayload,
+} from '@/lib/scrap-article'
 import { useAppStore } from '@/store/app-store'
 
 type ScrapFilter = 'all' | ScrapArticleStatus
@@ -188,6 +193,25 @@ export function ScrapArticleFormScreen() {
   const [memo, setMemo] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [addedFrom, setAddedFrom] = useState<ScrapArticleAddedFrom>('manual')
+
+  useEffect(() => {
+    const pending = readPendingScrapShare()
+    if (!pending) {
+      return
+    }
+
+    clearPendingScrapShare()
+
+    const resolved = resolveScrapSharePayload(pending)
+    if (resolved.ok) {
+      setUrl(resolved.url)
+      setTitle(resolved.title)
+      setAddedFrom('android-share')
+    } else {
+      setError(resolved.reason)
+    }
+  }, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -198,7 +222,7 @@ export function ScrapArticleFormScreen() {
       url,
       title,
       memo,
-      addedFrom: 'manual',
+      addedFrom,
     })
     setSaving(false)
 
