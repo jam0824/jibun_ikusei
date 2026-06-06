@@ -17,6 +17,7 @@ import { SettingsScreen } from '@/screens/settings-screen'
 import { ScrapArticleFormScreen, ScrapArticlesScreen } from '@/screens/scrap-articles-screen'
 import { WeeklyReflectionScreen } from '@/screens/weekly-reflection-screen'
 import { ScrollToTopOnRouteChange } from '@/components/scroll-to-top-on-route-change'
+import { ScrapShareToast } from '@/components/scrap-share-toast'
 import { ActivityLogScreen } from '@/screens/activity-log-screen'
 import { useAppStore } from '@/store/app-store'
 import { isLoggedIn } from '@/lib/auth'
@@ -60,12 +61,10 @@ function resolveLoginReturnTarget(hashValue: string): string {
   return normalizeLoginReturnTarget(returnTo)
 }
 
-const SCRAP_SHARE_FORM_HASH = '#/records/scraps/new'
-
 function isScrapLandingRoute() {
   const rawHash = window.location.hash || '#/'
   const hashPath = rawHash.startsWith('#') ? rawHash.slice(1) : rawHash
-  return hashPath === '/records/scraps/new' || hashPath.startsWith('/records/scraps/new?')
+  return hashPath === '/records/scraps' || hashPath.startsWith('/records/scraps?')
 }
 
 function resetStaleScrapLandingRoute() {
@@ -165,6 +164,7 @@ export function AppShellRoutes() {
 
 function AppRoutes() {
   const initialize = useAppStore((state) => state.initialize)
+  const consumePendingScrapShare = useAppStore((state) => state.consumePendingScrapShare)
   const [authChecked, setAuthChecked] = useState(false)
   const [loggedIn, setLoggedIn] = useState(false)
 
@@ -208,7 +208,7 @@ function AppRoutes() {
   }, [authChecked, loggedIn])
 
   useEffect(() => {
-    if (!authChecked || !loggedIn) {
+    if (!authChecked || !loggedIn || typeof consumePendingScrapShare !== 'function') {
       return
     }
 
@@ -216,10 +216,12 @@ function AppRoutes() {
       return
     }
 
-    if (window.location.hash !== SCRAP_SHARE_FORM_HASH) {
-      window.location.hash = SCRAP_SHARE_FORM_HASH
-    }
-  }, [authChecked, loggedIn])
+    void consumePendingScrapShare().then(() => {
+      if (window.location.hash !== '#/') {
+        window.location.hash = '#/'
+      }
+    })
+  }, [authChecked, consumePendingScrapShare, loggedIn])
 
   if (!authChecked) {
     return (
@@ -242,7 +244,12 @@ function AppRoutes() {
     )
   }
 
-  return <AppShellRoutes />
+  return (
+    <>
+      <AppShellRoutes />
+      <ScrapShareToast />
+    </>
+  )
 }
 
 export default function App() {

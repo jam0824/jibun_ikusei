@@ -24,7 +24,6 @@ import { AppShellRoutes } from '@/App'
 import { hydratePersistedState } from '@/domain/logic'
 import type { PersistedAppState, ScrapArticle } from '@/domain/types'
 import * as api from '@/lib/api-client'
-import { readPendingScrapShare, writePendingScrapShare } from '@/lib/scrap-article'
 import { useAppStore } from '@/store/app-store'
 
 function createScrap(overrides: Partial<ScrapArticle> = {}): ScrapArticle {
@@ -125,41 +124,6 @@ describe('scrap article routes', () => {
       title: 'Manual article',
       canonicalUrl: 'https://example.com/manual',
       memo: 'あとで読む',
-    })
-  })
-
-  it('prefills the form from a pending Android share and clears it', () => {
-    resetStore()
-    writePendingScrapShare({
-      title: 'Shared title',
-      text: null,
-      url: 'https://example.com/shared',
-    })
-
-    renderRoute('/records/scraps/new')
-
-    expect(screen.getByLabelText('URL')).toHaveValue('https://example.com/shared')
-    expect(screen.getByLabelText('タイトル')).toHaveValue('Shared title')
-    expect(readPendingScrapShare()).toBeNull()
-  })
-
-  it('saves a shared scrap with the android-share source', async () => {
-    resetStore()
-    writePendingScrapShare({
-      title: 'Shared title',
-      text: null,
-      url: 'https://example.com/shared',
-    })
-
-    renderRoute('/records/scraps/new')
-
-    fireEvent.click(screen.getByRole('button', { name: '保存' }))
-
-    expect(await screen.findByText('Shared title')).toBeInTheDocument()
-    expect(useAppStore.getState().scrapArticles[0]).toMatchObject({
-      title: 'Shared title',
-      canonicalUrl: 'https://example.com/shared',
-      addedFrom: 'android-share',
     })
   })
 

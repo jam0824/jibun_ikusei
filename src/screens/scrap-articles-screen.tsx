@@ -1,15 +1,10 @@
 import { Archive, CheckCircle2, ExternalLink, Plus, RotateCcw, Settings2, Trash2 } from 'lucide-react'
-import { type FormEvent, useEffect, useMemo, useState } from 'react'
+import { type FormEvent, useMemo, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { EmptyState, Screen, SectionHeader } from '@/components/layout'
 import { Badge, Button, Card, CardContent, Input, Textarea } from '@/components/ui'
-import type { ScrapArticle, ScrapArticleAddedFrom, ScrapArticleStatus } from '@/domain/types'
+import type { ScrapArticle, ScrapArticleStatus } from '@/domain/types'
 import { formatDateTime } from '@/lib/date'
-import {
-  clearPendingScrapShare,
-  readPendingScrapShare,
-  resolveScrapSharePayload,
-} from '@/lib/scrap-article'
 import { useAppStore } from '@/store/app-store'
 
 type ScrapFilter = 'all' | ScrapArticleStatus
@@ -39,8 +34,6 @@ export function ScrapArticlesScreen() {
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const scraps = useAppStore((state) => state.scrapArticles)
-  const shareMessage = useAppStore((state) => state.scrapShareMessage)
-  const clearMessage = useAppStore((state) => state.clearScrapShareMessage)
   const setStatus = useAppStore((state) => state.setScrapArticleStatus)
   const deleteScrap = useAppStore((state) => state.deleteScrapArticle)
   const activeFilter = parseFilter(searchParams.get('filter'))
@@ -69,25 +62,6 @@ export function ScrapArticlesScreen() {
         </div>
       }
     >
-      {shareMessage ? (
-        <Card
-          className={
-            shareMessage.tone === 'danger'
-              ? 'mb-4 border-rose-200 bg-rose-50'
-              : shareMessage.tone === 'warning'
-                ? 'mb-4 border-amber-200 bg-amber-50'
-                : 'mb-4 border-emerald-200 bg-emerald-50'
-          }
-        >
-          <CardContent className="flex items-center justify-between gap-3 p-4">
-            <div className="text-sm font-semibold text-slate-800">{shareMessage.text}</div>
-            <Button size="sm" variant="ghost" onClick={clearMessage}>
-              閉じる
-            </Button>
-          </CardContent>
-        </Card>
-      ) : null}
-
       <section>
         <SectionHeader title="表示" />
         <div className="grid grid-cols-4 gap-2">
@@ -193,25 +167,6 @@ export function ScrapArticleFormScreen() {
   const [memo, setMemo] = useState('')
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
-  const [addedFrom, setAddedFrom] = useState<ScrapArticleAddedFrom>('manual')
-
-  useEffect(() => {
-    const pending = readPendingScrapShare()
-    if (!pending) {
-      return
-    }
-
-    clearPendingScrapShare()
-
-    const resolved = resolveScrapSharePayload(pending)
-    if (resolved.ok) {
-      setUrl(resolved.url)
-      setTitle(resolved.title)
-      setAddedFrom('android-share')
-    } else {
-      setError(resolved.reason)
-    }
-  }, [])
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -222,7 +177,7 @@ export function ScrapArticleFormScreen() {
       url,
       title,
       memo,
-      addedFrom,
+      addedFrom: 'manual',
     })
     setSaving(false)
 
