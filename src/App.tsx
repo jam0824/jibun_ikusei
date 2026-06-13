@@ -29,69 +29,6 @@ import {
   writePendingScrapShare,
 } from '@/lib/scrap-article'
 
-// [DEBUG] 共有調査用: モジュール読み込み時点(Reactがいじる前)の起動URLを捕捉する
-const LAUNCH_HREF = typeof window !== 'undefined' ? window.location.href : ''
-
-// [DEBUG] 共有調査用バナー。原因確定後に削除する。
-function DebugShareBanner() {
-  const [launchTargetUrl, setLaunchTargetUrl] = useState<string>('(未受信)')
-  const [pending, setPending] = useState<string>('(空)')
-
-  useEffect(() => {
-    const lq = (
-      window as unknown as {
-        launchQueue?: { setConsumer: (cb: (p: { targetURL?: string }) => void) => void }
-      }
-    ).launchQueue
-    if (lq?.setConsumer) {
-      try {
-        lq.setConsumer((params) => {
-          if (params?.targetURL) {
-            setLaunchTargetUrl(params.targetURL)
-          }
-        })
-      } catch {
-        setLaunchTargetUrl('(setConsumer失敗)')
-      }
-    } else {
-      setLaunchTargetUrl('(launchQueue非対応)')
-    }
-  }, [])
-
-  useEffect(() => {
-    const update = () => {
-      setPending(window.sessionStorage.getItem('scrap.pendingShare') ?? '(空)')
-    }
-    update()
-    const id = window.setInterval(update, 500)
-    return () => window.clearInterval(id)
-  }, [])
-
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 999999,
-        background: 'rgba(0,0,0,0.88)',
-        color: '#34d399',
-        font: '11px/1.5 monospace',
-        padding: '8px 10px',
-        maxHeight: '45vh',
-        overflow: 'auto',
-        wordBreak: 'break-all',
-      }}
-    >
-      <div style={{ color: '#fbbf24', fontWeight: 'bold' }}>[DEBUG] 共有調査用(あとで消します)</div>
-      <div>LAUNCH_HREF: {LAUNCH_HREF}</div>
-      <div>launchQueue.targetURL: {launchTargetUrl}</div>
-      <div>pendingShare: {pending}</div>
-    </div>
-  )
-}
-
 function normalizeLoginReturnTarget(target: string | null | undefined): string {
   if (!target) {
     return '/'
@@ -316,7 +253,6 @@ export default function App() {
     <HashRouter>
       <ScrollToTopOnRouteChange />
       <AppRoutes />
-      <DebugShareBanner />
     </HashRouter>
   )
 }
