@@ -44,6 +44,7 @@ class EventBus(QObject):
     memory_talk_requested = Signal()      # 手動で思い出雑談を発火
     quest_weekly_talk_requested = Signal()  # 手動で週次クエスト雑談を発火
     quest_today_talk_requested = Signal()  # 手動で今日のクエスト雑談を発火
+    scrap_talk_requested = Signal()       # 手動で保存記事雑談を発火
 
 
 # アプリ全体で共有するシングルトン

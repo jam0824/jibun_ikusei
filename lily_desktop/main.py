@@ -201,6 +201,7 @@ class App:
         bus.memory_talk_requested.connect(self._on_memory_talk_requested)
         bus.quest_weekly_talk_requested.connect(self._on_quest_weekly_talk_requested)
         bus.quest_today_talk_requested.connect(self._on_quest_today_talk_requested)
+        bus.scrap_talk_requested.connect(self._on_scrap_talk_requested)
 
     def _on_user_message(self, text: str) -> None:
         self._on_incoming_message(text, is_system=False)
@@ -910,6 +911,17 @@ class App:
             )
             return
         self.auto_conversation.trigger_quest_today_now()
+
+    def _on_scrap_talk_requested(self) -> None:
+        if getattr(self, "event_hub", None) is not None:
+            self.event_hub.publish(
+                ChatAutoTalkDue(
+                    source="auto_conversation.manual_scrap",
+                    forced_source="scrap",
+                )
+            )
+            return
+        self.auto_conversation.trigger_scrap_now()
 
     def _on_five_minute_record_requested(self) -> None:
         self._manual_snapshot_feedback_requested = True

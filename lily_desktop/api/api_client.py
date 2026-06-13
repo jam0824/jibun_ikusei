@@ -87,6 +87,10 @@ class ApiClient:
     async def put_completion(self, completion_id: str, updates: dict) -> dict:
         return await self._request("PUT", f"/completions/{completion_id}", json=updates)
 
+    # ---- スクラップ記事 ----
+    async def get_scraps(self) -> list[dict]:
+        return await self._request("GET", "/scraps")
+
     # ---- スキル ----
     async def get_skills(self) -> list[dict]:
         return await self._request("GET", "/skills")

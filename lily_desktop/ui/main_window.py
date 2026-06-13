@@ -284,6 +284,12 @@ class MainWindow(QWidget):
         )
         debug_menu.addAction(quest_today_talk_action)
 
+        scrap_talk_action = QAction("保存記事雑談を開始", self)
+        scrap_talk_action.triggered.connect(
+            lambda: bus.scrap_talk_requested.emit()
+        )
+        debug_menu.addAction(scrap_talk_action)
+
         thirty_minute_record_action = QAction("30分記録を実行", self)
         thirty_minute_record_action.triggered.connect(
             lambda: bus.thirty_minute_record_requested.emit()
