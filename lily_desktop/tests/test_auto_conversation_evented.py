@@ -149,6 +149,18 @@ def test_trigger_quest_today_now_publishes_forced_quest_today_event_when_event_h
     assert event.forced_source == "quest_today"
 
 
+def test_trigger_scrap_now_publishes_forced_scrap_event_when_event_hub_exists(patched_auto_conversation):
+    hub = _CaptureHub()
+    conv = AutoConversation(_make_config(), SimpleNamespace(), event_hub=hub)
+
+    conv.trigger_scrap_now()
+
+    assert len(hub.events) == 1
+    event = hub.events[0]
+    assert isinstance(event, ChatAutoTalkDue)
+    assert event.forced_source == "scrap"
+
+
 def test_trigger_memory_now_publishes_forced_memory_event_when_event_hub_exists(patched_auto_conversation):
     hub = _CaptureHub()
     conv = AutoConversation(_make_config(), SimpleNamespace(), event_hub=hub)

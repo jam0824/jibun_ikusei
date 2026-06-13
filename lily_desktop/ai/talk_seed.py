@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from ai.annict_client import AnnictWork, fetch_seasonal_works
+from ai.article_fetcher import fetch_article_summary
 from ai.camera_analyzer import CameraAnalysis
 from ai.rakuten_books_client import BookTalkCandidate, RakutenBooksClient
 from ai.screen_analyzer import ScreenAnalysis
@@ -31,6 +32,7 @@ JST = timezone(timedelta(hours=9))
 
 _COOLDOWN_MINUTES = 30  # 同じ種を再利用するまでの待ち時間
 _MAX_HISTORY = 10       # 使用履歴の保持件数
+_SCRAP_FETCH_ATTEMPTS = 3  # 保存記事の本文取得を試みる最大件数（HTTPコスト抑制）
 
 
 @dataclass
@@ -39,7 +41,7 @@ class TalkSeed:
     summary: str = ""
     tags: list[str] = field(default_factory=list)
     freshness: str = "fresh"   # fresh | stale
-    source: str = ""           # desktop | wikimedia | annict | books | memory
+    source: str = ""           # desktop | wikimedia | annict | books | memory | scrap
     lily_perspective: str = "" # リリィ側の切り口
     haruka_perspective: str = ""  # 相方側の切り口
     created_at: str = ""
@@ -309,6 +311,7 @@ class TalkSeedManager:
         add("memory", self._memory_directory is not None, self._collect_memory)
         add("quest_weekly", self._api_client is not None, self._collect_quest_weekly)
         add("quest_today", self._api_client is not None, self._collect_quest_today)
+        add("scrap", self._api_client is not None, self._collect_scrap)
 
         return collectors
 
@@ -803,6 +806,85 @@ class TalkSeedManager:
             )
 
         return seeds
+
+    async def _collect_scrap(self) -> list[TalkSeed]:
+        """保存記事（スクラップ）から scrap カテゴリの種を生成する。
+
+        保存データには本文がないため、記事 URL から本文を取得して要約する。
+        未読・読了・アーカイブを問わず全記事を対象にする。
+        """
+        if self._api_client is None:
+            return []
+
+        try:
+            scraps = await self._api_client.get_scraps()
+        except Exception:
+            logger.exception("保存記事の取得に失敗")
+            return []
+
+        candidates = [
+            scrap for scrap in scraps
+            if isinstance(scrap, dict) and scrap.get("id") and scrap.get("url")
+        ]
+        if not candidates:
+            return []
+
+        cooled_keys = {key for key, _ in self._used_history}
+        random.shuffle(candidates)
+
+        now_str = datetime.now(JST).strftime("%Y-%m-%d %H:%M:%S")
+        attempts = 0
+        for scrap in candidates:
+            source_key = f"scrap:{scrap['id']}"
+            if source_key in cooled_keys:
+                continue
+            if attempts >= _SCRAP_FETCH_ATTEMPTS:
+                break
+            attempts += 1
+
+            title = str(scrap.get("title") or "").strip()
+            domain = str(scrap.get("domain") or "").strip()
+            memo = str(scrap.get("memo") or "").strip()
+
+            article = await fetch_article_summary(
+                url=str(scrap["url"]),
+                openai_api_key=self._openai_api_key,
+                provider=self._desktop_analysis_provider,
+                base_url=self._desktop_analysis_base_url,
+                model=self._screen_analysis_model,
+                title=title,
+            )
+            if not article.ok:
+                continue
+
+            if title:
+                summary = f"保存していた記事「{title}」の内容: {article.summary}"
+            else:
+                summary = f"保存していた記事の内容: {article.summary}"
+            tags = ["記事"]
+            if domain:
+                tags.append(domain)
+            if memo:
+                tags.append("メモあり")
+
+            memo_hint = f" 自分のメモには「{memo}」と書いてある。" if memo else ""
+            return [TalkSeed(
+                summary=summary,
+                tags=tags,
+                freshness="fresh",
+                source="scrap",
+                lily_perspective=(
+                    "あとで読もうと自分が保存していた記事の内容を、自分の言葉で"
+                    f"かいつまんで紹介し、感想や気づきを交えて話を広げる。{memo_hint}"
+                ),
+                haruka_perspective=(
+                    "リリィが保存していた記事の話題にテンポよくリアクションし、脱線も交えて盛り上がる"
+                ),
+                created_at=now_str,
+                _source_key=source_key,
+            )]
+
+        return []
 
 
 def _camera_lily_perspective(analysis: CameraAnalysis) -> str:
