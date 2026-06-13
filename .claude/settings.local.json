@@ -73,7 +73,8 @@
       "Bash(ls venv/Scripts/python.exe)",
       "Bash(ls .venv/Scripts/python.exe)",
       "Bash(gh pr create --base dev2 --title DailyActivityLog生成の重複OpenAI呼び出しを抑制 --body ' *)",
-      "Bash(gh auth *)"
+      "Bash(gh auth *)",
+      "WebFetch(domain:jam0824.github.io)"
     ]
   }
 }
