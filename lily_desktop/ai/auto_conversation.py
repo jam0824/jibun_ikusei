@@ -371,7 +371,7 @@ class AutoConversation:
             f"- あなたの切り口: {seed.lily_perspective}",
         ]
 
-        if not conv_history and seed.source in ("wikimedia", "wikimedia_interest", "annict", "books", "memory"):
+        if not conv_history and seed.source in ("wikimedia", "wikimedia_interest", "annict", "books", "memory", "scrap"):
             context_parts.append("")
             if seed.source == "memory":
                 context_parts.append(
@@ -381,6 +381,16 @@ class AutoConversation:
                     "セリフの冒頭から、思い出して少し懐かしむように自然に入り、"
                     "「ファイルには」「文章には」のようなメタ説明はしないこと。"
                     "本文を長くそのまま引用せず、思い出している人の話し方でやわらかく要約してください。"
+                )
+            elif seed.source == "scrap":
+                context_parts.append(
+                    "【最初の一言について】"
+                    "これは自分があとで読もうと保存していた記事の話題で、これが話題の切り出しです。"
+                    "セリフの冒頭で、何についての記事かが大まかに伝わるひと言"
+                    "（例:「AIと仕事の話だけど」「健康診断のことだけど」のように内容・テーマで切り出す）から始めてください。"
+                    "URL・ドメイン名（blog.example.com など）・サイト名をそのまま読み上げないこと。"
+                    "「あの記事」のような曖昧な言い方や、「記事には」「本文には」のようなメタ説明もしないこと。"
+                    "切り出しは最初のひと言だけにして、そのあとは内容の紹介や感想に自然につなげてください。"
                 )
             else:
                 context_parts.append(
@@ -878,6 +888,21 @@ def _evented_trigger_quest_today_now(self: AutoConversation) -> None:
     asyncio.ensure_future(self._run_conversation(forced_source="quest_today"))
 
 
+def _evented_trigger_scrap_now(self: AutoConversation) -> None:
+    if self._event_hub is not None:
+        self._event_hub.publish(
+            ChatAutoTalkDue(
+                source="auto_conversation.manual_scrap",
+                forced_source="scrap",
+            )
+        )
+        return
+    if self._is_talking:
+        logger.info("雑談中のため保存記事雑談をスキップ")
+        return
+    asyncio.ensure_future(self._run_conversation(forced_source="scrap"))
+
+
 def _evented_trigger_follow_up(
     self: AutoConversation,
     user_text: str,
@@ -929,6 +954,7 @@ AutoConversation.trigger_books_now = _evented_trigger_books_now
 AutoConversation.trigger_memory_now = _evented_trigger_memory_now
 AutoConversation.trigger_quest_weekly_now = _evented_trigger_quest_weekly_now
 AutoConversation.trigger_quest_today_now = _evented_trigger_quest_today_now
+AutoConversation.trigger_scrap_now = _evented_trigger_scrap_now
 AutoConversation.trigger_follow_up = _evented_trigger_follow_up
 AutoConversation._on_timer = _evented_on_timer
 AutoConversation.run_auto_talk_job = _run_auto_talk_job

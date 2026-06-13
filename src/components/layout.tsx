@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
-import { Bell, Home, ListTodo, Plus, ScrollText, Sparkles, Utensils } from 'lucide-react'
+import { Bell, Bookmark, Home, ListTodo, Plus, ScrollText, Sparkles, Utensils } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui'
 
@@ -33,7 +33,7 @@ export function AppHeader({
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-xs font-medium text-slate-500">自分育成アプリ</div>
-          <div className="mt-1 text-2xl font-black tracking-tight text-slate-900">{title}</div>
+          <h1 className="mt-1 text-2xl font-black tracking-tight text-slate-900">{title}</h1>
           <div className="mt-1 text-sm text-slate-500">{subtitle}</div>
         </div>
         <div className="flex items-center gap-2">
@@ -150,6 +150,20 @@ export function BottomNav() {
                     <div className="mt-1 text-xs text-slate-500">栄養の記録を追加します。</div>
                   </div>
                   <Utensils className="h-5 w-5 text-violet-600" />
+                </button>
+                <button
+                  type="button"
+                  className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white px-4 py-4 text-left transition hover:border-violet-200 hover:bg-violet-50/40"
+                  onClick={() => {
+                    setIsAddMenuOpen(false)
+                    navigate('/records/scraps/new')
+                  }}
+                >
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">記事スクラップ</div>
+                    <div className="mt-1 text-xs text-slate-500">あとで読むURLを保存します。</div>
+                  </div>
+                  <Bookmark className="h-5 w-5 text-violet-600" />
                 </button>
               </div>
             </div>

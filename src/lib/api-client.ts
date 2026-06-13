@@ -8,6 +8,7 @@ import type {
   PersonalSkillDictionary,
   Quest,
   QuestCompletion,
+  ScrapArticle,
   Skill,
   UserSettings,
 } from '@/domain/types'
@@ -228,6 +229,31 @@ export function postActivityLogs(entries: Array<{
   return request<{ logged: number }>('/activity-logs', {
     method: 'POST',
     body: JSON.stringify({ entries }),
+  })
+}
+
+// スクラップ記事
+export function getScraps() {
+  return request<ScrapArticle[]>('/scraps')
+}
+
+export function postScrap(scrap: ScrapArticle) {
+  return request<ScrapArticle>('/scraps', {
+    method: 'POST',
+    body: JSON.stringify(scrap),
+  })
+}
+
+export function putScrap(id: string, updates: Partial<ScrapArticle>) {
+  return request<ScrapArticle>(`/scraps/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates),
+  })
+}
+
+export function deleteScrap(id: string) {
+  return request<{ deleted: string }>(`/scraps/${id}`, {
+    method: 'DELETE',
   })
 }
 

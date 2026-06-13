@@ -4,7 +4,7 @@ openai:
 desktop:
   analysis_provider: ollama
   analysis_base_url: http://127.0.0.1:11434
-  analysis_model: gemma4:e4b
+  analysis_model: gemma4:12b
   level_watch_interval_minutes: 10
 chat:
   auto_talk_interval_minutes: 15
@@ -21,8 +21,8 @@ display:
   lily_scale: 0.3
   haruka_scale: 0.65
   user_balloon_display_seconds: 15.0
-  window_x: -1911
-  window_y: 2515
+  window_x: -1919
+  window_y: 2514
 voice:
   enabled: true
   pause_during_tts: false
@@ -61,7 +61,7 @@ camera:
   interval_seconds: 300
   analysis_provider: ollama
   analysis_base_url: http://127.0.0.1:11434
-  analysis_model: gemma4:e4b
+  analysis_model: gemma4:12b
   summary_provider: openai
   summary_base_url: http://127.0.0.1:11434
   summary_model: gpt-5-nano

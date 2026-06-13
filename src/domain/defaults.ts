@@ -111,6 +111,7 @@ export function createEmptyState(): PersistedAppState {
     skills: [],
     personalSkillDictionary: [],
     assistantMessages: [createWelcomeMessage()],
+    scrapArticles: [],
     meta: createDefaultMeta(),
   }
 }

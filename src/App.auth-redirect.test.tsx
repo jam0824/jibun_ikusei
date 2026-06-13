@@ -1,10 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import App from '@/App'
+import { SCRAP_SHARE_LANDING_RESET_KEY } from '@/lib/scrap-article'
 
 const loginMock = vi.fn()
 const isLoggedInMock = vi.fn()
 const initializeMock = vi.fn()
+const consumePendingScrapShareMock = vi.fn().mockResolvedValue({ ok: true, scrap: { id: 'scrap_1' } })
 
 vi.mock('@/lib/auth', () => ({
   isLoggedIn: () => isLoggedInMock(),
@@ -13,9 +15,15 @@ vi.mock('@/lib/auth', () => ({
 }))
 
 vi.mock('@/store/app-store', () => ({
-  useAppStore: (selector: (state: { initialize: () => void }) => unknown) =>
+  useAppStore: (selector: (state: Record<string, unknown>) => unknown) =>
     selector({
       initialize: initializeMock,
+      consumePendingScrapShare: consumePendingScrapShareMock,
+      scrapArticles: [],
+      scrapShareMessage: undefined,
+      clearScrapShareMessage: vi.fn(),
+      setScrapArticleStatus: vi.fn(),
+      deleteScrapArticle: vi.fn(),
     }),
 }))
 
@@ -37,7 +45,26 @@ describe('App auth redirect', () => {
 
   afterEach(() => {
     window.location.hash = ''
+    window.history.replaceState(null, '', '/')
+    window.sessionStorage.clear()
+    window.localStorage.removeItem(SCRAP_SHARE_LANDING_RESET_KEY)
   })
+
+  function mockStandalonePwa(matches: boolean) {
+    Object.defineProperty(window, 'matchMedia', {
+      writable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === '(display-mode: standalone)' ? matches : false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    })
+  }
 
   it('returns to the original deep link after login succeeds', async () => {
     window.location.hash = '#/growth'
@@ -89,6 +116,60 @@ describe('App auth redirect', () => {
       await Promise.resolve()
     })
 
+    expect(window.location.hash).toBe('#/')
+  })
+
+  it('resets the previous Android share landing route on the next normal PWA launch', async () => {
+    isLoggedInMock.mockResolvedValue(true)
+    window.location.hash = '#/records/scraps'
+    window.localStorage.setItem(SCRAP_SHARE_LANDING_RESET_KEY, '1')
+
+    render(<App />)
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(window.location.hash).toBe('#/')
+    expect(window.localStorage.getItem(SCRAP_SHARE_LANDING_RESET_KEY)).toBeNull()
+  })
+
+  it('resets a stale scraps route on fresh app launch even without standalone detection', async () => {
+    isLoggedInMock.mockResolvedValue(true)
+    mockStandalonePwa(false)
+    window.location.hash = '#/records/scraps'
+
+    render(<App />)
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(window.location.hash).toBe('#/')
+  })
+
+  it('auto-saves an Android share and stays on home', async () => {
+    isLoggedInMock.mockResolvedValue(true)
+    window.sessionStorage.setItem(
+      'scrap.pendingShare',
+      JSON.stringify({ title: 'Shared', text: null, url: 'https://example.com/shared' }),
+    )
+    window.history.replaceState(
+      null,
+      '',
+      '/?shareTarget=article&url=https%3A%2F%2Fexample.com%2Fshared&title=Shared',
+    )
+
+    render(<App />)
+
+    await act(async () => {
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(consumePendingScrapShareMock).toHaveBeenCalled()
     expect(window.location.hash).toBe('#/')
   })
 })

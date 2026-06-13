@@ -10,6 +10,7 @@ vi.mock('@/lib/api-client', () => ({
   getMeta: vi.fn(),
   getMessages: vi.fn(),
   getDictionary: vi.fn(),
+  getScraps: vi.fn(),
 }))
 
 import * as api from '@/lib/api-client'
@@ -76,6 +77,7 @@ describe('storage', () => {
     vi.mocked(api.getMeta).mockResolvedValue(null)
     vi.mocked(api.getMessages).mockResolvedValue([])
     vi.mocked(api.getDictionary).mockResolvedValue([])
+    vi.mocked(api.getScraps).mockResolvedValue([])
 
     const cloud = await loadFromCloud()
 
@@ -158,6 +160,7 @@ describe('storage', () => {
     vi.mocked(api.getMeta).mockResolvedValue(null)
     vi.mocked(api.getMessages).mockResolvedValue([])
     vi.mocked(api.getDictionary).mockResolvedValue([])
+    vi.mocked(api.getScraps).mockResolvedValue([])
 
     const cloud = await loadFromCloud()
 

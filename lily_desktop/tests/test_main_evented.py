@@ -111,6 +111,21 @@ def test_quest_today_talk_request_publishes_forced_quest_today_event():
     assert event.forced_source == "quest_today"
 
 
+def test_scrap_talk_request_publishes_forced_scrap_event():
+    hub = _CaptureHub()
+    app = SimpleNamespace(
+        event_hub=hub,
+        auto_conversation=SimpleNamespace(trigger_scrap_now=Mock()),
+    )
+
+    main_mod.App._on_scrap_talk_requested(app)
+
+    assert len(hub.events) == 1
+    event = hub.events[0]
+    assert isinstance(event, ChatAutoTalkDue)
+    assert event.forced_source == "scrap"
+
+
 def test_five_minute_record_request_publishes_snapshot_event():
     hub = _CaptureHub()
     app = SimpleNamespace(event_hub=hub)

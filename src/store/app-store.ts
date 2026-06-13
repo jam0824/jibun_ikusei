@@ -28,11 +28,14 @@ import type {
   PersistedAppState,
   Quest,
   QuestCompletion,
+  ScrapArticle,
+  ScrapArticleAddedFrom,
+  ScrapArticleStatus,
   SkillResolutionResult,
   UserSettings,
 } from '@/domain/types'
 import type { FitbitSummary, NutritionDayResult } from '@/lib/api-client'
-import { getDayKey, getWeekKey, isUndoable, nowIso } from '@/lib/date'
+import { getDayKey, getWeekKey, isUndoable, nowIso, toJstIso } from '@/lib/date'
 import {
   generateWeeklyReflection,
   generateLilyMessageWithProvider,
@@ -47,6 +50,12 @@ import { getCachedAudio, playAudioUrl } from '@/lib/tts'
 import { createId, downloadJson } from '@/lib/utils'
 import { SKILL_XP_CAP } from '@/domain/constants'
 import { logActivity } from '@/lib/activity-logger'
+import {
+  buildScrapArticleDraft,
+  clearPendingScrapShare,
+  readPendingScrapShare,
+  resolveScrapSharePayload,
+} from '@/lib/scrap-article'
 
 type ImportMode = 'merge' | 'replace'
 
@@ -61,12 +70,27 @@ type ConnectionState = {
   message?: string
 }
 
+type SaveScrapArticleInput = {
+  url: string
+  title?: string
+  memo?: string
+  sourceText?: string
+  addedFrom: ScrapArticleAddedFrom
+}
+
+type ScrapShareMessage = {
+  tone: 'success' | 'warning' | 'danger'
+  text: string
+  scrapId?: string
+}
+
 interface AppStore extends PersistedAppState {
   hydrated: boolean
   busyQuestId?: string
   currentEffectCompletionId?: string
   connectionState: Record<'openai' | 'gemini', ConnectionState>
   importMode: ImportMode
+  scrapShareMessage?: ScrapShareMessage
   initialize: () => void
   upsertQuest: (quest: Quest) => void
   deleteQuest: (questId: string) => { ok: boolean; reason?: string }
@@ -87,6 +111,17 @@ interface AppStore extends PersistedAppState {
   importData: (jsonText: string, mode: ImportMode) => { ok: boolean; reason?: string }
   resetLocalData: () => void
   setImportMode: (mode: ImportMode) => void
+  saveScrapArticle: (input: SaveScrapArticleInput) => Promise<{
+    ok: boolean
+    duplicate?: boolean
+    scrap?: ScrapArticle
+    reason?: string
+  }>
+  updateScrapArticle: (id: string, updates: Partial<Pick<ScrapArticle, 'title' | 'memo'>>) => { ok: boolean; reason?: string }
+  setScrapArticleStatus: (id: string, status: ScrapArticleStatus) => { ok: boolean; reason?: string }
+  deleteScrapArticle: (id: string) => { ok: boolean; reason?: string }
+  consumePendingScrapShare: () => Promise<{ ok: boolean; duplicate?: boolean; scrap?: ScrapArticle; reason?: string }>
+  clearScrapShareMessage: () => void
   // 栄養素
   nutritionCache: Record<string, NutritionDayResult>
   fetchNutrition: (date: string) => Promise<NutritionDayResult>
@@ -108,6 +143,7 @@ function toPersistedState(state: AppStore): PersistedAppState {
     skills,
     personalSkillDictionary,
     assistantMessages,
+    scrapArticles,
     meta,
   } = state
 
@@ -120,6 +156,7 @@ function toPersistedState(state: AppStore): PersistedAppState {
     skills,
     personalSkillDictionary,
     assistantMessages,
+    scrapArticles,
     meta,
   }
 }
@@ -410,6 +447,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     gemini: { status: 'idle' },
   },
   importMode: 'merge',
+  scrapShareMessage: undefined,
   nutritionCache: {},
   fitbitCache: {},
 
@@ -462,6 +500,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           skills: mergeArrayById(preparedLocal.skills, cloud.skills ?? []),
           personalSkillDictionary: mergeArrayById(preparedLocal.personalSkillDictionary, cloud.personalSkillDictionary ?? []),
           assistantMessages: mergeArrayById(preparedLocal.assistantMessages, cloud.assistantMessages ?? []),
+          scrapArticles: mergeArrayById(preparedLocal.scrapArticles, cloud.scrapArticles ?? []),
         })),
         cloud,
       )
@@ -1488,6 +1527,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
         }
         for (const m of merged.assistantMessages) await api.postMessage(m).catch(() => undefined)
         for (const d of merged.personalSkillDictionary) await api.postDictEntry(d).catch(() => undefined)
+        for (const scrap of merged.scrapArticles) await api.postScrap(scrap).catch(() => undefined)
       })()
       return { ok: true }
     } catch (error) {
@@ -1511,11 +1551,182 @@ export const useAppStore = create<AppStore>((set, get) => ({
         openai: { status: 'idle' },
         gemini: { status: 'idle' },
       },
+      scrapShareMessage: undefined,
     })
   },
 
   setImportMode: (mode) => {
     set({ importMode: mode })
+  },
+
+  saveScrapArticle: async (input) => {
+    let draft: ScrapArticle
+    try {
+      draft = buildScrapArticleDraft(input)
+    } catch {
+      return { ok: false, reason: '保存できるURLではありません。' }
+    }
+
+    const state = get()
+    const existing = state.scrapArticles.find((scrap) => scrap.canonicalUrl === draft.canonicalUrl)
+    if (existing) {
+      set({
+        scrapShareMessage: {
+          tone: 'warning',
+          text: '保存済みの記事です。',
+          scrapId: existing.id,
+        },
+      })
+      return { ok: true, duplicate: true, scrap: existing }
+    }
+
+    const nextState = reconcileState({
+      ...state,
+      scrapArticles: [draft, ...state.scrapArticles],
+    })
+    persistState(nextState)
+    set(nextState)
+
+    try {
+      const saved = await api.postScrap(draft)
+      const latest = get()
+      const isServerDuplicate = saved.id !== draft.id
+      const updatedState = reconcileState({
+        ...latest,
+        scrapArticles: [
+          saved,
+          ...latest.scrapArticles.filter(
+            (scrap) => scrap.id !== draft.id && scrap.canonicalUrl !== saved.canonicalUrl,
+          ),
+        ],
+      })
+      persistState(updatedState)
+      set({
+        ...updatedState,
+        scrapShareMessage: {
+          tone: isServerDuplicate ? 'warning' : 'success',
+          text: isServerDuplicate ? '保存済みの記事です。' : '記事を保存しました。',
+          scrapId: saved.id,
+        },
+      })
+      logActivity('scrap.create', 'scrap', { scrapId: saved.id, title: saved.title, url: saved.url })
+      return { ok: true, duplicate: isServerDuplicate, scrap: saved }
+    } catch {
+      set({
+        scrapShareMessage: {
+          tone: 'danger',
+          text: '保存できませんでした。通信状態を確認してもう一度お試しください。',
+          scrapId: draft.id,
+        },
+      })
+      return {
+        ok: false,
+        scrap: draft,
+        reason: '保存できませんでした。通信状態を確認してもう一度お試しください。',
+      }
+    }
+  },
+
+  updateScrapArticle: (id, updates) => {
+    const state = get()
+    const existing = state.scrapArticles.find((scrap) => scrap.id === id)
+    if (!existing) {
+      return { ok: false, reason: '記事が見つかりません。' }
+    }
+
+    const updated: ScrapArticle = {
+      ...existing,
+      title: typeof updates.title === 'string' && updates.title.trim() ? updates.title.trim() : existing.title,
+      memo: typeof updates.memo === 'string' && updates.memo.trim() ? updates.memo.trim() : undefined,
+      updatedAt: toJstIso(),
+    }
+    const nextState = reconcileState({
+      ...state,
+      scrapArticles: state.scrapArticles.map((scrap) => (scrap.id === id ? updated : scrap)),
+    })
+    persistState(nextState)
+    set(nextState)
+    void api.putScrap(id, updated).catch(() => undefined)
+    return { ok: true }
+  },
+
+  setScrapArticleStatus: (id, status) => {
+    const state = get()
+    const existing = state.scrapArticles.find((scrap) => scrap.id === id)
+    if (!existing) {
+      return { ok: false, reason: '記事が見つかりません。' }
+    }
+
+    const timestamp = toJstIso()
+    const updated: ScrapArticle = {
+      ...existing,
+      status,
+      updatedAt: timestamp,
+      readAt: status === 'read' ? timestamp : status === 'unread' ? undefined : existing.readAt,
+      archivedAt:
+        status === 'archived'
+          ? timestamp
+          : status === 'unread' || status === 'read'
+            ? undefined
+            : existing.archivedAt,
+    }
+    const nextState = reconcileState({
+      ...state,
+      scrapArticles: state.scrapArticles.map((scrap) => (scrap.id === id ? updated : scrap)),
+    })
+    persistState(nextState)
+    set(nextState)
+    void api.putScrap(id, updated).catch(() => undefined)
+    return { ok: true }
+  },
+
+  deleteScrapArticle: (id) => {
+    const state = get()
+    const existing = state.scrapArticles.find((scrap) => scrap.id === id)
+    if (!existing) {
+      return { ok: false, reason: '記事が見つかりません。' }
+    }
+
+    const nextState = reconcileState({
+      ...state,
+      scrapArticles: state.scrapArticles.filter((scrap) => scrap.id !== id),
+    })
+    persistState(nextState)
+    set(nextState)
+    void api.deleteScrap(id).catch(() => undefined)
+    return { ok: true }
+  },
+
+  consumePendingScrapShare: async () => {
+    const payload = readPendingScrapShare()
+    if (!payload) {
+      return { ok: false, reason: '共有データがありません。' }
+    }
+
+    const resolved = resolveScrapSharePayload(payload)
+    if (!resolved.ok) {
+      clearPendingScrapShare()
+      set({
+        scrapShareMessage: {
+          tone: 'danger',
+          text: resolved.reason,
+        },
+      })
+      return { ok: false, reason: resolved.reason }
+    }
+
+    const result = await get().saveScrapArticle({
+      url: resolved.url,
+      title: resolved.title,
+      sourceText: resolved.sourceText,
+      addedFrom: 'android-share',
+    })
+    clearPendingScrapShare()
+    return result
+  },
+
+  clearScrapShareMessage: () => {
+    set({ scrapShareMessage: undefined })
   },
 
   // ---- 栄養素 ----

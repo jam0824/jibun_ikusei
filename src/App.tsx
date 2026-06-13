@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { HashRouter, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
 import { ClearEffectScreen } from '@/screens/clear-effect-screen'
 import { GrowthScreen } from '@/screens/growth-screen'
@@ -14,11 +14,20 @@ import { QuestListScreen } from '@/screens/quest-list-screen'
 import { RecordsHubScreen } from '@/screens/records-hub-screen'
 import { RecordsScreen } from '@/screens/records-screen'
 import { SettingsScreen } from '@/screens/settings-screen'
+import { ScrapArticleFormScreen, ScrapArticlesScreen } from '@/screens/scrap-articles-screen'
 import { WeeklyReflectionScreen } from '@/screens/weekly-reflection-screen'
 import { ScrollToTopOnRouteChange } from '@/components/scroll-to-top-on-route-change'
+import { ScrapShareToast } from '@/components/scrap-share-toast'
 import { ActivityLogScreen } from '@/screens/activity-log-screen'
 import { useAppStore } from '@/store/app-store'
 import { isLoggedIn } from '@/lib/auth'
+import {
+  consumeShareLandingResetFlag,
+  extractShareParamsFromSearch,
+  markShareLandingForNextLaunchReset,
+  readPendingScrapShare,
+  writePendingScrapShare,
+} from '@/lib/scrap-article'
 
 function normalizeLoginReturnTarget(target: string | null | undefined): string {
   if (!target) {
@@ -51,6 +60,25 @@ function resolveLoginReturnTarget(hashValue: string): string {
   const [, query = ''] = raw.split('?')
   const returnTo = new URLSearchParams(query).get('returnTo')
   return normalizeLoginReturnTarget(returnTo)
+}
+
+function isScrapLandingRoute() {
+  const rawHash = window.location.hash || '#/'
+  const hashPath = rawHash.startsWith('#') ? rawHash.slice(1) : rawHash
+  return hashPath === '/records/scraps' || hashPath.startsWith('/records/scraps?')
+}
+
+function resetStaleScrapLandingRoute() {
+  if (extractShareParamsFromSearch(window.location.search)) {
+    return
+  }
+
+  const shouldResetShareLanding = isScrapLandingRoute() && !readPendingScrapShare()
+  consumeShareLandingResetFlag()
+  if (shouldResetShareLanding) {
+    window.history.replaceState(null, '', `${window.location.pathname}#/`)
+    window.location.hash = '#/'
+  }
 }
 
 function LegacyGrowthRecordsRedirect() {
@@ -116,6 +144,8 @@ export function AppShellRoutes() {
         <Route path="life/health" element={<HealthLogScreen />} />
         <Route path="life/browsing" element={<BrowsingLogScreen />} />
         <Route path="review/weekly" element={<WeeklyReflectionScreen />} />
+        <Route path="scraps" element={<ScrapArticlesScreen />} />
+        <Route path="scraps/new" element={<ScrapArticleFormScreen />} />
       </Route>
       <Route path="/status" element={<Navigate to="/growth" replace />} />
       <Route path="/skills" element={<Navigate to="/growth" replace />} />
@@ -134,8 +164,25 @@ export function AppShellRoutes() {
 
 function AppRoutes() {
   const initialize = useAppStore((state) => state.initialize)
+  const consumePendingScrapShare = useAppStore((state) => state.consumePendingScrapShare)
   const [authChecked, setAuthChecked] = useState(false)
   const [loggedIn, setLoggedIn] = useState(false)
+
+  useLayoutEffect(() => {
+    resetStaleScrapLandingRoute()
+  }, [])
+
+  useEffect(() => {
+    const sharePayload = extractShareParamsFromSearch(window.location.search)
+    if (!sharePayload) {
+      return
+    }
+
+    writePendingScrapShare(sharePayload)
+    markShareLandingForNextLaunchReset()
+    window.history.replaceState(null, '', `${window.location.pathname}#/`)
+    window.location.hash = '#/'
+  }, [])
 
   useEffect(() => {
     isLoggedIn().then((result) => {
@@ -155,6 +202,22 @@ function AppRoutes() {
       window.location.hash = loginHash
     }
   }, [authChecked, loggedIn])
+
+  useEffect(() => {
+    if (!authChecked || !loggedIn || typeof consumePendingScrapShare !== 'function') {
+      return
+    }
+
+    if (!readPendingScrapShare()) {
+      return
+    }
+
+    void consumePendingScrapShare().then(() => {
+      if (window.location.hash !== '#/') {
+        window.location.hash = '#/'
+      }
+    })
+  }, [authChecked, consumePendingScrapShare, loggedIn])
 
   if (!authChecked) {
     return (
@@ -177,7 +240,12 @@ function AppRoutes() {
     )
   }
 
-  return <AppShellRoutes />
+  return (
+    <>
+      <AppShellRoutes />
+      <ScrapShareToast />
+    </>
+  )
 }
 
 export default function App() {

@@ -1,4 +1,4 @@
-import { Activity, Heart, ScrollText, Settings2, Sparkles } from 'lucide-react'
+import { Activity, Bookmark, Heart, ScrollText, Settings2, Sparkles } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { Screen, SectionHeader } from '@/components/layout'
 import { Button, Card, CardContent } from '@/components/ui'
@@ -102,6 +102,27 @@ export function RecordsHubScreen() {
                   <div className="text-sm font-semibold text-slate-900">週次ふりかえり</div>
                   <div className="mt-1 text-sm text-slate-500">
                     先週の流れを見直して、次の一手を整えられます。
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </button>
+
+          <button
+            type="button"
+            className="text-left"
+            onClick={() => navigate('/records/scraps')}
+            aria-label="スクラップ記事を開く"
+          >
+            <Card className="hover:border-violet-200 hover:bg-violet-50/40">
+              <CardContent className="flex items-center gap-4 p-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-100 text-teal-700">
+                  <Bookmark className="h-5 w-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-slate-900">スクラップ記事</div>
+                  <div className="mt-1 text-sm text-slate-500">
+                    あとで読みたい記事URLを保存して見返せます。
                   </div>
                 </div>
               </CardContent>

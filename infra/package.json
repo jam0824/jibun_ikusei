@@ -18,6 +18,7 @@
   "devDependencies": {
     "@aws-sdk/client-dynamodb": "^3.1014.0",
     "@aws-sdk/lib-dynamodb": "^3.1014.0",
+    "aws-cdk": "^2.1120.0",
     "typescript": "^5.8.0",
     "vitest": "^4.1.0"
   }
