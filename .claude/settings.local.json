@@ -75,7 +75,8 @@
       "Bash(gh pr create --base dev2 --title DailyActivityLog生成の重複OpenAI呼び出しを抑制 --body ' *)",
       "Bash(gh auth *)",
       "WebFetch(domain:jam0824.github.io)",
-      "PowerShell(npm run *)"
+      "PowerShell(npm run *)",
+      "PowerShell(npx vitest run src/lib/scrap-article.test.ts src/App.auth-redirect.test.tsx 2>&1 | Select-Object -Last 35)"
     ]
   }
 }
