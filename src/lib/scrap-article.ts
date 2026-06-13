@@ -170,6 +170,30 @@ export function buildScrapArticleDraft(
   }
 }
 
+/**
+ * Web Share Target(GET)の起動クエリから共有データを取り出す。
+ *
+ * Android の WebAPK は GET 共有のとき manifest の `action` に書いたクエリ文字列
+ * (例: `?shareTarget=article`)を破棄し、`params` で定義した `title`/`text`/`url`
+ * だけで起動 URL を組み立てる。そのため `shareTarget=article` の有無では判定できず、
+ * 共有パラメータ自体の有無で共有起動かどうかを判断する。
+ * 通常起動はハッシュルーティングで search が空になるため誤検知しない。
+ */
+export function extractShareParamsFromSearch(search: string): ScrapSharePayload | null {
+  const params = new URLSearchParams(search)
+  const isExplicitShareTarget = params.get('shareTarget') === 'article'
+  const hasShareData = params.has('title') || params.has('text') || params.has('url')
+  if (!isExplicitShareTarget && !hasShareData) {
+    return null
+  }
+
+  return {
+    title: params.get('title'),
+    text: params.get('text'),
+    url: params.get('url'),
+  }
+}
+
 export function readPendingScrapShare(): ScrapSharePayload | null {
   if (typeof window === 'undefined') {
     return null

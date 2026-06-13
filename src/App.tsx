@@ -23,6 +23,7 @@ import { useAppStore } from '@/store/app-store'
 import { isLoggedIn } from '@/lib/auth'
 import {
   consumeShareLandingResetFlag,
+  extractShareParamsFromSearch,
   markShareLandingForNextLaunchReset,
   readPendingScrapShare,
   writePendingScrapShare,
@@ -131,8 +132,7 @@ function isScrapLandingRoute() {
 }
 
 function resetStaleScrapLandingRoute() {
-  const params = new URLSearchParams(window.location.search)
-  if (params.get('shareTarget') === 'article') {
+  if (extractShareParamsFromSearch(window.location.search)) {
     return
   }
 
@@ -236,16 +236,12 @@ function AppRoutes() {
   }, [])
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    if (params.get('shareTarget') !== 'article') {
+    const sharePayload = extractShareParamsFromSearch(window.location.search)
+    if (!sharePayload) {
       return
     }
 
-    writePendingScrapShare({
-      title: params.get('title'),
-      text: params.get('text'),
-      url: params.get('url'),
-    })
+    writePendingScrapShare(sharePayload)
     markShareLandingForNextLaunchReset()
     window.history.replaceState(null, '', `${window.location.pathname}#/`)
     window.location.hash = '#/'

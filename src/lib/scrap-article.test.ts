@@ -2,8 +2,38 @@ import { describe, expect, it } from 'vitest'
 import {
   buildScrapArticleDraft,
   canonicalizeScrapUrl,
+  extractShareParamsFromSearch,
   resolveScrapSharePayload,
 } from '@/lib/scrap-article'
+
+describe('extractShareParamsFromSearch', () => {
+  it('shareTargetフラグが無くてもtitle/text/urlがあれば共有起動とみなす', () => {
+    // Android WebAPK は GET 共有時に action のクエリ(?shareTarget=article)を捨てるため
+    const result = extractShareParamsFromSearch(
+      '?title=Qiita&text=https%3A%2F%2Fqiita.com%2Fuser%2Fitems%2Fabc',
+    )
+
+    expect(result).not.toBeNull()
+    expect(result?.title).toBe('Qiita')
+    expect(result?.text).toBe('https://qiita.com/user/items/abc')
+    expect(result?.url).toBeNull()
+  })
+
+  it('shareTarget=articleが付いている場合も共有起動とみなす', () => {
+    const result = extractShareParamsFromSearch(
+      '?shareTarget=article&url=https%3A%2F%2Fexample.com%2Fa&title=Example',
+    )
+
+    expect(result).not.toBeNull()
+    expect(result?.url).toBe('https://example.com/a')
+    expect(result?.title).toBe('Example')
+  })
+
+  it('共有パラメータが無い通常起動ではnullを返す', () => {
+    expect(extractShareParamsFromSearch('')).toBeNull()
+    expect(extractShareParamsFromSearch('?foo=bar')).toBeNull()
+  })
+})
 
 describe('scrap article utilities', () => {
   it('uses url before text and title when resolving Android share payloads', () => {
