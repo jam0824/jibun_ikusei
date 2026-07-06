@@ -138,7 +138,7 @@ describe('message-handler', () => {
       expect(cache?.['learn.com:/typescript'].result.category).toBe('学習')
     })
 
-    it('通知が有効なら分類トーストを送る', async () => {
+    it('通知が有効でも分類トーストは送らない', async () => {
       await setLocal('extensionSettings', {
         aiProvider: 'openai',
         openaiApiKey: 'test-key',
@@ -155,13 +155,7 @@ describe('message-handler', () => {
         title: 'MDN Web Docs',
       })
 
-      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(
-        5,
-        expect.objectContaining({
-          type: 'SHOW_TOAST',
-          payload: expect.objectContaining({ variant: 'info' }),
-        }),
-      )
+      expect(chrome.tabs.sendMessage).not.toHaveBeenCalled()
     })
   })
 

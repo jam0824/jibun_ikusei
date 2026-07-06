@@ -1,7 +1,6 @@
 import { classifyPage } from '@ext/lib/ai-classifier'
 import { buildCacheKey } from '@ext/lib/cache-key'
 import { ClassificationCache } from '@ext/lib/classification-cache'
-import { sendClassificationToastToTab } from '@ext/lib/notifications'
 import { getLocal } from '@ext/lib/storage'
 import type { ClassificationCacheEntry, ClassificationResult, PageInfo } from '@ext/types/browsing'
 import { createDefaultSettings, type ExtensionSettings } from '@ext/types/settings'
@@ -32,26 +31,18 @@ export function clearTabPageInfo(tabId: number): void {
 
 export async function handlePageInfo(tabId: number, pageInfo: PageInfo): Promise<void> {
   const settings = (await getLocal<ExtensionSettings>('extensionSettings')) ?? createDefaultSettings()
-  const notificationsEnabled = settings.notificationsEnabled ?? true
   tabPageInfos.set(tabId, pageInfo)
 
   const cacheKey = buildCacheKey(pageInfo)
   const cached = await classificationCache.get(cacheKey)
   if (cached) {
     tabClassifications.set(tabId, cached.result)
-    if (notificationsEnabled) {
-      await sendClassificationToastToTab(tabId, cached.result.category, cached.result.isGrowth).catch(() => {})
-    }
     return
   }
 
   const result = await classifyPage(pageInfo, settings)
   await classificationCache.set(cacheKey, result, 'ai')
   tabClassifications.set(tabId, result)
-
-  if (notificationsEnabled && result.confidence > 0) {
-    await sendClassificationToastToTab(tabId, result.category, result.isGrowth).catch(() => {})
-  }
 }
 
 export function setupMessageListener(): void {

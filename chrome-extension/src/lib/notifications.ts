@@ -35,25 +35,6 @@ function eventToToast(event: QuestEvent): ToastPayload | null {
   }
 }
 
-/** Send a classification toast to a specific tab */
-export async function sendClassificationToastToTab(
-  tabId: number,
-  category: string,
-  isGrowth: boolean,
-): Promise<void> {
-  const text = isGrowth
-    ? `Lily: 「${category}」ですね。記録を始めます。`
-    : `Lily: 「${category}」に分類しました。`
-
-  const payload: ToastPayload = { text, variant: 'info' }
-
-  try {
-    await chrome.tabs.sendMessage(tabId, { type: 'SHOW_TOAST', payload })
-  } catch {
-    // Content script may not be injected — silently ignore for classification toasts
-  }
-}
-
 /** Send a toast notification to the active tab's content script */
 export async function sendToastToActiveTab(event: QuestEvent): Promise<void> {
   const toast = eventToToast(event)

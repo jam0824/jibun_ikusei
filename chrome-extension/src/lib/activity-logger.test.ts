@@ -128,6 +128,55 @@ describe('activity-logger', () => {
       expect(buffer).toHaveLength(1)
     })
 
+    it('100件を超えるバッファは100件ずつ分割して送信する', async () => {
+      const entries = Array.from({ length: 250 }, (_, i) => ({
+        timestamp: `2026-07-07T10:00:00+09:00`,
+        source: 'chrome-extension' as const,
+        action: `entry-${i}`,
+        category: 'test',
+        details: {},
+      }))
+      await setLocal('activityLogBuffer', entries)
+
+      const mockApiClient = {
+        postActivityLogs: vi.fn().mockResolvedValue({ logged: 100 }),
+      }
+      await flushActivityLogs(mockApiClient as any)
+
+      expect(mockApiClient.postActivityLogs).toHaveBeenCalledTimes(3)
+      const sentSizes = mockApiClient.postActivityLogs.mock.calls.map(
+        ([arg]: [{ entries: unknown[] }]) => arg.entries.length,
+      )
+      expect(sentSizes).toEqual([100, 100, 50])
+
+      const buffer = await getLocal<unknown[]>('activityLogBuffer')
+      expect(buffer).toEqual([])
+    })
+
+    it('途中のチャンクが失敗したら送信済み分だけバッファから削除する', async () => {
+      const entries = Array.from({ length: 250 }, (_, i) => ({
+        timestamp: `2026-07-07T10:00:00+09:00`,
+        source: 'chrome-extension' as const,
+        action: `entry-${i}`,
+        category: 'test',
+        details: {},
+      }))
+      await setLocal('activityLogBuffer', entries)
+
+      const mockApiClient = {
+        postActivityLogs: vi.fn()
+          .mockResolvedValueOnce({ logged: 100 })
+          .mockRejectedValueOnce(new Error('API error: 500 /activity-logs')),
+      }
+      await flushActivityLogs(mockApiClient as any)
+
+      expect(mockApiClient.postActivityLogs).toHaveBeenCalledTimes(2)
+
+      const buffer = await getLocal<Array<{ action: string }>>('activityLogBuffer')
+      expect(buffer).toHaveLength(150)
+      expect(buffer![0].action).toBe('entry-100')
+    })
+
     it('flush 中に追加された新規ログを消さない', async () => {
       await logActivity('before-flush', 'test')
 

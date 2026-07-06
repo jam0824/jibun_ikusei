@@ -12,6 +12,9 @@ export interface ActivityLogEntry {
 
 const STORAGE_KEY = 'activityLogBuffer'
 
+// サーバー側 (POST /activity-logs) が 1 リクエスト 100 件までしか受け付けないため分割送信する
+const MAX_ENTRIES_PER_REQUEST = 100
+
 function getActivityIdentity(entry: ActivityLogEntry): string {
   return JSON.stringify([entry.timestamp, entry.action, entry.category, entry.details])
 }
@@ -51,14 +54,19 @@ export async function flushActivityLogs(
   const snapshot = (await getLocal<ActivityLogEntry[]>(STORAGE_KEY)) ?? []
   if (snapshot.length === 0) return
 
-  try {
-    await apiClient.postActivityLogs({ entries: snapshot })
-    const sentIdentities = new Set(snapshot.map(getActivityIdentity))
+  for (let i = 0; i < snapshot.length; i += MAX_ENTRIES_PER_REQUEST) {
+    const chunk = snapshot.slice(i, i + MAX_ENTRIES_PER_REQUEST)
 
+    try {
+      await apiClient.postActivityLogs({ entries: chunk })
+    } catch (err) {
+      console.error('[activity-logger] flush failed:', err)
+      return
+    }
+
+    const sentIdentities = new Set(chunk.map(getActivityIdentity))
     await mutateLocal<ActivityLogEntry[]>(STORAGE_KEY, [], (currentBuffer) => (
       currentBuffer.filter((entry) => !sentIdentities.has(getActivityIdentity(entry)))
     ))
-  } catch (err) {
-    console.error('[activity-logger] flush failed:', err)
   }
 }
