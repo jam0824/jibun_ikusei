@@ -9,7 +9,7 @@ import { isLoggedIn } from '@ext/lib/auth'
 import { sendBrowsingSystemMessageToLilyDesktop } from '@ext/lib/lily-desktop-bridge'
 import { getLocal, removeLocal, setLocal } from '@ext/lib/storage'
 import { toJstIsoString } from '@ext/lib/jst-time'
-import { sendToastToActiveTab } from '@ext/lib/notifications'
+import { sendAuthExpiredToast, sendToastToActiveTab } from '@ext/lib/notifications'
 import type {
   BrowsingTimeSyncBacklog,
   BrowsingTimeSyncEntry,
@@ -65,7 +65,10 @@ async function handlePeriodicSync(): Promise<void> {
 
     const settings = await getLocal<ExtensionSettings>('extensionSettings')
     if (!settings?.syncEnabled || !settings?.serverBaseUrl) return
-    if (!await isLoggedIn()) return
+    if (!await isLoggedIn()) {
+      await notifyAuthExpired(settings).catch(() => {})
+      return
+    }
 
     await syncBrowsingTimes().catch((err) => logError(err, 'alarm:sync-browsing-times').catch(() => {}))
     await flushActivityLogs(apiClient).catch(() => {})
@@ -89,6 +92,20 @@ async function handlePeriodicSync(): Promise<void> {
   } catch (err) {
     logError(err, 'alarm:periodic-sync').catch(() => {})
   }
+}
+
+const AUTH_EXPIRED_NOTIFIED_DATE_KEY = 'authExpiredNotifiedDate'
+
+/** 未ログイン状態を1日1回だけトーストで知らせる（同期が静かに止まるのを防ぐ） */
+async function notifyAuthExpired(settings: ExtensionSettings): Promise<void> {
+  if (!(settings.notificationsEnabled ?? true)) return
+
+  const today = toJstIsoString().slice(0, 10)
+  const notifiedDate = await getLocal<string>(AUTH_EXPIRED_NOTIFIED_DATE_KEY)
+  if (notifiedDate === today) return
+
+  await setLocal(AUTH_EXPIRED_NOTIFIED_DATE_KEY, today)
+  await sendAuthExpiredToast()
 }
 
 async function evaluateAndEnqueue(): Promise<void> {

@@ -181,6 +181,98 @@ describe('alarm-handlers', () => {
       expect(compBody.questId).toBe(questBody.id)
     })
 
+    it('同期有効かつ未ログインなら再ログインを促すトーストを送る', async () => {
+      await setLocal('dailyProgress', createMockDailyProgress())
+      await setLocal('extensionSettings', {
+        serverBaseUrl: 'https://test.example.com',
+        syncEnabled: true,
+        notificationsEnabled: true,
+      })
+      // authState なし = 未ログイン
+      vi.spyOn(chrome.tabs, 'query').mockResolvedValue([{ id: 1 } as chrome.tabs.Tab])
+
+      const { handleAlarm } = await import('./alarm-handlers')
+      await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
+
+      expect(chrome.tabs.sendMessage).toHaveBeenCalledWith(1, {
+        type: 'SHOW_TOAST',
+        payload: expect.objectContaining({
+          variant: 'warning',
+          text: expect.stringContaining('ログイン'),
+        }),
+      })
+    })
+
+    it('未ログイントーストは1日1回しか送らない', async () => {
+      await setLocal('dailyProgress', createMockDailyProgress())
+      await setLocal('extensionSettings', {
+        serverBaseUrl: 'https://test.example.com',
+        syncEnabled: true,
+        notificationsEnabled: true,
+      })
+      vi.spyOn(chrome.tabs, 'query').mockResolvedValue([{ id: 1 } as chrome.tabs.Tab])
+
+      const { handleAlarm } = await import('./alarm-handlers')
+      await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
+      await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
+
+      const toastCalls = vi.mocked(chrome.tabs.sendMessage).mock.calls.filter(
+        (call) => (call[1] as { payload?: { variant?: string } })?.payload?.variant === 'warning',
+      )
+      expect(toastCalls).toHaveLength(1)
+    })
+
+    it('通知設定が無効なら未ログイントーストを送らない', async () => {
+      await setLocal('dailyProgress', createMockDailyProgress())
+      await setLocal('extensionSettings', {
+        serverBaseUrl: 'https://test.example.com',
+        syncEnabled: true,
+        notificationsEnabled: false,
+      })
+      vi.spyOn(chrome.tabs, 'query').mockResolvedValue([{ id: 1 } as chrome.tabs.Tab])
+
+      const { handleAlarm } = await import('./alarm-handlers')
+      await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
+
+      expect(chrome.tabs.sendMessage).not.toHaveBeenCalled()
+      expect(chrome.notifications.create).not.toHaveBeenCalled()
+    })
+
+    it('ログイン済みなら未ログイントーストを送らない', async () => {
+      await setLocal('dailyProgress', createMockDailyProgress())
+      await setLocal('extensionSettings', {
+        serverBaseUrl: 'https://test.example.com',
+        syncEnabled: true,
+        notificationsEnabled: true,
+      })
+      await setLocal('authState', createMockAuthState())
+      vi.spyOn(chrome.tabs, 'query').mockResolvedValue([{ id: 1 } as chrome.tabs.Tab])
+
+      const { handleAlarm } = await import('./alarm-handlers')
+      await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
+
+      expect(chrome.tabs.sendMessage).not.toHaveBeenCalled()
+    })
+
+    it('アクティブタブがない場合はシステム通知にフォールバックする', async () => {
+      await setLocal('dailyProgress', createMockDailyProgress())
+      await setLocal('extensionSettings', {
+        serverBaseUrl: 'https://test.example.com',
+        syncEnabled: true,
+        notificationsEnabled: true,
+      })
+      vi.spyOn(chrome.tabs, 'query').mockResolvedValue([])
+
+      const { handleAlarm } = await import('./alarm-handlers')
+      await handleAlarm({ name: 'periodic-sync', scheduledTime: Date.now() })
+
+      expect(chrome.tabs.sendMessage).not.toHaveBeenCalled()
+      expect(chrome.notifications.create).toHaveBeenCalledWith(
+        expect.stringContaining('auth-expired'),
+        expect.objectContaining({ message: expect.stringContaining('ログイン') }),
+      )
+    })
+
     it('イベントがない場合はPOSTしない', async () => {
       const progress = createMockDailyProgress({
         goodBrowsingSeconds: 0,

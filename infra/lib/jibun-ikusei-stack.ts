@@ -50,6 +50,8 @@ export class JibunIkuseiStack extends cdk.Stack {
         userSrp: true,
       },
       generateSecret: false,
+      // 30日ごとの再ログインを避けるため延長。変更後の新規ログインから適用される
+      refreshTokenValidity: cdk.Duration.days(365),
     })
 
     // ---- Lambda ----

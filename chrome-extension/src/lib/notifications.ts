@@ -35,6 +35,31 @@ function eventToToast(event: QuestEvent): ToastPayload | null {
   }
 }
 
+/** Send a re-login prompt toast when the server session has expired */
+export async function sendAuthExpiredToast(): Promise<void> {
+  const payload: ToastPayload = {
+    text: 'Lily: サーバーへのログインが切れています。拡張機能のオプションページから再ログインしてください。',
+    variant: 'warning',
+  }
+
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true })
+    if (tab?.id) {
+      await chrome.tabs.sendMessage(tab.id, { type: 'SHOW_TOAST', payload })
+      return
+    }
+  } catch {
+    // Content script may not be injected — fall back to system notification
+  }
+
+  chrome.notifications.create(`auth-expired-${Date.now()}`, {
+    type: 'basic',
+    iconUrl: 'icons/icon-48.png',
+    title: '自分育成',
+    message: payload.text,
+  })
+}
+
 /** Send a toast notification to the active tab's content script */
 export async function sendToastToActiveTab(event: QuestEvent): Promise<void> {
   const toast = eventToToast(event)
