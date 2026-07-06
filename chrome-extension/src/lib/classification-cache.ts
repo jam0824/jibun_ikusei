@@ -28,7 +28,7 @@ export class ClassificationCache {
   async set(
     cacheKey: string,
     result: ClassificationResult,
-    source: 'ai' | 'manual' | 'server',
+    source: 'ai',
   ): Promise<void> {
     const store = await this.loadStore()
     const now = new Date()

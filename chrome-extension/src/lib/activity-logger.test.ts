@@ -145,7 +145,7 @@ describe('activity-logger', () => {
 
       expect(mockApiClient.postActivityLogs).toHaveBeenCalledTimes(3)
       const sentSizes = mockApiClient.postActivityLogs.mock.calls.map(
-        ([arg]: [{ entries: unknown[] }]) => arg.entries.length,
+        (call) => (call[0] as { entries: unknown[] }).entries.length,
       )
       expect(sentSizes).toEqual([100, 100, 50])
 

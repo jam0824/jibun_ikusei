@@ -263,7 +263,7 @@ describe('message-handler', () => {
       await setLocal('activityLogBuffer', [{ action: 'test' }])
       await setLocal('browsingTimeSyncBacklog', { '2026-03-29': { date: '2026-03-29', domains: {}, totalSeconds: 0 } })
       await setLocal('weeklyReport', { weekKey: '2026-W13' })
-      await setLocal('classificationCache', { persisted: { result: {}, source: 'manual' } })
+      await setLocal('classificationCache', { persisted: { result: {}, source: 'ai' } })
 
       const { setupMessageListener } = await import('./message-handler')
       setupMessageListener()
@@ -285,7 +285,7 @@ describe('message-handler', () => {
 
     it('RESET_EXTENSION_DATA で classificationCache も含めて消す', async () => {
       await setLocal('dailyProgress', { date: '2026-03-30' })
-      await setLocal('classificationCache', { persisted: { result: {}, source: 'manual' } })
+      await setLocal('classificationCache', { persisted: { result: {}, source: 'ai' } })
 
       const { setupMessageListener } = await import('./message-handler')
       setupMessageListener()
@@ -298,49 +298,6 @@ describe('message-handler', () => {
       expect(response).toEqual({ ok: true })
       expect(await getLocal('dailyProgress')).toBeUndefined()
       expect(await getLocal('classificationCache')).toBeUndefined()
-    })
-
-    it('manual 修正で tabClassifications を更新する', async () => {
-      await setLocal('extensionSettings', {
-        aiProvider: 'openai',
-        openaiApiKey: 'test-key',
-        blocklist: [],
-        serverBaseUrl: '',
-        syncEnabled: false,
-        notificationsEnabled: true,
-      })
-
-      const { getTabClassification, handlePageInfo, setupMessageListener } = await import('./message-handler')
-      setupMessageListener()
-      await handlePageInfo(11, {
-        domain: 'game.com',
-        url: 'https://game.com/play',
-        title: 'Game',
-      })
-
-      const before = getTabClassification(11)
-      expect(before).toBeDefined()
-
-      const storageListener = vi.mocked(chrome.storage.onChanged.addListener).mock.calls[0][0] as (
-        changes: Record<string, { oldValue?: unknown; newValue?: unknown }>,
-        areaName: string,
-      ) => void
-
-      storageListener({
-        classificationCache: {
-          newValue: {
-            [before!.cacheKey]: {
-              result: { ...before!, category: '学習', isGrowth: true },
-              source: 'manual',
-              createdAt: new Date().toISOString(),
-              expiresAt: new Date(Date.now() + 86400000).toISOString(),
-            },
-          },
-        },
-      }, 'local')
-
-      expect(getTabClassification(11)?.category).toBe('学習')
-      expect(getTabClassification(11)?.isGrowth).toBe(true)
     })
 
     it('classificationCache が削除されたら tabClassifications もクリアする', async () => {

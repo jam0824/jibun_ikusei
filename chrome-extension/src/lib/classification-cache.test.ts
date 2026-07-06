@@ -72,29 +72,28 @@ describe('ClassificationCache', () => {
     expect(cached).not.toBeNull()
   })
 
-  it('manual override takes priority over AI result', async () => {
-    const aiResult = createMockClassificationResult({
+  it('同じキーへの再設定で結果を上書きする', async () => {
+    const firstResult = createMockClassificationResult({
       cacheKey: 'youtube.com:/watch',
       category: '娯楽',
       isGrowth: false,
     })
-    await cache.set('youtube.com:/watch', aiResult, 'ai')
+    await cache.set('youtube.com:/watch', firstResult, 'ai')
 
-    const manualResult = createMockClassificationResult({
+    const secondResult = createMockClassificationResult({
       cacheKey: 'youtube.com:/watch',
       category: '学習',
       isGrowth: true,
     })
-    await cache.set('youtube.com:/watch', manualResult, 'manual')
+    await cache.set('youtube.com:/watch', secondResult, 'ai')
 
     const cached = await cache.get('youtube.com:/watch')
     expect(cached!.result.category).toBe('学習')
-    expect(cached!.source).toBe('manual')
   })
 
   it('エントリを削除できる', async () => {
     const result = createMockClassificationResult({ cacheKey: 'delete.com:/' })
-    await cache.set('delete.com:/', result, 'manual')
+    await cache.set('delete.com:/', result, 'ai')
 
     await cache.delete('delete.com:/')
 

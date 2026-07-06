@@ -50,7 +50,7 @@ export interface ClassificationResult {
 /** Cached classification entry */
 export interface ClassificationCacheEntry {
   result: ClassificationResult
-  source: 'ai' | 'manual' | 'server'
+  source: 'ai'
   createdAt: string
   expiresAt: string
 }

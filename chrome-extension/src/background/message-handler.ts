@@ -89,14 +89,6 @@ export function setupMessageListener(): void {
 
     if (!newStore) {
       tabClassifications.clear()
-      return
-    }
-
-    for (const [tabId, classification] of tabClassifications) {
-      const updated = newStore[classification.cacheKey]
-      if (updated && updated.source === 'manual') {
-        tabClassifications.set(tabId, updated.result)
-      }
     }
   })
 }
